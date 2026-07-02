@@ -1,0 +1,22 @@
+{
+  "name": "time-attendance",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "web-admin",
+    "mobile-app"
+  ],
+  "scripts": {
+    "install-all": "npm install",
+    "start-backend": "npm --workspace backend run dev",
+    "start-web": "npm --workspace web-admin run dev",
+    "start-mobile": "npm --workspace mobile-app run dev",
+    "build-mobile": "npm --workspace mobile-app run build",
+    "apk-mobile": "npm --workspace mobile-app run apk",
+    "dev:full": "node scripts/start-dev.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0"
+  }
+}

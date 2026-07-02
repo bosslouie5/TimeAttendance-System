@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">hfhdgfc</string>
+    <string name="title_activity_main">hfhdgfc</string>
+    <string name="package_name">com.example.timeattendance</string>
+    <string name="custom_url_scheme">com.example.timeattendance</string>
+</resources>

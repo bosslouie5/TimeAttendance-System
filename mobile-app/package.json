@@ -1,0 +1,32 @@
+{
+  "name": "time-attendance-mobile-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cap:init": "npx cap init time-attendance-mobile-app com.example.timeattendance --web-dir=dist --name=\"Time Attendance Mobile\"",
+    "cap:add-android": "npx cap add android",
+    "cap:copy": "npx cap copy",
+    "cap:sync": "npx cap sync android",
+    "cap:open-android": "npx cap open android",
+    "apk": "npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug",
+    "setup-reverse": "\"C:\\Users\\60003078\\Desktop\\Advance Software\\DEV_TOOLS\\adb\\adb.exe\" reverse tcp:4002 tcp:4002 && \"C:\\Users\\60003078\\Desktop\\Advance Software\\DEV_TOOLS\\adb\\adb.exe\" reverse tcp:4001 tcp:4001",
+    "safe-run": "npm run build && npx cap sync android && npm run setup-reverse && npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/device": "^6.0.0",
+    "@capacitor/geolocation": "^6.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.1"
+  }
+}

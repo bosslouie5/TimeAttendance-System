@@ -1,0 +1,30 @@
+{
+  "employees": [
+    {
+      "employeeId": "60003078",
+      "name": "John Cruz",
+      "email": ""
+    },
+    {
+      "employeeId": "TEST001",
+      "name": "Test User",
+      "email": ""
+    },
+    {
+      "employeeId": "60000903",
+      "name": "Basheer Lathil",
+      "email": "",
+      "joiningDate": "2026-06-01",
+      "terminationDate": ""
+    }
+  ],
+  "departments": [
+    {
+      "departmentId": "head-office",
+      "name": "Head Office",
+      "pinLatitude": 0,
+      "pinLongitude": 0,
+      "radiusMeters": 10000000
+    }
+  ]
+}

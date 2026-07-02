@@ -1,0 +1,21 @@
+# Basura / Mabigat na files
+node_modules/
+dist/
+dist-test/
+
+# System Logs
+*.log
+tunnel.log
+server.log
+
+# Private Data (Huwag i-upload para safe)
+data.json
+data-test.json
+dev_accounts.json
+
+# Binaries (Portable tools)
+DEV_TOOLS/
+
+# OS files
+.DS_Store
+Thumbs.db
