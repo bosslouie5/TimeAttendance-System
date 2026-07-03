@@ -23,7 +23,11 @@ console.log(`\x1b[35m[ENV] Database: ${dbFile}\x1b[0m\n`);
 
 const DB_PATH = path.join(__dirname, dbFile);
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'x-tenant-id', 'Authorization']
+}));
 app.use(bodyParser.json());
 
 const webDevDist = path.join(__dirname, `../web-dev/${distFolder}`);
@@ -36,15 +40,16 @@ app.use('/apks', express.static(apksDir));
 
 // --- DATABASE UTILS ---
 function loadData() {
-  if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [] };
+  if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [] };
   try {
     const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
     if (!data.employees) data.employees = [];
     if (!data.departments) data.departments = [];
     if (!data.logs) data.logs = [];
     if (!data.users) data.users = [];
+    if (!data.orgUnits) data.orgUnits = [];
     return data;
-  } catch (e) { return { users: [], settings: {}, employees: [], departments: [], logs: [] }; }
+  } catch (e) { return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [] }; }
 }
 
 function saveData(data) {
@@ -172,7 +177,7 @@ app.post('/api/auth/web-login', (req, res) => {
           tenantId: tenantId,
           companyName: targetTenant.companyName,
           isConsultant: true,
-          permissions: ['dashboard', 'employees', 'reports', 'setup'] // Master access
+          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'reports', 'setup'] // Full Master Access
         }
       });
     }
@@ -282,6 +287,33 @@ app.get('/api/master/logs', (req, res) => res.json(loadData().logs));
 app.get('/api/master/users', (req, res) => res.json(loadData().users));
 app.get('/api/master/employees', (req, res) => res.json(loadData().employees));
 app.get('/api/master/departments', (req, res) => res.json(loadData().departments));
+app.get('/api/master/org-units', (req, res) => res.json(loadData().orgUnits));
+
+// Org Units (Departments)
+app.get('/api/org-units', tenantGuard, (req, res) => {
+  const data = loadData();
+  const tenantId = req.tenantId;
+  if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
+  res.json((data.orgUnits || []).filter(o => o.tenantId === tenantId));
+});
+
+app.post('/api/org-units', tenantGuard, (req, res) => {
+  const data = loadData();
+  const newOrg = { ...req.body, tenantId: req.tenantId || 'master', id: Date.now().toString() };
+  if (!data.orgUnits) data.orgUnits = [];
+  data.orgUnits.push(newOrg);
+  saveData(data);
+  res.json(newOrg);
+});
+
+app.delete('/api/org-units/:id', tenantGuard, (req, res) => {
+  const { id } = req.params;
+  const data = loadData();
+  const tenantId = req.tenantId || 'master';
+  data.orgUnits = (data.orgUnits || []).filter(o => !(o.id === id && o.tenantId === tenantId));
+  saveData(data);
+  res.json({ success: true });
+});
 
 // Tenant-specific Data
 app.get('/api/employees', tenantGuard, (req, res) => {
@@ -550,16 +582,21 @@ app.post('/api/master/clear-data', (req, res) => {
       data.departments = data.departments.filter(d => d.tenantId !== tenantId);
       if (data.assignments) data.assignments = data.assignments.filter(a => a.tenantId !== tenantId);
     }
+  } else if (target === 'orgUnits') {
+    if (isGlobal) data.orgUnits = [];
+    else data.orgUnits = (data.orgUnits || []).filter(o => o.tenantId !== tenantId);
   } else if (target === 'all') {
     if (isGlobal) {
       data.logs = [];
       data.employees = [];
       data.departments = [];
+      data.orgUnits = [];
       data.assignments = [];
     } else {
       data.logs = data.logs.filter(l => l.tenantId !== tenantId);
       data.employees = data.employees.filter(e => e.tenantId !== tenantId);
       data.departments = data.departments.filter(d => d.tenantId !== tenantId);
+      data.orgUnits = (data.orgUnits || []).filter(o => o.tenantId !== tenantId);
       if (data.assignments) data.assignments = data.assignments.filter(a => a.tenantId !== tenantId);
     }
   }
@@ -600,8 +637,19 @@ app.delete('/api/users/:tenantId', (req, res) => {
   data.users = data.users.filter(u => (u.tenantId || u.username).toLowerCase() !== tenantId.toLowerCase());
 
   if (data.users.length < originalCount) {
+    // Ninja Clean Up: Delete all data associated with this tenant
+    const lowerTenantId = tenantId.toLowerCase();
+    data.employees = (data.employees || []).filter(e => (e.tenantId || '').toLowerCase() !== lowerTenantId);
+    data.departments = (data.departments || []).filter(d => (d.tenantId || '').toLowerCase() !== lowerTenantId);
+    data.orgUnits = (data.orgUnits || []).filter(o => (o.tenantId || '').toLowerCase() !== lowerTenantId);
+    data.logs = (data.logs || []).filter(l => (l.tenantId || '').toLowerCase() !== lowerTenantId);
+    if (data.assignments) {
+      data.assignments = data.assignments.filter(a => (a.tenantId || '').toLowerCase() !== lowerTenantId);
+    }
+
     saveData(data);
-    res.json({ success: true, message: `Tenant ${tenantId} deleted.` });
+    console.log(`[MASTER] Global Cleanup: Deleted all records for tenant ${tenantId}`);
+    res.json({ success: true, message: `Tenant ${tenantId} and all associated data deleted.` });
   } else {
     res.status(404).json({ error: 'Tenant not found.' });
   }
@@ -643,7 +691,8 @@ app.get('/api/tenant-info/:tenantId', (req, res) => {
       companyName: user.companyName,
       tenantId: user.tenantId || user.username,
       adminIp: user.adminIp,
-      endDate: user.endDate
+      endDate: user.endDate,
+      permissions: user.permissions || []
     });
   } else {
     res.status(404).json({ error: 'Tenant not found' });
@@ -898,13 +947,29 @@ function startTunnelMonitor() {
           global.lastFoundUrl = currentUrl;
           console.log(`\n\x1b[36m[HUB] NEW LINK DETECTED: ${currentUrl}\x1b[0m\n`);
 
-          // --- AUTO-OPEN BROWSER (Ninja Pro Feature) ---
+          // --- AUTO-OPEN BROWSER (Ninja Stable Version) ---
           try {
              const { exec } = require('child_process');
              const startCmd = process.platform === 'win32' ? 'start' : 'open';
-             // Reverting to safe loopback IP for guaranteed access on company laptop
-             exec(`${startCmd} http://127.0.0.1:${PORT}/dev`);
+             // Opening the direct tunnel link for 100% stability and zero CORS issues
+             exec(`${startCmd} ${currentUrl}/dev`);
           } catch (e) { console.error('[HUB] Browser auto-open failed'); }
+
+          try {
+            // NINJA GITHUB REGISTRY: Update active_link.txt using Portable Git
+            const linkFile = path.join(__dirname, 'active_link.txt');
+            fs.writeFileSync(linkFile, currentUrl);
+
+            const DEV_TOOLS = "C:\\Users\\60003078\\Desktop\\Advance Software\\DEV_TOOLS";
+            const gitExe = path.join(DEV_TOOLS, "Git", "cmd", "git.exe");
+
+            const gitCmd = `"${gitExe}" add active_link.txt && "${gitExe}" commit -m "Registry Update: ${new Date().toLocaleTimeString()}" && "${gitExe}" push origin main`;
+
+            exec(gitCmd, { cwd: __dirname }, (err) => {
+               if (!err) console.log(`[HUB] GitHub Registry Updated ✓`);
+               else console.error(`[HUB] GitHub Registry Update Failed. Is GitHub public?`);
+            });
+          } catch (gitErr) { }
 
           try {
             const shortcutPath = path.join(os.homedir(), 'Desktop', 'CURRENT_SERVER_LINK.txt');

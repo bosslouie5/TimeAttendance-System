@@ -6,9 +6,6 @@ import autoTable from 'jspdf-autotable';
 const API_BASE = '/api';
 
 function App() {
-  const [activeApiBase, setActiveApiBase] = useState('/api');
-  const [saasStatus, setSaasStatus] = useState('Checking SaaS Hub...');
-
   const [isDevLoggedIn, setIsDevLoggedIn] = useState(sessionStorage.getItem('dev_logged_in') === 'true');
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -27,6 +24,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [orgUnits, setOrgUnits] = useState([]);
   const [devAccounts, setDevAccounts] = useState([]);
   const [systemIp, setSystemIp] = useState('127.0.0.1');
   const [status, setStatus] = useState('System Online');
@@ -69,6 +67,10 @@ function App() {
   const [deptRad, setDeptRad] = useState('50');
   const [editingDeptId, setEditingDeptId] = useState(null);
   const [selectedDeptTenant, setSelectedDeptTenant] = useState('ALL');
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newOrgName, setNewOrgName] = useState('');
+  const [selectedOrgTenant, setSelectedOrgTenant] = useState('ALL');
+
   // License edit states
   const [editingTenantId, setEditingTenantId] = useState(null);
   const [editingEndDateValue, setEditingEndDateValue] = useState('');
@@ -85,6 +87,12 @@ function App() {
   const [reportSearch, setReportSearch] = useState('');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+
+  // New Employee Modal States
+  const [activeApiBase, setActiveApiBase] = useState(null);
+  const [saasStatus, setSaasStatus] = useState('Initializing Ninja Discovery...');
+  const [manualLink, setManualLink] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
 
   // New Employee Modal States
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
@@ -104,31 +112,50 @@ function App() {
 
   useEffect(() => {
     const discoverSaaS = async () => {
+      // SMART SWITCH: If we are already on a tunnel or local, use relative /api
+      const host = window.location.hostname;
+      if (host === 'localhost' || host === '127.0.0.1' || host.includes('trycloudflare.com')) {
+         setSaasStatus('Direct Connection Active');
+         setActiveApiBase('/api');
+         return;
+      }
+
       try {
-        const res = await fetch('https://ntfy.sh/attendance_hub_60003078_active_link/raw');
+        setSaasStatus('📡 Connecting via GitHub Registry...');
+        const res = await fetch(`https://raw.githubusercontent.com/bosslouie5/TimeAttendance-System/main/backend/active_link.txt?t=${Date.now()}`);
         if (res.ok) {
           const url = (await res.text()).trim();
           if (url && url.startsWith('http')) {
             const finalApi = `${url}/api`;
             setActiveApiBase(finalApi);
             setSaasStatus(`Connected to Global SaaS: ${url}`);
-            console.log(`[NINJA HUB] Global Discovery Successful: ${finalApi}`);
+            return;
           }
         }
+        throw new Error('Registry empty');
       } catch (e) {
-        setSaasStatus('Global Hub Discovery Pending...');
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-           setActiveApiBase('/api');
-        }
+        setSaasStatus('⌛ Waiting for Backend (GitHub Registry)...');
+        setTimeout(() => setShowManualInput(true), 5000);
       }
     };
     discoverSaaS();
-    // Re-check every 2 minutes for auto-healing
-    const interval = setInterval(discoverSaaS, 120000);
+    const interval = setInterval(discoverSaaS, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => { loadInitialData(); }, [activeApiBase]);
+  const connectManually = () => {
+    if (!manualLink.startsWith('http')) return alert('Valid URL is required (https://...)');
+    const finalApi = manualLink.replace(/\/$/, '') + '/api';
+    setActiveApiBase(finalApi);
+    setSaasStatus(`Manually Connected: ${manualLink}`);
+    setShowManualInput(false);
+  };
+
+  useEffect(() => {
+    if (activeApiBase) {
+      loadInitialData();
+    }
+  }, [activeApiBase]);
 
   // Live Clock Effect
   useEffect(() => {
@@ -400,30 +427,63 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      const [u, l, e, d, da] = await Promise.all([
+      const [u, l, e, d, da, o] = await Promise.all([
         fetch(`${activeApiBase}/master/users`).then(r => r.json()),
         fetch(`${activeApiBase}/master/logs`).then(r => r.json()),
         fetch(`${activeApiBase}/master/employees`).then(r => r.json()),
         fetch(`${activeApiBase}/master/departments`).then(r => r.json()),
-        fetch(`${activeApiBase}/master/dev-accounts`).then(r => r.json())
+        fetch(`${activeApiBase}/master/dev-accounts`).then(r => r.json()),
+        fetch(`${activeApiBase}/master/org-units`).then(r => r.json())
       ]);
       setUsers(u || []);
       setLogs(l || []);
       setEmployees(e || []);
       setDepartments(d || []);
       setDevAccounts(da || []);
+      setOrgUnits(o || []);
 
-      if (u && l && e && d && da) {
+      if (u && l && e && d && da && o) {
         setLastSyncTime(new Date());
       }
 
       // Get the real system IP for link generation
-      fetch(`${API_BASE}/settings`)
+      fetch(`${activeApiBase}/settings`)
         .then(r => r.json())
         .then(data => {
           if (data.currentSystemIp) setSystemIp(data.currentSystemIp);
         });
     } catch (e) { setStatus('Error loading data'); }
+  };
+
+  const addOrgUnit = async () => {
+    if (selectedOrgTenant === 'ALL' || !newOrgName) return alert('Select Company and enter Dept Name');
+    setStatus('Adding Org Unit...');
+    try {
+      const res = await fetch(`${activeApiBase}/org-units?tenantId=${selectedOrgTenant}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedOrgTenant },
+        body: JSON.stringify({ name: newOrgName, tenantId: selectedOrgTenant })
+      });
+      if (res.ok) {
+        setStatus('Org Department Created! ✓');
+        setNewOrgName('');
+        loadInitialData();
+      }
+    } catch (e) { setStatus('Error adding department'); }
+  };
+
+  const deleteOrgUnit = async (tenantId, id) => {
+    if (!confirm('Delete this department?')) return;
+    try {
+      const res = await fetch(`${activeApiBase}/org-units/${id}?tenantId=${tenantId}`, {
+        method: 'DELETE',
+        headers: { 'x-tenant-id': tenantId }
+      });
+      if (res.ok) {
+        setStatus('Org Department Removed ✓');
+        loadInitialData();
+      }
+    } catch (e) { setStatus('Error deleting department'); }
   };
 
   const provisionPortal = async () => {
@@ -453,19 +513,26 @@ function App() {
     } catch (e) { setStatus('Deployment failed'); }
   };
 
-  const updatePermissions = async (username, currentPerms, perm) => {
+  const updatePermissions = async (targetTenant, perm) => {
+    const tenantId = targetTenant.tenantId || targetTenant.username;
+    const currentPerms = targetTenant.permissions || [];
     const newPerms = currentPerms.includes(perm)
       ? currentPerms.filter(p => p !== perm)
       : [...currentPerms, perm];
 
     try {
-      await fetch(`${activeApiBase}/users/${username}/permissions`, {
+      const res = await fetch(`${activeApiBase}/users/${tenantId}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: newPerms })
       });
-      setUsers(users.map(u => u.username === username ? { ...u, permissions: newPerms } : u));
-      setStatus(`Permissions updated for ${username}`);
+      if (res.ok) {
+        setUsers(users.map(u => (u.tenantId || u.username) === tenantId ? { ...u, permissions: newPerms } : u));
+        if (selectedTenant && (selectedTenant.tenantId || selectedTenant.username) === tenantId) {
+          setSelectedTenant({ ...selectedTenant, permissions: newPerms });
+        }
+        setStatus(`Updated ${perm} for ${targetTenant.companyName}`);
+      }
     } catch (e) { setStatus('Update failed'); }
   };
 
@@ -579,7 +646,7 @@ function App() {
   const handleDevLogin = async () => {
     setStatus('Logging in...');
     try {
-      const res = await fetch(`${activeApiBase}/auth/dev-login`, {
+      const res = await fetch(`${API_BASE}/auth/dev-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: devUser, password: devPass })
@@ -637,7 +704,28 @@ function App() {
       } else {
         setStatus('Update failed');
       }
-    } catch (e) { setStatus('Error'); }
+    } catch (e) { setStatus('Error updating account'); }
+  };
+
+  const wipeGlobalData = async (target = 'all') => {
+    const confirmation = window.confirm(`⚠️ WARNING: Are you sure you want to delete ALL ${target === 'all' ? 'Records' : target} across ALL tenants? This cannot be undone.`);
+    if (!confirmation) return;
+
+    const secondConfirm = window.confirm("Double-check: This will permanently wipe your database records. Proceed?");
+    if (!secondConfirm) return;
+
+    try {
+      const res = await fetch(`${activeApiBase}/master/clear-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: 'MASTER_GLOBAL', target: target })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Global Database Cleaned Successfully! ✓');
+        loadInitialData();
+      }
+    } catch (e) { alert('Cleanup failed. Check server connection.'); }
   };
 
   const deleteDevAccount = async (username) => {
@@ -748,8 +836,9 @@ function App() {
     return (
       <div style={{display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a', fontFamily:'sans-serif'}}>
         <div style={{background:'#1e293b', padding:'40px', borderRadius:'15px', border:'1px solid #334155', width:'100%', maxWidth:'400px', textAlign:'center'}}>
-          <h1 style={{color:'#3b82f6', marginBottom:'10px'}}>DEV CONTROL</h1>
+          <h1 style={{color:'#3b82f6', marginBottom:'10px'}}>TIMEKEY HUB</h1>
           <p style={{color:'#64748b', marginBottom:'30px'}}>Master Developer Login</p>
+
           <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
             <input
               value={devUser}
@@ -823,7 +912,9 @@ function App() {
           }}>
             <MenuItem onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</MenuItem>
             <MenuItem onClick={() => { setActiveTab('tenants'); setIsMenuOpen(false); }}>👥 Manage Tenant</MenuItem>
-            <MenuItem onClick={() => { setActiveTab('departments'); setIsMenuOpen(false); }}>📍 Branch Management</MenuItem>
+            <MenuItem onClick={() => { setActiveTab('tenant-permissions'); setIsMenuOpen(false); }}>🛡️ Tenant Permissions</MenuItem>
+            <MenuItem onClick={() => { setActiveTab('org-departments'); setIsMenuOpen(false); }}>🏢 Department Management</MenuItem>
+            <MenuItem onClick={() => { setActiveTab('branches'); setIsMenuOpen(false); }}>📍 Branch Setup</MenuItem>
             <MenuItem onClick={() => { setActiveTab('employees'); setIsMenuOpen(false); }}>📇 Employee Data</MenuItem>
             <MenuItem onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}>📊 View Reports</MenuItem>
             <MenuItem onClick={() => { setActiveTab('settings'); setIsMenuOpen(false); }}>🛠️ System Settings</MenuItem>
@@ -875,7 +966,8 @@ function App() {
         <span style={{fontWeight:'bold', color:'#3b82f6', textTransform:'uppercase', letterSpacing:'1px'}}>
           {activeTab === 'dashboard' && '📊 Dashboard Overview'}
           {activeTab === 'tenants' && '👥 Tenant Management'}
-          {activeTab === 'departments' && '📍 Branch & Geofence Setup'}
+          {activeTab === 'org-departments' && '🏢 Department Management'}
+          {activeTab === 'branches' && '📍 Branch Setup'}
           {activeTab === 'employees' && '📇 Employee Master List'}
           {activeTab === 'reports' && '📊 Attendance Analytics & Reports'}
           {activeTab === 'settings' && '🛠️ System Settings'}
@@ -916,7 +1008,15 @@ function App() {
             <div style={{color:'#3b82f6'}}>System activity</div>
           </div>
           <div style={statCard} className="stat-card">
-            <h3 style={{color:'#64748b', margin:0}}>Total Global Staff</h3>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <h3 style={{color:'#64748b', margin:0}}>Total Global Staff</h3>
+              <button
+                onClick={(e) => { e.stopPropagation(); wipeGlobalData('employees'); }}
+                style={{background:'rgba(239, 68, 68, 0.1)', border:'1px solid #ef4444', color:'#ef4444', fontSize:'0.65rem', padding:'2px 8px', borderRadius:'4px', cursor:'pointer'}}
+              >
+                Clear
+              </button>
+            </div>
             <div style={{fontSize:'2.5rem', fontWeight:'bold', color: '#8b5cf6'}}>{employees.length}</div>
             <div style={{color:'#3b82f6'}}>Registered across all tenants</div>
           </div>
@@ -949,15 +1049,39 @@ function App() {
           </div>
 
           <div
-            onClick={() => setActiveTab('departments')}
+            onClick={() => setActiveTab('branches')}
             style={{background:'#1e293b', padding:'30px', borderRadius:'15px', border:'1px solid #334155', cursor:'pointer', transition:'0.3s'}}
             onMouseOver={e => e.currentTarget.style.borderColor='#10b981'}
             onMouseOut={e => e.currentTarget.style.borderColor='#334155'}
           >
             <div style={{fontSize:'3rem', marginBottom:'15px'}}>📍</div>
-            <h3 style={{margin:'0 0 10px 0'}}>Branch Management</h3>
+            <h3 style={{margin:'0 0 10px 0'}}>Branch Setup</h3>
             <p style={{fontSize:'0.9rem', color:'#64748b', margin:0}}>Create geofenced branches and office locations for each tenant.</p>
             <button style={{marginTop:'20px', width:'100%', background:'#10b981', color:'white', border:'none', padding:'12px', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Open Module</button>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('org-departments')}
+            style={{background:'#1e293b', padding:'30px', borderRadius:'15px', border:'1px solid #334155', cursor:'pointer', transition:'0.3s'}}
+            onMouseOver={e => e.currentTarget.style.borderColor='#3b82f6'}
+            onMouseOut={e => e.currentTarget.style.borderColor='#334155'}
+          >
+            <div style={{fontSize:'3rem', marginBottom:'15px'}}>🏢</div>
+            <h3 style={{margin:'0 0 10px 0'}}>Department Management</h3>
+            <p style={{fontSize:'0.9rem', color:'#64748b', margin:0}}>Manage organizational units like IT, HR, or Sales for each company.</p>
+            <button style={{marginTop:'20px', width:'100%', background:'#3b82f6', color:'white', border:'none', padding:'12px', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Open Module</button>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('tenant-permissions')}
+            style={{background:'#1e293b', padding:'30px', borderRadius:'15px', border:'1px solid #334155', cursor:'pointer', transition:'0.3s'}}
+            onMouseOver={e => e.currentTarget.style.borderColor='#8b5cf6'}
+            onMouseOut={e => e.currentTarget.style.borderColor='#334155'}
+          >
+            <div style={{fontSize:'3rem', marginBottom:'15px'}}>🛡️</div>
+            <h3 style={{margin:'0 0 10px 0'}}>Tenant Permissions</h3>
+            <p style={{fontSize:'0.9rem', color:'#64748b', margin:0}}>Manage which modules each company can access in real-time.</p>
+            <button style={{marginTop:'20px', width:'100%', background:'#8b5cf6', color:'white', border:'none', padding:'12px', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Open Module</button>
           </div>
 
           <div
@@ -973,6 +1097,134 @@ function App() {
           </div>
         </div>
       </>
+      )}
+
+      {activeTab === 'org-departments' && (
+        <div className="fade-in" style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
+          {/* Create Org Unit Form */}
+          <div style={{background:'#1e293b', padding:'30px', borderRadius:'12px', border:'1px solid #334155'}}>
+            <h2 style={{marginTop:0, color:'#3b82f6'}}>🏢 Create Department</h2>
+            <p style={{color:'#64748b', fontSize:'0.85rem', marginBottom:'20px'}}>Add organizational units like IT, HR, or Sales.</p>
+            <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+              <label style={{color:'#64748b', fontSize:'0.8rem'}}>Select Tenant Company
+                <select style={inputStyle} value={selectedOrgTenant} onChange={e => setSelectedOrgTenant(e.target.value)}>
+                  <option value="ALL">-- Select Company --</option>
+                  {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
+                </select>
+              </label>
+              <label style={{color:'#64748b', fontSize:'0.8rem'}}>Department Name
+                <input style={inputStyle} placeholder="e.g. Information Technology" value={newOrgName} onChange={e => setNewOrgName(e.target.value)} />
+              </label>
+              <button onClick={addOrgUnit} style={{...addBtn, background:'#3b82f6', marginTop:'10px'}}>
+                Create Department
+              </button>
+            </div>
+          </div>
+
+          {/* List of Org Units */}
+          <div style={{background:'#1e293b', padding:'30px', borderRadius:'12px', border:'1px solid #334155'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+              <h2 style={{margin:0}}>📋 Registered Departments</h2>
+              <select style={{...inputStyle, width:'250px', marginTop:0}} value={selectedOrgTenant} onChange={e => setSelectedOrgTenant(e.target.value)}>
+                <option value="ALL">All Companies</option>
+                {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
+              </select>
+            </div>
+
+            <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'8px', background:'#0f172a'}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Department Name</th>
+                    <th>Company</th>
+                    <th style={{textAlign:'right'}}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(orgUnits || [])
+                    .filter(o => selectedOrgTenant === 'ALL' || o.tenantId === selectedOrgTenant)
+                    .map((o, i) => (
+                    <tr key={i}>
+                      <td style={{padding:'10px', fontWeight:'bold', color:'#60a5fa'}}>{o.name}</td>
+                      <td style={{color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === o.tenantId)?.companyName}</td>
+                      <td style={{textAlign:'right'}}>
+                        <button onClick={() => deleteOrgUnit(o.tenantId, o.id)} style={{background:'rgba(239, 68, 68, 0.1)', color:'#ef4444', border:'1px solid #ef4444', padding:'5px 10px', borderRadius:'6px', cursor:'pointer'}}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {(orgUnits || []).filter(o => selectedOrgTenant === 'ALL' || o.tenantId === selectedOrgTenant).length === 0 && (
+                <div style={{textAlign:'center', padding:'40px', color:'#64748b'}}>No departments found.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {activeTab === 'tenant-permissions' && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}} className="fade-in">
+          {/* Tenant List */}
+          <div style={{background:'#1e293b', padding:'20px', borderRadius:'12px', border:'1px solid #334155', maxHeight:'80vh', overflowY:'auto'}}>
+            <h2 style={{marginTop:0, fontSize:'1.2rem', marginBottom:'15px'}}>🏢 Select Tenant</h2>
+            <input
+              placeholder="🔍 Search company..."
+              style={{...inputStyle, marginBottom:'15px', fontSize:'0.85rem', padding:'8px 12px'}}
+              value={tenantSearch}
+              onChange={e => setTenantSearch(e.target.value)}
+            />
+            <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+              {users.filter(u =>
+                u.companyName?.toLowerCase().includes(tenantSearch.toLowerCase()) ||
+                (u.tenantId || u.username)?.toLowerCase().includes(tenantSearch.toLowerCase())
+              ).map(u => (
+                <div
+                  key={u.tenantId || u.username}
+                  onClick={() => setSelectedTenant(u)}
+                  className="tenant-item"
+                  style={{
+                    padding:'15px',
+                    background: (selectedTenant?.tenantId === (u.tenantId || u.username)) ? '#3b82f6' : '#0f172a',
+                    borderRadius:'8px',
+                    cursor:'pointer',
+                    border:'1px solid #334155'
+                  }}
+                >
+                  <div style={{fontWeight:'bold', color: (selectedTenant?.tenantId === (u.tenantId || u.username)) ? 'white' : '#60a5fa'}}>{u.companyName}</div>
+                  <div style={{fontSize:'0.75rem', color: (selectedTenant?.tenantId === (u.tenantId || u.username)) ? 'rgba(255,255,255,0.7)' : '#64748b'}}>ID: {u.tenantId || u.username}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Permissions Panel */}
+          <div style={{background:'#1e293b', padding:'30px', borderRadius:'12px', border:'1px solid #334155'}}>
+            {selectedTenant ? (
+              <div className="fade-in">
+                <h2 style={{marginTop:0, color:'#3b82f6'}}>🛡️ Permissions: {selectedTenant.companyName}</h2>
+                <p style={{color:'#64748b', marginBottom:'30px'}}>Check the modules you want to enable for this client.</p>
+
+                <div style={{display:'grid', gridTemplateColumns:'1fr', gap:'15px'}}>
+                  <PermissionToggle label="👥 Employee Data Module" perm="employees" tenant={selectedTenant} onToggle={updatePermissions} />
+                  <PermissionToggle label="🏢 Department Management" perm="org-units" tenant={selectedTenant} onToggle={updatePermissions} />
+                  <PermissionToggle label="📍 Branch Setup (Geofence)" perm="branches" tenant={selectedTenant} onToggle={updatePermissions} />
+                  <PermissionToggle label="📊 Attendance Reports" perm="reports" tenant={selectedTenant} onToggle={updatePermissions} />
+                </div>
+
+                <div style={{marginTop:'40px', padding:'20px', background:'rgba(59, 130, 246, 0.05)', borderRadius:'10px', border:'1px dashed #3b82f6'}}>
+                  <p style={{margin:0, fontSize:'0.85rem', color:'#64748b'}}>
+                    <b>Note:</b> Changes are applied in real-time. The client's dashboard will update automatically within 30 seconds.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div style={{height:'100%', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', color:'#64748b'}}>
+                <div style={{fontSize:'4rem', marginBottom:'20px'}}>🛡️</div>
+                <h3>Select a tenant from the left</h3>
+                <p>To manage their module access.</p>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {activeTab === 'tenants' && (
@@ -1172,41 +1424,22 @@ function App() {
                       </div>
                     </div>
 
-                    <div style={{marginBottom:'30px'}}>
-                      <h3 style={{marginBottom:'15px', fontSize:'1.1rem'}}>🛡️ Module Permissions</h3>
-                      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'15px'}}>
-                        <div style={{
-                          padding:'15px',
-                          borderRadius:'10px',
-                          background: selectedTenant.permissions.includes('setup') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          border: `1px solid ${selectedTenant.permissions.includes('setup') ? '#10b981' : '#ef4444'}`
-                        }}>
-                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                            <span style={{fontWeight:'bold'}}>👥 Employee & Setup</span>
-                            <span>{selectedTenant.permissions.includes('setup') ? '✅ Active' : '❌ Locked'}</span>
-                          </div>
-                        </div>
-
-                        <div style={{
-                          padding:'15px',
-                          borderRadius:'10px',
-                          background: selectedTenant.permissions.includes('reports') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          border: `1px solid ${selectedTenant.permissions.includes('reports') ? '#10b981' : '#ef4444'}`
-                        }}>
-                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                            <span style={{fontWeight:'bold'}}>📊 Attendance Reports</span>
-                            <span>{selectedTenant.permissions.includes('reports') ? '✅ Active' : '❌ Locked'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
                     <div style={{display:'flex', gap:'10px'}}>
                       <button
                         onClick={() => {
-                          const port = window.location.port ? `:${window.location.port}` : '';
-                          const host = systemIp || window.location.hostname;
-                          window.open(`http://${host}${port}/portal/${selectedTenant.tenantId || selectedTenant.username}`, '_blank');
+                          // UNIVERSAL PORTAL LAUNCHER
+                          let portalRoot = "";
+                          if (activeApiBase && activeApiBase.startsWith('http')) {
+                            // Extract root from activeApiBase (e.g., https://...trycloudflare.com/api -> https://...trycloudflare.com)
+                            portalRoot = activeApiBase.replace(/\/api$/, '');
+                          } else {
+                            const port = window.location.port ? `:${window.location.port}` : '';
+                            const host = window.location.hostname;
+                            portalRoot = `${window.location.protocol}//${host}${port}`;
+                          }
+
+                          const targetUrl = `${portalRoot}/portal/${selectedTenant.tenantId || selectedTenant.username}`;
+                          window.open(targetUrl, '_blank');
                         }}
                         style={{flex:1, padding:'12px', background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}
                       >
@@ -1233,7 +1466,7 @@ function App() {
         </div>
       )}
 
-      {activeTab === 'departments' && (
+      {activeTab === 'branches' && (
         <div className="fade-in" style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
           <div style={{background:'#1e293b', padding:'30px', borderRadius:'12px', border:'1px solid #334155'}}>
             <h2 style={{marginTop:0, color:'#10b981'}}>{editingDeptId ? '✏️ Edit Branch' : '📍 Create Branch'}</h2>
@@ -1310,6 +1543,20 @@ function App() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* System Maintenance Section */}
+          <div style={{background:'#1e293b', padding:'20px', borderRadius:'12px', border:'1px solid #ef4444', gridColumn:'1 / -1'}}>
+            <h2 style={{marginTop:0, fontSize:'1.2rem', color:'#ef4444'}}>🧨 Danger Zone: System Maintenance</h2>
+            <p style={{color:'#64748b', fontSize:'0.85rem', marginBottom:'20px'}}>Use these tools to clean up orphaned data or reset your testing environment. Be careful!</p>
+
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'15px'}}>
+              <button onClick={() => wipeGlobalData('logs')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Logs</button>
+              <button onClick={() => wipeGlobalData('employees')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Employees</button>
+              <button onClick={() => wipeGlobalData('departments')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Branches</button>
+              <button onClick={() => wipeGlobalData('orgUnits')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Departments</button>
+              <button onClick={() => wipeGlobalData('all')} style={{...addBtn, background:'#ef4444', fontSize:'0.8rem', fontWeight:'bold'}}>RESET GLOBAL DATABASE</button>
             </div>
           </div>
         </div>
@@ -1601,9 +1848,22 @@ function App() {
               ))}
             </div>
           </div>
+
+          {/* System Maintenance Section */}
+          <div style={{background:'#1e293b', padding:'20px', borderRadius:'12px', border:'1px solid #ef4444', gridColumn:'1 / -1'}}>
+            <h2 style={{marginTop:0, fontSize:'1.2rem', color:'#ef4444'}}>🧨 Danger Zone: System Maintenance</h2>
+            <p style={{color:'#64748b', fontSize:'0.85rem', marginBottom:'20px'}}>Use these tools to clean up orphaned data or reset your testing environment. Be careful!</p>
+
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'15px'}}>
+              <button onClick={() => wipeGlobalData('logs')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Logs</button>
+              <button onClick={() => wipeGlobalData('employees')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Employees</button>
+              <button onClick={() => wipeGlobalData('departments')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Branches</button>
+              <button onClick={() => wipeGlobalData('orgUnits')} style={{...addBtn, background:'#f59e0b', fontSize:'0.8rem'}}>Clear All Departments</button>
+              <button onClick={() => wipeGlobalData('all')} style={{...addBtn, background:'#ef4444', fontSize:'0.8rem', fontWeight:'bold'}}>RESET GLOBAL DATABASE</button>
+            </div>
+          </div>
         </div>
       )}
-
       {/* NEW EMPLOYEE MODAL */}
       {isAddEmpModalOpen && (
         <div className="modal-overlay">
@@ -1633,7 +1893,15 @@ function App() {
                 </select>
               </label>
               <label style={{color:'#64748b', fontSize:'0.8rem'}}>Department (Org/Team)
-                <input style={inputStyle} placeholder="e.g. IT, HR, Finance" value={empDepartment} onChange={e => setEmpDepartment(e.target.value)} />
+                <select style={inputStyle} value={empDepartment} onChange={e => setEmpDepartment(e.target.value)}>
+                  <option value="">-- Select Department --</option>
+                  {(orgUnits || []).filter(o => o.tenantId === selectedEmpTenant).map(o => (
+                    <option key={o.id} value={o.name}>{o.name}</option>
+                  ))}
+                  {(orgUnits || []).filter(o => o.tenantId === selectedEmpTenant).length === 0 && (
+                    <option disabled>No departments found. Create one first!</option>
+                  )}
+                </select>
               </label>
 
               <label style={{color:'#64748b', fontSize:'0.8rem'}}>Work Branch (Geofence)
@@ -1682,21 +1950,27 @@ function App() {
                 <input type="date" style={inputStyle} value={empJoiningDate} onChange={e => setEmpJoiningDate(e.target.value)} />
               </label>
 
-              <label style={{color:'#64748b', fontSize:'0.8rem'}}>Employment Status
-                <select style={inputStyle} value={empStatus} onChange={e => setEmpStatus(e.target.value)}>
-                  <option value="Active">Active</option>
-                  <option value="Terminated">Terminated</option>
-                  <option value="On Leave">On Leave</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </label>
+              {isEditingEmp && (
+                <label style={{color:'#64748b', fontSize:'0.8rem'}}>Employment Status
+                  <select style={inputStyle} value={empStatus} onChange={e => setEmpStatus(e.target.value)}>
+                    <option value="Active">Active</option>
+                    <option value="Terminated">Terminated</option>
+                    <option value="On Leave">On Leave</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </label>
+              )}
 
-              <label style={{color:'#64748b', fontSize:'0.8rem'}}>Termination Date (Optional)
-                <input type="date" style={inputStyle} value={empTermDate} onChange={e => setEmpTermDate(e.target.value)} />
-              </label>
-              <label style={{color:'#64748b', fontSize:'0.8rem'}}>Termination Note
-                <input style={inputStyle} placeholder="Reason for exit" value={empTermNote} onChange={e => setEmpTermNote(e.target.value)} />
-              </label>
+              {isEditingEmp && (
+                <>
+                  <label style={{color:'#64748b', fontSize:'0.8rem'}}>Termination Date (Optional)
+                    <input type="date" style={inputStyle} value={empTermDate} onChange={e => setEmpTermDate(e.target.value)} />
+                  </label>
+                  <label style={{color:'#64748b', fontSize:'0.8rem'}}>Termination Note
+                    <input style={inputStyle} placeholder="Reason for exit" value={empTermNote} onChange={e => setEmpTermNote(e.target.value)} />
+                  </label>
+                </>
+              )}
             </div>
 
             <div style={{display:'flex', gap:'15px', marginTop:'30px'}}>
@@ -1744,6 +2018,37 @@ const MenuItem = ({ children, onClick, style }) => {
       }}
     >
       {children}
+    </div>
+  );
+};
+
+// Helper for Permission Toggle UI
+const PermissionToggle = ({ label, perm, tenant, onToggle }) => {
+  const isActive = tenant.permissions?.includes(perm);
+  return (
+    <div
+      onClick={() => onToggle(tenant, perm)}
+      className="btn-hover"
+      style={{
+        display:'flex', justifyContent:'space-between', alignItems:'center', padding:'20px',
+        background: isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+        border: `1px solid ${isActive ? '#10b981' : '#ef4444'}`,
+        borderRadius:'12px', cursor:'pointer'
+      }}
+    >
+      <span style={{fontWeight:'bold', color: isActive ? '#10b981' : '#ef4444'}}>{label}</span>
+      <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+        <span style={{fontSize:'0.75rem', color: isActive ? '#10b981' : '#ef4444'}}>{isActive ? 'AUTHORIZED' : 'LOCKED'}</span>
+        <div style={{
+          width:'40px', height:'20px', background: isActive ? '#10b981' : '#475569',
+          borderRadius:'20px', position:'relative', transition:'0.3s'
+        }}>
+          <div style={{
+            width:'16px', height:'16px', background:'white', borderRadius:'50%',
+            position:'absolute', top:'2px', left: isActive ? '22px' : '2px', transition:'0.3s'
+          }}></div>
+        </div>
+      </div>
     </div>
   );
 };

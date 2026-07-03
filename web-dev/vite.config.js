@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: '/dev/', // Eto ang kulang para mahanap yung files sa /dev path
+  base: './', // Ninja Update: Use relative path so it works on any hosting (GitHub Pages, etc.)
   plugins: [react()],
   server: {
     port: 5173,
