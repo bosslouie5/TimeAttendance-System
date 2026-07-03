@@ -4,6 +4,7 @@ import { Geolocation } from '@capacitor/geolocation';
 import { Device } from '@capacitor/device';
 import initialData from './initial_data.json';
 import appConfig from './app_config.json';
+import './styles.css';
 
 async function fetchWithTimeout(resource, options = {}) {
   const { timeout = 8000 } = options;
@@ -58,14 +59,10 @@ function App() {
     const nativeDefaultUrl = 'http://127.0.0.1:4002/api';
     const webDefaultUrl = `${window.location.origin}/api`;
 
-    // Priority: If app was JUST installed via "Install & Open on Device",
-    // and it's a local testing URL, we should prioritize it over a stale SaaS link.
     const isLocalBuild = appConfig.defaultApiUrl && (appConfig.defaultApiUrl.includes('127.0.0.1') || appConfig.defaultApiUrl.includes('localhost'));
 
     if (isLocalBuild && isNative) {
-       // Check if we should override saved SaaS link
        if (saved && saved.includes('trycloudflare.com')) {
-          console.log("Local Build detected. Overriding SaaS link for testing.");
           return appConfig.defaultApiUrl.replace('localhost', '127.0.0.1');
        }
     }
@@ -87,30 +84,55 @@ function App() {
   const [tenantId, setTenantId] = useState(localStorage.getItem('tenant_id') || appConfig.defaultTenantId);
   const [employeeId, setEmployeeId] = useState(localStorage.getItem('cached_id') || '');
   const [departments, setDepartments] = useState(JSON.parse(localStorage.getItem('all_departments')) || initialData.departments);
-  const [status, setStatus] = useState('Ready');
+  const [status, setStatus] = useState('System Online');
   const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('cached_id'));
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [pendingLogs, setPendingLogs] = useState(JSON.parse(localStorage.getItem('pending_logs')) || []);
+  const [tenantInfo, setTenantInfo] = useState(JSON.parse(localStorage.getItem('tenant_info')) || null);
+  const [pendingLogs, setPendingLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pending_logs')) || [];
+    } catch (e) { return []; }
+  });
+  const [personalLogs, setPersonalLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('personal_logs')) || [];
+    } catch (e) { return []; }
+  });
   const [isServerDown, setIsServerDown] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
   useEffect(() => {
     checkConnection();
-    const connInterval = setInterval(checkConnection, 20000); // Check every 20s
+    const connInterval = setInterval(checkConnection, 15000);
 
     if (!localStorage.getItem('all_employees')) {
       localStorage.setItem('all_employees', JSON.stringify(initialData.employees));
       localStorage.setItem('all_departments', JSON.stringify(initialData.departments));
     }
 
+    if (tenantId) {
+        fetchTenantInfo();
+    }
+
     return () => clearInterval(connInterval);
   }, []);
+
+  const fetchTenantInfo = async () => {
+    try {
+        const res = await getJson(`${apiUrl}/tenant-info/${tenantId}`);
+        if (res.ok) {
+            localStorage.setItem('tenant_info', JSON.stringify(res.data));
+            setTenantInfo(res.data);
+        }
+    } catch (e) {}
+  };
 
   useEffect(() => {
     const syncTimer = setInterval(() => {
       attemptSync();
-    }, 10000);
+    }, 8000);
     return () => clearInterval(syncTimer);
   }, [apiUrl, tenantId, isSyncing]);
 
@@ -140,7 +162,8 @@ function App() {
       const remaining = latestFromStorage.slice(successCount);
       setPendingLogs(remaining);
       localStorage.setItem('pending_logs', JSON.stringify(remaining));
-      setStatus(forcedLogs ? `Synced immediately! ✓` : `Auto-synced ${successCount} records!`);
+      setStatus(`Synced ${successCount} logs ✓`);
+      setTimeout(() => setStatus(isServerDown ? 'Offline Mode' : 'System Online'), 3000);
     }
     setIsSyncing(false);
   };
@@ -148,50 +171,42 @@ function App() {
   const checkConnection = async () => {
     try {
       const res = await fetchWithTimeout(`${apiUrl}/settings`, { timeout: 3000 });
-      if (res.ok) setIsServerDown(false);
-      else throw new Error('Unreachable');
+      if (res.ok) {
+        setIsServerDown(false);
+        if (status === 'Offline Mode') setStatus('System Online');
+      } else throw new Error('Unreachable');
     } catch (e) {
-      console.log('Connection lost, attempting Auto-Healing...');
       setIsServerDown(true);
+      setStatus('Offline Mode');
       discoverNewLink();
     }
   };
 
   const discoverNewLink = async () => {
-    // We add ?poll=1&last=1 to get the most recent broadcasted message
     const REGISTRY_URL = 'https://ntfy.sh/attendance_hub_60003078_active_link/raw?poll=1&last=1';
-
-    setStatus('🔍 Checking for system updates...');
     try {
       const res = await fetch(REGISTRY_URL);
       if (res.ok) {
         const text = await res.text();
-        // ntfy can return multiple lines, get the last non-empty one
         const lines = text.trim().split('\n');
         const newUrl = lines[lines.length - 1];
 
         if (newUrl && newUrl.includes('trycloudflare.com')) {
           const formatted = newUrl.endsWith('/api') ? newUrl : `${newUrl}/api`;
-
           if (formatted !== apiUrl) {
-            console.log(`[HEAL] New system link found: ${formatted}`);
             setApiUrl(formatted);
             localStorage.setItem('server_url', formatted);
             setIsServerDown(false);
-            setStatus('System Updated! ✓');
-            alert('SYSTEM UPDATE: Nahanap na ang bagong server link. Pwede ka na ulit mag-sign in.');
-          } else {
-            setStatus('Server is still starting up...');
+            setStatus('System Updated ✓');
+            syncSystemData();
           }
         }
       }
-    } catch (err) {
-      console.log('[HEAL] Update check failed.');
-    }
+    } catch (err) { }
   };
 
   const handleUpdateServer = () => {
-    const newUrl = prompt('I-paste ang bagong Server Link mula sa iyong Admin:', apiUrl);
+    const newUrl = prompt('Server Link:', apiUrl);
     if (newUrl) {
       const formatted = newUrl.endsWith('/api') ? newUrl : `${newUrl}/api`;
       setApiUrl(formatted);
@@ -200,105 +215,44 @@ function App() {
     }
   };
 
-  const switchToLocal = () => {
-    const localUrl = 'http://127.0.0.1:4002/api';
-    setApiUrl(localUrl);
-    localStorage.setItem('server_url', localUrl);
-    window.location.reload();
-  };
-
-  if (isServerDown && !loggedIn) {
-    return (
-      <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '40px 20px', textAlign: 'center'}}>
-        <div style={{fontSize: '4rem', marginBottom: '20px'}}>📡</div>
-        <h1 style={{fontSize: '1.5rem', marginBottom: '10px'}}>Offline / Server Unreachable</h1>
-        <p style={{color: '#64748b', marginBottom: '30px'}}>
-          Hindi ma-reach ang server. <br/>
-          Siguraduhing naka-ON ang system sa laptop at tama ang Server Link.
-        </p>
-
-        <div className="card" style={{background: '#1e293b', padding: '20px', borderRadius: '15px', border: '1px solid #334155'}}>
-          <div style={{marginBottom: '20px', textAlign: 'left', fontSize: '0.8rem'}}>
-            <p style={{color: '#94a3b8', margin: '0 0 5px 0'}}>Current API Link:</p>
-            <code style={{display: 'block', background: '#0f172a', padding: '10px', borderRadius: '6px', color: '#10b981', wordBreak: 'break-all'}}>
-              {apiUrl}
-            </code>
-          </div>
-
-          <button onClick={handleUpdateServer} style={{width: '100%', padding: '15px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', marginBottom: '10px'}}>
-            Update Connection Link
-          </button>
-
-          <button onClick={() => window.open(apiUrl.replace('/api', ''), '_blank')} style={{width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid #334155', borderRadius: '10px', fontSize: '0.8rem', marginBottom: '10px'}}>
-            Open Link in Browser (Bypass Tunnel Warning)
-          </button>
-
-          <button onClick={discoverNewLink} style={{width: '100%', padding: '15px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '10px', fontWeight:'bold', marginBottom: '10px'}}>
-            ✨ Check for System Update
-          </button>
-
-          {(!apiUrl.includes('127.0.0.1') && !apiUrl.includes('localhost')) && (
-            <button onClick={switchToLocal} style={{width: '100%', padding: '12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight:'bold', marginBottom: '10px'}}>
-              🔌 Use Local Dev (USB Mode)
-            </button>
-          )}
-
-          <button onClick={() => window.location.reload()} style={{width: '100%', padding: '10px', background: 'transparent', color: '#64748b', border: 'none'}}>
-            🔄 Try Again
-          </button>
-        </div>
-
-        <div style={{marginTop: '30px', fontSize: '0.7rem', color: '#475569', textAlign: 'left'}}>
-          <strong>TIPS:</strong>
-          <ul style={{paddingLeft: '15px', marginTop: '5px'}}>
-            <li>Kung <strong>Localtunnel</strong> gamit mo, i-click ang "Open Link in Browser" at i-click ang <strong>Click to Continue</strong> button doon.</li>
-            <li>Siguraduhin na parehong may internet ang laptop at phone.</li>
-            <li>Kung naka-USB cable, siguraduhing ni-run mo ang <strong>DEV_TOOLS.bat</strong> Option 1.</li>
-          </ul>
-        </div>
-      </div>
-    );
-  }
-
   const syncSystemData = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
-    setStatus('Syncing...');
     try {
       const headers = { 'x-tenant-id': tenantId };
-      const currentEmpId = employeeId || localStorage.getItem('cached_id');
-
-      const [empRes, deptRes] = await Promise.all([
+      const currentEmpId = localStorage.getItem('cached_id');
+      const [empRes, deptRes, logRes] = await Promise.all([
         getJson(`${apiUrl}/employees`, headers),
-        getJson(`${apiUrl}/departments?employeeId=${currentEmpId}`, headers)
+        getJson(`${apiUrl}/departments?employeeId=${currentEmpId}`, headers),
+        getJson(`${apiUrl}/logs`, headers)
       ]);
-
       if (empRes.status === 200 && deptRes.status === 200) {
         localStorage.setItem('all_employees', JSON.stringify(empRes.data));
         localStorage.setItem('all_departments', JSON.stringify(deptRes.data));
-        setStatus('Updated! ✓');
         setDepartments(deptRes.data);
+        setStatus('Updated ✓');
       }
-    } catch (e) { setStatus('Offline Mode'); }
+      if (logRes.status === 200) {
+        const myLogs = logRes.data.filter(l => l.employeeId === currentEmpId);
+        localStorage.setItem('personal_logs', JSON.stringify(myLogs));
+        setPersonalLogs(myLogs);
+      }
+    } catch (e) { }
     setIsSyncing(false);
   };
 
   const login = async () => {
-    if (!employeeId.trim()) return setStatus('Enter Employee ID');
+    if (!employeeId.trim()) return alert('Enter Employee ID');
     setLoading(true);
-    setStatus('Checking Identity...');
+    setStatus('Authenticating...');
 
     const cleanId = employeeId.trim();
-
-    // Check local cache first (Offline-First)
     const allEmployees = JSON.parse(localStorage.getItem('all_employees') || '[]');
     const cachedEmployee = allEmployees.find(e => e.employeeId === cleanId);
 
     try {
       const idInfo = await Device.getId();
       const devInfo = await Device.getInfo();
-
-      // Try to register/verify with server (Online sync)
       const res = await postJson(
         `${apiUrl}/device/register`,
         { employeeId: cleanId, deviceId: idInfo.identifier, deviceName: `${devInfo.model}` },
@@ -308,175 +262,272 @@ function App() {
       if (res.status === 200) {
         const empData = res.data.employee;
         const actualTenantId = res.data.tenantId || tenantId;
-
         setLoggedIn(true);
-        setTenantId(actualTenantId); // Update state to correct tenant
-
+        setTenantId(actualTenantId);
         localStorage.setItem('cached_id', empData.employeeId);
         localStorage.setItem('cached_name', empData.name);
-        localStorage.setItem('tenant_id', actualTenantId); // Save actual tenantId
-
-        setStatus('Ready!');
-        setLoading(false);
+        localStorage.setItem('tenant_id', actualTenantId);
+        setStatus('Login Success ✓');
         syncSystemData();
+        fetchTenantInfo();
+        setLoading(false);
         return;
       }
-    } catch (e) {
-      console.log('Server unreachable, switching to local auth...');
-    }
+    } catch (e) { console.log('Offline login...'); }
 
-    // Fallback to local cache if server is down
     if (cachedEmployee) {
       setLoggedIn(true);
       localStorage.setItem('cached_id', cachedEmployee.employeeId);
       localStorage.setItem('cached_name', cachedEmployee.name);
-      setStatus('Welcome (Offline Mode)');
+      setStatus('Offline Access ✓');
     } else {
-      alert('Kailangan mag-online sa unang login para ma-download ang Employee list.');
+      alert('Network required for the initial login to download employee records.');
     }
     setLoading(false);
   };
 
   const recordAttendance = async (type) => {
-    if (!selectedDepartment) return setStatus('Select Dept');
+    if (!selectedDepartment) return alert('Please select a branch first!');
     const dept = departments.find(d => d.departmentId === selectedDepartment);
-    if (!dept) return setStatus('Dept not found');
+    if (!dept) return;
 
     setLoading(true);
-    setStatus('📡 Finding your location...');
+    setStatus('📡 Checking Location...');
 
     let pos;
     try {
-      // 1. GET GPS COORDINATES (Try High Accuracy first)
-      pos = await Geolocation.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      });
-    } catch (gpsError) {
-      console.log('High accuracy failed, trying fallback...');
+      pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+    } catch (e) {
       try {
-        // Fallback to network-based location
-        pos = await Geolocation.getCurrentPosition({
-          enableHighAccuracy: false,
-          timeout: 10000
-        });
-      } catch (err2) {
+        pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 10000 });
+      } catch (err) {
         setStatus('❌ GPS Error');
-        alert('ERROR: Hindi makuha ang location. Siguraduhing naka-ON ang Location/GPS ng iyong phone.');
+        alert('LOCATION ERROR: Please enable GPS on your mobile device.');
         setLoading(false);
         return;
       }
     }
 
+    const dist = calculateDistance(pos.coords.latitude, pos.coords.longitude, dept.pinLatitude, dept.pinLongitude);
+    const allowedRadius = dept.radiusMeters || 50;
+
+    if (dist > allowedRadius) {
+      setStatus('❌ Too Far');
+      alert(`ACCESS DENIED!\n\nYou are ${Math.round(dist)}m away from ${dept.name}.\nYou must be within ${allowedRadius}m.`);
+      setLoading(false);
+      return;
+    }
+
+    const logData = {
+      employeeId: localStorage.getItem('cached_id'),
+      employeeName: localStorage.getItem('cached_name'),
+      departmentId: selectedDepartment,
+      departmentName: dept.name,
+      type,
+      timestamp: new Date().toISOString(),
+      distanceMeters: Math.round(dist),
+      tenantId
+    };
+
+    setStatus('💾 Saving log...');
+
     try {
-      const userLat = pos.coords.latitude;
-      const userLon = pos.coords.longitude;
-
-      // 2. CALCULATE DISTANCE
-      const dist = calculateDistance(userLat, userLon, dept.pinLatitude, dept.pinLongitude);
-      const allowedRadius = dept.radiusMeters || 50;
-
-      // 3. RADIUS CHECK (With Debug Info for the User)
-      if (dist > allowedRadius) {
-        setStatus('❌ Too Far');
-        alert(`ACCESS DENIED!\n\nNasa ${Math.round(dist)}m ka mula sa ${dept.name}.\nDapat ay nasa loob ka ng ${allowedRadius}m.\n\nYour Pos: ${userLat.toFixed(4)}, ${userLon.toFixed(4)}\nDept Pos: ${dept.pinLatitude.toFixed(4)}, ${dept.pinLongitude.toFixed(4)}`);
-        setLoading(false);
-        return;
-      }
-
-      setStatus('🛰️ Sending to Server...');
-
-      // 4. SEND TO SERVER
-      const response = await postJson(
-        `${apiUrl}/timein`,
-        {
-          employeeId,
-          employeeName: localStorage.getItem('cached_name'),
-          departmentId: selectedDepartment,
-          departmentName: dept.name,
-          type,
-          timestamp: new Date().toISOString(),
-          distanceMeters: Math.round(dist),
-          tenantId
-        },
-        { 'x-tenant-id': tenantId }
-      );
-
+      const response = await postJson(`${apiUrl}/timein`, logData, { 'x-tenant-id': tenantId });
       if (response.status === 200) {
-        setStatus(`Approved: ${type} ✓`);
-        alert(`SUCCESS!\n\nAng iyong ${type} sa ${dept.name} ay matagumpay na na-record.`);
-      } else {
-        setStatus('❌ Server Rejected');
-        alert('SERVER ERROR: ' + (response.data?.error || 'Unknown Error'));
-      }
-    } catch (connError) {
-      console.error(connError);
-      setStatus('❌ Connection Error');
-      alert(`HINDI MAKA-CONNECT!\n\nURL: ${apiUrl}\n\nSiguraduhing naka-ON ang system sa laptop at tama ang Server Link.`);
+        setStatus(`${type} Success ✓`);
+        alert(`SUCCESS!\n\nYour ${type} has been recorded on the server.`);
+        syncSystemData();
+      } else throw new Error('Reject');
+    } catch (err) {
+      const currentPending = JSON.parse(localStorage.getItem('pending_logs') || '[]');
+      const updatedPending = [...currentPending, logData];
+      localStorage.setItem('pending_logs', JSON.stringify(updatedPending));
+      setPendingLogs(updatedPending);
+      setStatus('Log Cached ✓');
+      alert(`OFFLINE SUCCESS!\n\nYour ${type} is saved on your phone. It will sync automatically when the server is online.`);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '20px'}}>
-      <header style={{textAlign: 'center', marginBottom: '30px'}} onDoubleClick={() => {
-        const url = prompt('Server API:', apiUrl);
-        if(url) { setApiUrl(url); localStorage.setItem('server_url', url); location.reload(); }
-      }}>
-        <div style={{fontSize: '0.7rem', color: '#3b82f6', fontWeight: 'bold', marginBottom: '5px'}}>WORKER PORTAL</div>
-        <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-          <p>{pendingLogs.length} unsynced</p>
-          <button
-            onClick={syncSystemData}
-            disabled={isSyncing}
-            style={{padding:'4px 8px', fontSize:'0.7rem', background:'rgba(59, 130, 246, 0.2)', border:'1px solid #3b82f6', color:'white', borderRadius:'6px'}}
-          >
-            {isSyncing ? '...' : 'Refresh'}
-          </button>
+    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 40px 15px', fontFamily: 'system-ui, -apple-system, sans-serif'}}>
+      <style>{`
+        body { background: #0f172a !important; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); padding: 30px 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 18px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s; box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1.1rem; letter-spacing: 0.5px; text-transform: uppercase; }
+        .btn-primary:active { transform: scale(0.97); }
+        .input-field { width: 100%; padding: 18px; margin-bottom: 20px; border-radius: 18px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1.1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
+        .input-field:focus { border-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
+        select.input-field { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 15px center; background-size: 20px; }
+        .badge { padding: 8px 16px; border-radius: 14px; font-size: 0.75rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+        .badge-pending { background: #f59e0b; color: #fff; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+        .badge-online { background: #10b981; color: #fff; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.9); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); padding: 20px; }
+        .modal-content { background: #1e293b; width: 100%; max-width: 400px; max-height: 80vh; border-radius: 32px; padding: 35px; border: 1px solid rgba(255,255,255,0.1); overflow-y: auto; position: relative; box-shadow: 0 30px 60px rgba(0,0,0,0.6); }
+        .log-item { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 18px 0; display: flex; justify-content: space-between; align-items: center; }
+        .label-visible { color: #94a3b8; font-size: 0.75rem; font-weight: 800; margin-bottom: 10px; display: block; letter-spacing: 1.5px; text-transform: uppercase; }
+        .fade-in { animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
+      {/* TOP COMPANY HEADER - ULTRA VISIBLE */}
+      <div style={{textAlign: 'center', padding: '15px 0 25px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '20px'}}>
+          <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px'}}>Official System</div>
+          <h1 style={{fontSize: '1.4rem', margin: 0, fontWeight: '900', color: '#fff', letterSpacing: '0.5px'}}>
+             {tenantInfo ? tenantInfo.companyName.toUpperCase() : 'TIMEKEY Hub'}
+          </h1>
+      </div>
+
+      <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '20px'}} onDoubleClick={handleUpdateServer}>
+        <div>
+          <div style={{fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '1.5px', fontWeight: '800'}}>NETWORK</div>
+          <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px'}}>
+            <div style={{width: '10px', height: '10px', borderRadius: '50%', background: isServerDown ? '#ef4444' : '#10b981', boxShadow: isServerDown ? '0 0 10px #ef4444' : '0 0 10px #10b981'}}></div>
+            <span style={{fontSize: '0.85rem', fontWeight: '900', color: isServerDown ? '#fca5a5' : '#34d399'}}>{isServerDown ? 'OFFLINE' : 'ONLINE'}</span>
+          </div>
+        </div>
+        <div style={{textAlign: 'right'}}>
+          <div style={{fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '1.5px', fontWeight: '800'}}>SYNC QUEUE</div>
+          <div style={{marginTop: '4px'}}>
+            <span className={`badge ${pendingLogs.length > 0 ? 'badge-pending' : 'badge-online'}`}>
+               {pendingLogs.length} PENDING
+            </span>
+          </div>
         </div>
       </header>
 
       {!loggedIn ? (
-        <div className="card" style={{background: '#1e293b', padding: '20px', borderRadius: '15px'}}>
-          <h2 style={{fontSize: '1.2rem', marginBottom: '20px'}}>Employee Sign In</h2>
-          <input value={employeeId} onChange={e => setEmployeeId(e.target.value)} placeholder="Employee ID" style={{width: '100%', padding: '12px', marginBottom: '15px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: 'white'}} />
-          <button onClick={login} disabled={loading} style={{width: '100%', padding: '12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold'}}>
-            {loading ? 'Verifying...' : 'Sign In'}
+        <div className="glass-card fade-in" style={{padding: '40px 30px'}}>
+          <div style={{textAlign: 'center', marginBottom: '40px'}}>
+             <div style={{fontSize: '4.5rem', marginBottom: '15px', filter: 'drop-shadow(0 10px 15px rgba(0,0,0,0.3))'}}>🛡️</div>
+             <h1 style={{fontSize: '1.8rem', margin: 0, fontWeight: '900', color: '#fff'}}>Security Hub</h1>
+             <p style={{color: '#94a3b8', fontSize: '0.9rem', marginTop: '5px'}}>Secure Employee Access</p>
+          </div>
+
+          <div className="form-group">
+            <span className="label-visible">EMPLOYEE IDENTIFICATION</span>
+            <input
+              value={employeeId}
+              onChange={e => setEmployeeId(e.target.value)}
+              placeholder="Ex: 0001"
+              className="input-field"
+              style={{textAlign: 'center', fontSize: '1.2rem', letterSpacing: '2px'}}
+            />
+          </div>
+
+          <button onClick={login} disabled={loading} className="btn-primary" style={{marginTop: '10px'}}>
+            {loading ? 'VERIFYING...' : 'SIGN IN TO PORTAL'}
           </button>
         </div>
       ) : (
-        <div className="card" style={{background: '#1e293b', padding: '20px', borderRadius: '15px'}}>
-          <div style={{marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '10px'}}>
-            <div style={{fontSize: '0.8rem', color: '#64748b'}}>Welcome,</div>
-            <div style={{fontSize: '1.1rem', fontWeight: 'bold'}}>{localStorage.getItem('cached_name')}</div>
+        <div className="glass-card fade-in">
+          <div style={{display: 'flex', alignItems: 'center', gap: '18px', marginBottom: '30px', background: 'rgba(255,255,255,0.05)', padding: '15px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)'}}>
+            <div style={{width: '60px', height: '60px', borderRadius: '18px', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'}}>👤</div>
+            <div>
+              <span className="label-visible" style={{marginBottom: '2px'}}>EMPLOYEE NAME</span>
+              <div style={{fontSize: '1.3rem', fontWeight: '900', color: '#fff'}}>{localStorage.getItem('cached_name')}</div>
+            </div>
           </div>
 
-          <select value={selectedDepartment} onChange={e => setSelectedDepartment(e.target.value)} style={{width: '100%', padding: '12px', marginBottom: '20px', borderRadius: '8px', background: '#0f172a', color: 'white', border: '1px solid #334155'}}>
-            <option value="">Choose Department</option>
-            {departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
-          </select>
+          <div className="form-group" style={{marginBottom: '25px'}}>
+            <span className="label-visible">SELECT WORK BRANCH</span>
+            <select
+              value={selectedDepartment}
+              onChange={e => setSelectedDepartment(e.target.value)}
+              className="input-field"
+              style={{marginBottom: 0, cursor: 'pointer'}}
+            >
+              <option value="" style={{color: '#000'}}>-- Choose Branch --</option>
+              {departments.map(d => <option key={d.departmentId} value={d.departmentId} style={{color: '#000'}}>{d.name}</option>)}
+            </select>
+          </div>
 
-          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px'}}>
-            <button onClick={() => recordAttendance('IN')} disabled={loading} style={{padding: '20px', background: '#10b981', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1.2rem'}}>TIME IN</button>
-            <button onClick={() => recordAttendance('OUT')} disabled={loading} style={{padding: '20px', background: '#f59e0b', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1.2rem'}}>TIME OUT</button>
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px'}}>
+            <button
+              onClick={() => recordAttendance('IN')}
+              disabled={loading}
+              style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '24px', fontWeight: '900', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '25px 10px', transition: '0.3s', boxShadow: '0 8px 20px rgba(16, 185, 129, 0.3)'}}
+            >
+              <span style={{fontSize: '2rem', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.2))'}}>📥</span>
+              <span style={{letterSpacing: '1px'}}>TIME IN</span>
+            </button>
+            <button
+              onClick={() => recordAttendance('OUT')}
+              disabled={loading}
+              style={{background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', borderRadius: '24px', fontWeight: '900', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '25px 10px', transition: '0.3s', boxShadow: '0 8px 20px rgba(245, 158, 11, 0.3)'}}
+            >
+              <span style={{fontSize: '2rem', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.2))'}}>📤</span>
+              <span style={{letterSpacing: '1px'}}>TIME OUT</span>
+            </button>
           </div>
 
           {selectedDepartment && departments.find(d => d.departmentId === selectedDepartment) && (
-            <div style={{fontSize: '0.7rem', color: '#64748b', marginBottom: '15px', textAlign: 'center', background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '8px'}}>
-              📍 Dept Pos: {departments.find(d => d.departmentId === selectedDepartment).pinLatitude.toFixed(4)}, {departments.find(d => d.departmentId === selectedDepartment).pinLongitude.toFixed(4)}
-              <br/>
-              📏 Target Radius: {departments.find(d => d.departmentId === selectedDepartment).radiusMeters || 50}m
+            <div style={{fontSize: '0.8rem', color: '#3b82f6', marginBottom: '25px', textAlign: 'center', background: 'rgba(59, 130, 246, 0.08)', padding: '15px', borderRadius: '18px', border: '1px dashed rgba(59, 130, 246, 0.4)', fontWeight: '700'}}>
+              📍 {departments.find(d => d.departmentId === selectedDepartment).name}
+              <div style={{fontSize: '0.65rem', marginTop: '6px', color: '#94a3b8', fontWeight: '500'}}>
+                GEOFENCE: {departments.find(d => d.departmentId === selectedDepartment).radiusMeters || 50}m Radius Active
+              </div>
             </div>
           )}
 
-          <button onClick={() => {setLoggedIn(false); localStorage.clear(); location.reload();}} style={{width: '100%', padding: '10px', background: 'transparent', color: '#64748b', border: '1px solid #334155', borderRadius: '8px'}}>Switch Account</button>
+          <button
+            onClick={() => { syncSystemData(); setShowLogsModal(true); }}
+            style={{width: '100%', padding: '18px', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '2px solid rgba(59, 130, 246, 0.3)', borderRadius: '18px', fontWeight: '800', marginBottom: '20px', cursor:'pointer', fontSize: '0.9rem', letterSpacing: '0.5px'}}
+          >
+            📋 VIEW RECENT LOGS
+          </button>
+
+          <button onClick={() => {setLoggedIn(false); localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}} style={{width: '100%', padding: '12px', background: 'transparent', color: '#475569', border: 'none', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '1px'}}>LOGOUT ACCOUNT</button>
         </div>
       )}
 
-      <footer style={{position: 'fixed', bottom: 0, left: 0, right: 0, padding: '10px', textAlign: 'center', fontSize: '0.7rem', color: '#475569'}}>
-        Status: {status}
+      {/* LOGS MODAL */}
+      {showLogsModal && (
+        <div className="modal-overlay" onClick={() => setShowLogsModal(false)}>
+          <div className="modal-content fade-in" onClick={e => e.stopPropagation()}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px'}}>
+               <h2 style={{marginTop:0, fontSize: '1.4rem', color: '#60a5fa', fontWeight: '900', margin: 0}}>Activity Logs</h2>
+               <button onClick={() => setShowLogsModal(false)} style={{background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', width: '35px', height: '35px', borderRadius: '50%', fontWeight: 'bold'}}>✕</button>
+            </div>
+            <div style={{margin: '0 0 30px 0'}}>
+               {personalLogs.length === 0 ? (
+                 <div style={{textAlign: 'center', color: '#475569', padding: '40px 0'}}>
+                    <div style={{fontSize: '3rem', marginBottom: '10px'}}>📅</div>
+                    <p style={{fontWeight: '700'}}>No history found yet.</p>
+                 </div>
+               ) : (
+                 personalLogs.slice().reverse().slice(0, 10).map((l, i) => (
+                   <div key={i} className="log-item">
+                     <div>
+                       <div style={{fontWeight:'900', fontSize:'1rem', color: '#fff'}}>{l.departmentName}</div>
+                       <div style={{fontSize:'0.75rem', color:'#94a3b8', marginTop: '2px', fontWeight: '600'}}>{new Date(l.timestamp).toLocaleDateString()} • {new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                     </div>
+                     <span style={{
+                       fontSize: '0.7rem',
+                       fontWeight: '900',
+                       padding: '6px 12px',
+                       borderRadius: '12px',
+                       background: l.type === 'IN' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                       color: l.type === 'IN' ? '#34d399' : '#fbbf24',
+                       border: `1px solid ${l.type === 'IN' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
+                     }}>
+                       {l.type === 'IN' ? 'TIME IN' : 'TIME OUT'}
+                     </span>
+                   </div>
+                 ))
+               )}
+            </div>
+            <button className="btn-primary" onClick={() => setShowLogsModal(false)}>BACK TO DASHBOARD</button>
+          </div>
+        </div>
+      )}
+
+      <footer style={{position: 'fixed', bottom: 0, left: 0, right: 0, padding: '15px', textAlign: 'center', fontSize: '0.65rem', color: '#475569', background: 'linear-gradient(to top, #0f172a 60%, transparent)', zIndex: 100}}>
+        <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px'}}>
+           <span style={{width: '8px', height: '8px', borderRadius: '50%', background: status.includes('✓') || status.includes('Online') ? '#10b981' : '#f59e0b', boxShadow: status.includes('✓') || status.includes('Online') ? '0 0 8px #10b981' : '0 0 8px #f59e0b', display: 'inline-block'}}></span>
+           <span style={{fontWeight: '800', letterSpacing: '0.5px', color: '#64748b'}}>{status.toUpperCase()}</span>
+        </div>
       </footer>
     </div>
   );

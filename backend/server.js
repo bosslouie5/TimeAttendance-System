@@ -177,7 +177,7 @@ app.post('/api/auth/web-login', (req, res) => {
           tenantId: tenantId,
           companyName: targetTenant.companyName,
           isConsultant: true,
-          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'reports', 'setup'] // Full Master Access
+          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'assign-branch', 'reports', 'setup'] // Full Master Access
         }
       });
     }
@@ -285,7 +285,22 @@ app.post('/api/master/broadcast-link', async (req, res) => {
 
 app.get('/api/master/logs', (req, res) => res.json(loadData().logs));
 app.get('/api/master/users', (req, res) => res.json(loadData().users));
-app.get('/api/master/employees', (req, res) => res.json(loadData().employees));
+app.get('/api/master/employees', (req, res) => {
+  const data = loadData();
+  const assignments = data.assignments || [];
+  const depts = data.departments || [];
+
+  const emps = data.employees.map(emp => {
+    const assignment = assignments.find(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
+    if (assignment) {
+      const dept = depts.find(d => d.departmentId === assignment.departmentId && d.tenantId === emp.tenantId);
+      return { ...emp, branchName: dept ? dept.name : (emp.branchName || '') };
+    }
+    return emp;
+  });
+
+  res.json(emps);
+});
 app.get('/api/master/departments', (req, res) => res.json(loadData().departments));
 app.get('/api/master/org-units', (req, res) => res.json(loadData().orgUnits));
 
@@ -330,7 +345,7 @@ app.get('/api/employees', tenantGuard, (req, res) => {
     const assignment = assignments.find(a => a.employeeId === emp.employeeId && a.tenantId === req.tenantId);
     if (assignment) {
       const dept = depts.find(d => d.departmentId === assignment.departmentId);
-      return { ...emp, departmentName: dept ? dept.name : 'Unknown Dept' };
+      return { ...emp, branchName: dept ? dept.name : (emp.branchName || '') };
     }
     return emp;
   });
@@ -424,14 +439,23 @@ app.post('/api/assignments', tenantGuard, (req, res) => {
   const data = loadData();
   if (!data.assignments) data.assignments = [];
   const tenantId = req.tenantId || 'master';
+  const { employeeId, departmentId } = req.body;
 
-  // Only remove if it's the EXACT same assignment (Employee + Dept) to avoid duplicates
+  // 1. Update assignments array (one assignment per employee per tenant)
   data.assignments = data.assignments.filter(a =>
-    !(a.employeeId === req.body.employeeId && a.departmentId === req.body.departmentId && a.tenantId === tenantId)
+    !(a.employeeId === employeeId && a.tenantId === tenantId)
   );
 
-  const newAssignment = { ...req.body, tenantId };
+  const newAssignment = { employeeId, departmentId, tenantId };
   data.assignments.push(newAssignment);
+
+  // 2. Sync branchName to employee record for instant display in Master Lists
+  const empIndex = data.employees.findIndex(e => e.employeeId === employeeId && e.tenantId === tenantId);
+  if (empIndex !== -1) {
+    const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
+    data.employees[empIndex].branchName = dept ? dept.name : '';
+  }
+
   saveData(data);
   res.json({ success: true });
 });
@@ -535,8 +559,15 @@ app.post('/api/device/register', tenantGuard, (req, res) => {
 app.post('/api/device/reset', tenantGuard, (req, res) => {
   const { employeeId } = req.body;
   const data = loadData();
-  const employee = data.employees.find(e => e.employeeId === employeeId);
-  if (employee) { delete employee.registeredDeviceId; saveData(data); res.json({ success: true }); }
+  const tenantId = req.tenantId || 'master';
+  const employee = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
+  if (employee) {
+    delete employee.registeredDeviceId;
+    delete employee.registeredDeviceName;
+    delete employee.registrationDate;
+    saveData(data);
+    res.json({ success: true });
+  }
   else res.status(404).json({ error: 'Not found' });
 });
 
@@ -911,6 +942,11 @@ app.get('/api/settings', (req, res) => res.json({ currentSystemIp: getNetworkIP(
 
 app.use('/dev', express.static(webDevDist));
 app.get('/dev/*', (req, res) => res.sendFile(path.join(webDevDist, 'index.html')));
+
+// --- MOBILE APP SERVICE ---
+app.use('/app', express.static(mobileDist));
+app.get('/app/*', (req, res) => res.sendFile(path.join(mobileDist, 'index.html')));
+
 app.use('/', express.static(webAdminDist));
 app.get('/*', (req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/apks')) return;

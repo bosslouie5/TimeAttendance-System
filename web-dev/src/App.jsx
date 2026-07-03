@@ -77,6 +77,8 @@ function App() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [isViewingLogs, setIsViewingLogs] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [installTarget, setInstallTarget] = useState(null);
   const [tenantSearch, setTenantSearch] = useState('');
   const [empSearch, setEmpSearch] = useState('');
   const [selectedEmpTenant, setSelectedEmpTenant] = useState('ALL');
@@ -97,6 +99,9 @@ function App() {
   // New Employee Modal States
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
   const [isEditingEmp, setIsEditingEmp] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
+  const [selectedAssignBranch, setSelectedAssignBranch] = useState('');
   const [empStatus, setEmpStatus] = useState('Active');
   const [empDepartment, setEmpDepartment] = useState('');
   const [empJobTitle, setEmpJobTitle] = useState('');
@@ -486,6 +491,43 @@ function App() {
     } catch (e) { setStatus('Error deleting department'); }
   };
 
+  const resetEmployeeDevice = async (tenantId, employeeId) => {
+    if (!confirm(`Are you sure you want to UNLINK the device for employee ${employeeId}? They will be able to register a new device upon next login.`)) return;
+    setStatus('Resetting device...');
+    try {
+      const res = await fetch(`${activeApiBase}/device/reset?tenantId=${tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ employeeId })
+      });
+      if (res.ok) {
+        setStatus('Device Unlinked ✓');
+        loadInitialData();
+      }
+    } catch (e) { setStatus('Error resetting device'); }
+  };
+
+  const saveAssignment = async () => {
+    if (!selectedAssignBranch) return alert('Select a branch first');
+    setStatus('Assigning branch...');
+    try {
+      const res = await fetch(`${activeApiBase}/assignments?tenantId=${selectedAssignEmp.tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedAssignEmp.tenantId },
+        body: JSON.stringify({
+          employeeId: selectedAssignEmp.employeeId,
+          departmentId: selectedAssignBranch,
+          tenantId: selectedAssignEmp.tenantId
+        })
+      });
+      if (res.ok) {
+        setStatus('Branch Assigned! ✓');
+        setIsAssignModalOpen(false);
+        loadInitialData();
+      }
+    } catch (e) { setStatus('Error assigning branch'); }
+  };
+
   const provisionPortal = async () => {
     if (!newCompanyName || !newUsername || !newPassword) return setStatus('Fill all required fields');
     try {
@@ -611,7 +653,14 @@ function App() {
   };
 
   const installAndRunApk = async (tenantId, companyName) => {
-    setStatus(`📲 Building, installing and launching ${companyName}...`);
+    setInstallTarget({ tenantId, companyName });
+    setIsInstallModalOpen(true);
+  };
+
+  const confirmAndroidInstall = async () => {
+    const { tenantId, companyName } = installTarget;
+    setStatus(`📲 Installing ${companyName} to Android...`);
+    setIsInstallModalOpen(false);
     try {
       const res = await fetch(`${API_BASE}/master/build-and-run-apk`, {
         method: 'POST',
@@ -915,7 +964,8 @@ function App() {
             <MenuItem onClick={() => { setActiveTab('tenant-permissions'); setIsMenuOpen(false); }}>🛡️ Tenant Permissions</MenuItem>
             <MenuItem onClick={() => { setActiveTab('org-departments'); setIsMenuOpen(false); }}>🏢 Department Management</MenuItem>
             <MenuItem onClick={() => { setActiveTab('branches'); setIsMenuOpen(false); }}>📍 Branch Setup</MenuItem>
-            <MenuItem onClick={() => { setActiveTab('employees'); setIsMenuOpen(false); }}>📇 Employee Data</MenuItem>
+            <MenuItem onClick={() => { setActiveTab('assign-branch'); setIsMenuOpen(false); }}>🔗 Assign Branch</MenuItem>
+            <MenuItem onClick={() => { setActiveTab('devices'); setIsMenuOpen(false); }}>📱 Registered Devices</MenuItem>
             <MenuItem onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}>📊 View Reports</MenuItem>
             <MenuItem onClick={() => { setActiveTab('settings'); setIsMenuOpen(false); }}>🛠️ System Settings</MenuItem>
             <MenuItem onClick={handleDevLogout} style={{color:'#ef4444', borderTop:'1px solid #334155'}}>🏃 Logout Session</MenuItem>
@@ -968,6 +1018,8 @@ function App() {
           {activeTab === 'tenants' && '👥 Tenant Management'}
           {activeTab === 'org-departments' && '🏢 Department Management'}
           {activeTab === 'branches' && '📍 Branch Setup'}
+          {activeTab === 'assign-branch' && '🔗 Employee Branch Assignment'}
+          {activeTab === 'devices' && '📱 Registered Device Management'}
           {activeTab === 'employees' && '📇 Employee Master List'}
           {activeTab === 'reports' && '📊 Attendance Analytics & Reports'}
           {activeTab === 'settings' && '🛠️ System Settings'}
@@ -1095,6 +1147,30 @@ function App() {
             <p style={{fontSize:'0.9rem', color:'#64748b', margin:0}}>Generate and export detailed attendance reports for any company.</p>
             <button style={{marginTop:'20px', width:'100%', background:'#10b981', color:'white', border:'none', padding:'12px', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Open Module</button>
           </div>
+
+          <div
+            onClick={() => setActiveTab('assign-branch')}
+            style={{background:'#1e293b', padding:'30px', borderRadius:'15px', border:'1px solid #334155', cursor:'pointer', transition:'0.3s'}}
+            onMouseOver={e => e.currentTarget.style.borderColor='#3b82f6'}
+            onMouseOut={e => e.currentTarget.style.borderColor='#334155'}
+          >
+            <div style={{fontSize:'3rem', marginBottom:'15px'}}>🔗</div>
+            <h3 style={{margin:'0 0 10px 0'}}>Assign Branch</h3>
+            <p style={{fontSize:'0.9rem', color:'#64748b', margin:0}}>Map employees to specific geofenced office locations.</p>
+            <button style={{marginTop:'20px', width:'100%', background:'#3b82f6', color:'white', border:'none', padding:'12px', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Open Module</button>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('devices')}
+            style={{background:'#1e293b', padding:'30px', borderRadius:'15px', border:'1px solid #334155', cursor:'pointer', transition:'0.3s'}}
+            onMouseOver={e => e.currentTarget.style.borderColor='#10b981'}
+            onMouseOut={e => e.currentTarget.style.borderColor='#334155'}
+          >
+            <div style={{fontSize:'3rem', marginBottom:'15px'}}>📱</div>
+            <h3 style={{margin:'0 0 10px 0'}}>Registered Devices</h3>
+            <p style={{fontSize:'0.9rem', color:'#64748b', margin:0}}>Manage and unlink mobile devices tied to staff accounts.</p>
+            <button style={{marginTop:'20px', width:'100%', background:'#10b981', color:'white', border:'none', padding:'12px', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Open Module</button>
+          </div>
         </div>
       </>
       )}
@@ -1207,6 +1283,8 @@ function App() {
                   <PermissionToggle label="👥 Employee Data Module" perm="employees" tenant={selectedTenant} onToggle={updatePermissions} />
                   <PermissionToggle label="🏢 Department Management" perm="org-units" tenant={selectedTenant} onToggle={updatePermissions} />
                   <PermissionToggle label="📍 Branch Setup (Geofence)" perm="branches" tenant={selectedTenant} onToggle={updatePermissions} />
+                  <PermissionToggle label="🔗 Branch Assignment Module" perm="assign-branch" tenant={selectedTenant} onToggle={updatePermissions} />
+                  <PermissionToggle label="📱 Device Management Module" perm="devices" tenant={selectedTenant} onToggle={updatePermissions} />
                   <PermissionToggle label="📊 Attendance Reports" perm="reports" tenant={selectedTenant} onToggle={updatePermissions} />
                 </div>
 
@@ -1742,8 +1820,20 @@ function App() {
               </select>
             </label>
 
-            <label style={{color:'#64748b', fontSize:'0.8rem'}}>Search {reportBy}:
-              <input style={inputStyle} placeholder={`Search ${reportBy}...`} value={reportSearch} onChange={e => setReportSearch(e.target.value)} />
+            <label style={{color:'#64748b', fontSize:'0.8rem'}}>{reportBy === 'Branch' ? 'Select Branch:' : `Search ${reportBy}:`}
+              {reportBy === 'Branch' ? (
+                <select style={inputStyle} value={reportSearch} onChange={e => setReportSearch(e.target.value)}>
+                  <option value="">-- All Branches --</option>
+                  {departments
+                    .filter(d => reportTenantId === 'ALL' || d.tenantId === reportTenantId)
+                    .map(d => (
+                      <option key={d.departmentId} value={d.name}>{d.name}</option>
+                    ))
+                  }
+                </select>
+              ) : (
+                <input style={inputStyle} placeholder={`Search ${reportBy}...`} value={reportSearch} onChange={e => setReportSearch(e.target.value)} />
+              )}
             </label>
 
             <label style={{color:'#64748b', fontSize:'0.8rem'}}>Start From:
@@ -1810,6 +1900,198 @@ function App() {
         </div>
       )}
 
+      {activeTab === 'assign-branch' && (
+        <div className="fade-in" style={{background:'#1e293b', padding:'30px', borderRadius:'12px', border:'1px solid #334155'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+            <h2 style={{margin:0}}>🔗 Employee Branch Assignment</h2>
+            <div style={{display:'flex', gap:'10px'}}>
+               <select
+                  style={{...inputStyle, marginTop:0, width:'250px'}}
+                  value={selectedEmpTenant}
+                  onChange={e => setSelectedEmpTenant(e.target.value)}
+               >
+                  <option value="ALL">-- Select Company --</option>
+                  {users.map(u => (
+                    <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                      {u.companyName}
+                    </option>
+                  ))}
+               </select>
+               <input
+                  placeholder="🔍 Search staff..."
+                  style={{...inputStyle, marginTop:0, width:'300px'}}
+                  value={empSearch}
+                  onChange={e => setEmpSearch(e.target.value)}
+               />
+            </div>
+          </div>
+
+          <div style={{maxHeight:'70vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'8px', background:'#0f172a'}}>
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Full Name</th>
+                  <th>Current Assignment</th>
+                  <th>Tenant</th>
+                  <th style={{textAlign:'center'}}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees
+                  .filter(e => selectedEmpTenant === 'ALL' || e.tenantId === selectedEmpTenant)
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
+                    <tr key={idx}>
+                      <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                      <td>{e.name}</td>
+                      <td>
+                        {e.branchName ? (
+                          <span style={{background:'#e0f2fe', color:'#0369a1', padding:'2px 8px', borderRadius:'4px', fontSize:'0.75rem', fontWeight:'bold'}}>
+                             📍 {e.branchName}
+                          </span>
+                        ) : (
+                          <span style={{color:'#64748b', fontSize:'0.8rem'}}>No Branch Assigned</span>
+                        )}
+                      </td>
+                      <td><span style={{fontSize:'0.8rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName}</span></td>
+                      <td style={{textAlign:'center'}}>
+                        <button
+                          onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranch(''); setIsAssignModalOpen(true); }}
+                          style={{...smallBtn, background:'#8b5cf6', padding:'8px 15px'}}
+                          className="btn-hover"
+                        >
+                          Change Branch
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ASSIGN BRANCH MODAL */}
+      {isAssignModalOpen && selectedAssignEmp && (
+        <div className="modal-overlay">
+          <div className="modal-content fade-in" style={{maxWidth:'500px'}}>
+            <h2 style={{marginTop:0, color:'#8b5cf6'}}>🔗 Assign Geofence Branch</h2>
+            <p style={{color:'#64748b', marginBottom:'25px'}}>
+              Setting location for: <b style={{color:'white'}}>{selectedAssignEmp.name}</b> (ID: {selectedAssignEmp.employeeId})
+            </p>
+
+            <label style={{color:'#64748b', fontSize:'0.8rem'}}>Select Work Location (Branch)
+              <select
+                style={inputStyle}
+                value={selectedAssignBranch}
+                onChange={e => setSelectedAssignBranch(e.target.value)}
+              >
+                <option value="">-- Choose Branch --</option>
+                {departments
+                  .filter(d => d.tenantId === selectedAssignEmp.tenantId)
+                  .map(d => (
+                    <option key={d.departmentId} value={d.departmentId}>{d.name} ({d.radiusMeters}m Geofence)</option>
+                  ))
+                }
+              </select>
+            </label>
+
+            <div style={{marginTop:'25px', padding:'15px', background:'rgba(139, 92, 246, 0.05)', border:'1px dashed #8b5cf6', borderRadius:'10px', fontSize:'0.85rem', color:'#94a3b8'}}>
+               <b>Note:</b> Once assigned, the employee can only check-in within the geofenced radius of this branch.
+            </div>
+
+            <div style={{display:'flex', gap:'10px', marginTop:'30px'}}>
+               <button onClick={saveAssignment} style={{...addBtn, background:'#8b5cf6', flex:1}}>Save Assignment</button>
+               <button onClick={() => setIsAssignModalOpen(false)} style={{...addBtn, background:'#475569'}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'devices' && (
+        <div className="fade-in" style={{background:'#1e293b', padding:'30px', borderRadius:'12px', border:'1px solid #334155'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+            <h2 style={{margin:0}}>📱 Registered Device Management</h2>
+            <div style={{display:'flex', gap:'10px'}}>
+               <select
+                  style={{...inputStyle, marginTop:0, width:'250px'}}
+                  value={selectedEmpTenant}
+                  onChange={e => setSelectedEmpTenant(e.target.value)}
+               >
+                  <option value="ALL">-- Select Company --</option>
+                  {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
+               </select>
+               <input
+                  placeholder="🔍 Search name or ID..."
+                  style={{...inputStyle, marginTop:0, width:'300px'}}
+                  value={empSearch}
+                  onChange={e => setEmpSearch(e.target.value)}
+               />
+            </div>
+          </div>
+
+          <div style={{maxHeight:'70vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'8px', background:'#0f172a'}}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee ID</th>
+                  <th>Full Name</th>
+                  <th>Linked Device</th>
+                  <th>Registration Date</th>
+                  <th>Company</th>
+                  <th style={{textAlign:'center'}}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees
+                  .filter(e => selectedEmpTenant === 'ALL' || e.tenantId === selectedEmpTenant)
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
+                    <tr key={idx}>
+                      <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                      <td>{e.name}</td>
+                      <td>
+                        {e.registeredDeviceId ? (
+                          <div style={{display:'flex', flexDirection:'column'}}>
+                            <span style={{color:'#10b981', fontWeight:'bold'}}>Linked: {e.registeredDeviceName || 'Mobile Device'}</span>
+                            <span style={{fontSize:'0.65rem', color:'#64748b'}}>UID: {e.registeredDeviceId}</span>
+                          </div>
+                        ) : (
+                          <span style={{color:'#64748b', fontStyle:'italic'}}>No Device Linked</span>
+                        )}
+                      </td>
+                      <td>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : '-'}</td>
+                      <td><span style={{fontSize:'0.8rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName}</span></td>
+                      <td style={{textAlign:'center'}}>
+                        {e.registeredDeviceId ? (
+                          <button
+                            onClick={() => resetEmployeeDevice(e.tenantId, e.employeeId)}
+                            style={{...smallBtn, background:'#ef4444', padding:'8px 15px'}}
+                            className="btn-hover"
+                          >
+                            Unlink Device
+                          </button>
+                        ) : (
+                          <button disabled style={{...smallBtn, background:'#334155', cursor:'not-allowed', opacity:0.5}}>Ready for Pair</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'settings' && (
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}} className="fade-in">
           {/* My Account Section */}
@@ -1864,6 +2146,58 @@ function App() {
           </div>
         </div>
       )}
+      {/* INSTALLATION MODAL (UNIVERSAL) */}
+      {isInstallModalOpen && installTarget && (
+        <div className="modal-overlay">
+          <div className="modal-content fade-in" style={{maxWidth:'500px', textAlign:'center'}}>
+            <h2 style={{marginTop:0, color:'#3b82f6', fontWeight:'900'}}>📲 UNIVERSAL INSTALLER</h2>
+            <p style={{color:'#94a3b8', marginBottom:'25px'}}>Select the device type for <b>{installTarget.companyName}</b></p>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr', gap:'15px'}}>
+               {/* ANDROID OPTION */}
+               <div
+                 onClick={confirmAndroidInstall}
+                 className="btn-hover"
+                 style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'2px solid #3b82f6', cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', gap:'15px'}}
+               >
+                 <div style={{fontSize:'2.5rem'}}>🤖</div>
+                 <div>
+                    <div style={{fontWeight:'900', color:'#fff'}}>Android (Auto-Push)</div>
+                    <div style={{fontSize:'0.75rem', color:'#64748b'}}>Requires USB Cable & ADB Connection</div>
+                 </div>
+               </div>
+
+               {/* IOS / QR OPTION */}
+               <div
+                 className="btn-hover"
+                 style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'2px solid #ef4444', cursor:'default', textAlign:'left', display:'flex', alignItems:'center', gap:'15px'}}
+               >
+                 <div style={{fontSize:'2.5rem'}}>🍎</div>
+                 <div style={{flex:1}}>
+                    <div style={{fontWeight:'900', color:'#fff'}}>iOS / iPhone (QR Setup)</div>
+                    <div style={{fontSize:'0.75rem', color:'#64748b'}}>Scan QR to install via Safari PWA</div>
+                    <div style={{marginTop:'15px', background:'#fff', padding:'10px', borderRadius:'10px', display:'inline-block'}}>
+                       <img
+                         src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent((activeApiBase?.replace('/api', '') || window.location.origin) + '/app')}`}
+                         alt="QR Code"
+                         style={{width:'150px', height:'150px'}}
+                       />
+                    </div>
+                    <div style={{fontSize:'0.65rem', color:'#fca5a5', marginTop:'10px', fontWeight:'bold'}}>TIP: Open in Safari then select "Add to Home Screen"</div>
+                 </div>
+               </div>
+            </div>
+
+            <button
+              onClick={() => setIsInstallModalOpen(false)}
+              style={{marginTop:'25px', width:'100%', padding:'15px', background:'transparent', color:'#64748b', border:'1px solid #334155', borderRadius:'12px', fontWeight:'bold', cursor:'pointer'}}
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* NEW EMPLOYEE MODAL */}
       {isAddEmpModalOpen && (
         <div className="modal-overlay">
