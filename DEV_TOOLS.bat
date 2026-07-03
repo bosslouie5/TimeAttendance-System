@@ -153,6 +153,10 @@ if exist "web-dev\dist-test" (
     if exist "web-dev\dist" rd /s /q "web-dev\dist"
     xcopy /s /i /y "web-dev\dist-test" "web-dev\dist"
 )
+if exist "web-admin\dist-test" (
+    if exist "web-admin\dist" rd /s /q "web-admin\dist"
+    xcopy /s /i /y "web-admin\dist-test" "web-admin\dist"
+)
 echo [%GREEN%SUCCESS%RESET%] Lab is now synced to Production!
 pause
 goto MENU
