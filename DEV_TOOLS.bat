@@ -1,5 +1,5 @@
 @echo off
-title TIMEKEY MASTER TOOLBOX (V5.6)
+title TIMEKEY MASTER TOOLBOX (V5.7)
 setlocal enabledelayedexpansion
 
 :: COLORS
@@ -21,16 +21,16 @@ set "PATH=%NODE_PATH%;%DEV_TOOLS%\platform-tools;%PATH%"
 :MENU
 cls
 echo %CYAN%======================================================%RESET%
-echo           TIMEKEY MASTER TOOLBOX (V5.6)
+echo           TIMEKEY MASTER TOOLBOX (V5.7)
 echo %CYAN%======================================================%RESET%
 echo.
-echo  [1] %GREEN%🚀 DEPLOY ALL TO WEB (Admin, Dev, & App)%RESET%
+echo  [1] %GREEN%🚀 DEPLOY ALL TO WEB (Admin, Dev, and App)%RESET%
 echo  [2] %YELLOW%🧪 RUN TEST LAB (PORT 4002)%RESET%
 echo  [3] %CYAN%🔨 REBUILD ALL LAB UI (PORT 4002)%RESET%
 echo  [4] %MAGENTA%🔄 SYNC LAB TO PRODUCTION%RESET%
 echo.
 echo  [S] %CYAN%🌐 START SAAS HUB (PORT 4001)%RESET%
-echo  [6] %RED%🛑 STOP EVERYTHING (Kill Server ^& Browser)%RESET%
+echo  [6] %RED%🛑 STOP EVERYTHING (Kill Server and Browser)%RESET%
 echo  [7] EXIT
 echo.
 echo %CYAN%------------------------------------------------------%RESET%
@@ -44,13 +44,6 @@ if /i "%choice%"=="S" goto SAAS_START
 if "%choice%"=="6" goto STOP_ALL
 if "%choice%"=="7" exit
 goto MENU
-
-:LOADING
-echo.
-echo %CYAN%  [ NINJA LOADING ] %RESET%
-echo %YELLOW%  Preparing Deployment...%RESET%
-echo.
-goto :EOF
 
 :REBUILD_LAB_ALL
 echo.
@@ -106,15 +99,14 @@ echo [%GREEN%*%RESET%] Pushing Unified Build to GitHub...
 cd web_deploy
 "%GIT_EXE%" init >nul 2>&1
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Ninja Global Build V5.6: Admin, Dev, and App Sync"
+"%GIT_EXE%" commit -m "Ninja Global Build V5.7: Multi-Portal Sync"
 "%GIT_EXE%" remote add origin https://github.com/bosslouie5/TimeAttendance-System.git >nul 2>&1
 "%GIT_EXE%" push -f origin master:gh-pages
 
 :: 4. Update Source Repo
 cd ..
-echo [%GREEN%*%RESET%] Syncing Source Code...
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Ninja Source Sync V5.6"
+"%GIT_EXE%" commit -m "Ninja Source Sync V5.7"
 "%GIT_EXE%" push origin main
 
 echo.
