@@ -116,6 +116,11 @@ function App() {
         fetchTenantInfo();
     }
 
+    // Refresh data if already logged in
+    if (loggedIn) {
+        syncSystemData();
+    }
+
     return () => clearInterval(connInterval);
   }, []);
 
@@ -143,7 +148,7 @@ function App() {
 
     setIsSyncing(true);
     const logsToSync = [...currentLogs];
-    let successCount = 0;
+    let processedCount = 0;
 
     for (const log of logsToSync) {
       try {
@@ -152,18 +157,25 @@ function App() {
           { ...log, tenantId },
           { 'x-tenant-id': tenantId }
         );
-        if (response.status === 200) successCount++;
-        else break;
+
+        // Success or Permanent Rejection (Duplicate)
+        if (response.status === 200 || response.status === 400) {
+           processedCount++;
+           if (response.status === 400) console.log("Cleaning up duplicate/invalid pending log:", log);
+        } else {
+           // Network error or server busy, stop and try again later
+           break;
+        }
       } catch (e) { break; }
     }
 
-    if (successCount > 0) {
+    if (processedCount > 0) {
       const latestFromStorage = JSON.parse(localStorage.getItem('pending_logs') || '[]');
-      const remaining = latestFromStorage.slice(successCount);
+      const remaining = latestFromStorage.slice(processedCount);
       setPendingLogs(remaining);
       localStorage.setItem('pending_logs', JSON.stringify(remaining));
-      setStatus(`Synced ${successCount} logs ✓`);
-      setTimeout(() => setStatus(isServerDown ? 'Offline Mode' : 'System Online'), 3000);
+      setStatus(forcedLogs ? `Sync completed ✓` : `Auto-synced ${processedCount} records!`);
+      syncSystemData();
     }
     setIsSyncing(false);
   };
@@ -215,17 +227,20 @@ function App() {
     }
   };
 
-  const syncSystemData = async () => {
+  const syncSystemData = async (forcedTenantId = null, forcedEmpId = null) => {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const headers = { 'x-tenant-id': tenantId };
-      const currentEmpId = localStorage.getItem('cached_id');
+      const targetTenantId = forcedTenantId || tenantId;
+      const targetEmpId = forcedEmpId || localStorage.getItem('cached_id');
+
+      const headers = { 'x-tenant-id': targetTenantId };
       const [empRes, deptRes, logRes] = await Promise.all([
         getJson(`${apiUrl}/employees`, headers),
-        getJson(`${apiUrl}/departments?employeeId=${currentEmpId}`, headers),
+        getJson(`${apiUrl}/departments?employeeId=${targetEmpId}`, headers),
         getJson(`${apiUrl}/logs`, headers)
       ]);
+
       if (empRes.status === 200 && deptRes.status === 200) {
         localStorage.setItem('all_employees', JSON.stringify(empRes.data));
         localStorage.setItem('all_departments', JSON.stringify(deptRes.data));
@@ -233,11 +248,11 @@ function App() {
         setStatus('Updated ✓');
       }
       if (logRes.status === 200) {
-        const myLogs = logRes.data.filter(l => l.employeeId === currentEmpId);
+        const myLogs = logRes.data.filter(l => l.employeeId === targetEmpId);
         localStorage.setItem('personal_logs', JSON.stringify(myLogs));
         setPersonalLogs(myLogs);
       }
-    } catch (e) { }
+    } catch (e) { console.error('Sync failed', e); }
     setIsSyncing(false);
   };
 
@@ -268,20 +283,31 @@ function App() {
         localStorage.setItem('cached_name', empData.name);
         localStorage.setItem('tenant_id', actualTenantId);
         setStatus('Login Success ✓');
-        syncSystemData();
+        syncSystemData(actualTenantId, empData.employeeId);
         fetchTenantInfo();
         setLoading(false);
         return;
+      } else if (res.status === 404) {
+        alert('IDENTIFICATION ERROR: This Employee ID is not yet registered in the Web Admin Portal. Please contact your administrator.');
+        setLoading(false);
+        return;
+      } else if (res.status === 403) {
+        alert(`SECURITY REJECTION: ${res.data?.error || 'Unauthorized device connection.'}`);
+        setLoading(false);
+        return;
       }
-    } catch (e) { console.log('Offline login...'); }
+    } catch (e) {
+      console.log('Connection failed, attempting offline check...');
+    }
 
+    // Only allow offline login if we couldn't reach the server at all (status 0)
     if (cachedEmployee) {
       setLoggedIn(true);
       localStorage.setItem('cached_id', cachedEmployee.employeeId);
       localStorage.setItem('cached_name', cachedEmployee.name);
       setStatus('Offline Access ✓');
     } else {
-      alert('Network required for the initial login to download employee records.');
+      alert('INITIAL LOGIN REQUIRED: To secure your identity, please ensure you are connected to the network for your first login. This ID was not found in the local records.');
     }
     setLoading(false);
   };
@@ -318,6 +344,33 @@ function App() {
       return;
     }
 
+    const todayStr = new Date().toLocaleDateString();
+
+    // ANTI-DUPLICATE CHECK (Local & Online Logs)
+    if (type === 'IN') {
+        const alreadyInLogs = personalLogs.some(l => new Date(l.timestamp).toLocaleDateString() === todayStr && l.timeIn);
+        const alreadyInPending = pendingLogs.some(l => new Date(l.timestamp).toLocaleDateString() === todayStr && l.type === 'IN');
+
+        if (alreadyInLogs || alreadyInPending) {
+            setStatus('⚠️ Already Timed In');
+            alert('ATTENTION: You have already recorded a TIME IN for today.');
+            setLoading(false);
+            return;
+        }
+    }
+
+    if (type === 'OUT') {
+        const alreadyOutLogs = personalLogs.some(l => new Date(l.timestamp).toLocaleDateString() === todayStr && l.timeOut);
+        const alreadyOutPending = pendingLogs.some(l => new Date(l.timestamp).toLocaleDateString() === todayStr && l.type === 'OUT');
+
+        if (alreadyOutLogs || alreadyOutPending) {
+            setStatus('⚠️ Already Timed Out');
+            alert('ATTENTION: You have already recorded a TIME OUT for today.');
+            setLoading(false);
+            return;
+        }
+    }
+
     const logData = {
       employeeId: localStorage.getItem('cached_id'),
       employeeName: localStorage.getItem('cached_name'),
@@ -337,8 +390,16 @@ function App() {
         setStatus(`${type} Success ✓`);
         alert(`SUCCESS!\n\nYour ${type} has been recorded on the server.`);
         syncSystemData();
-      } else throw new Error('Reject');
+      } else if (response.status === 400) {
+        // Server rejected as duplicate
+        setStatus('⚠️ Duplicate rejected');
+        alert(response.data?.error || 'Attendance already recorded.');
+        syncSystemData();
+      } else {
+          throw new Error('Network Issue');
+      }
     } catch (err) {
+      // OFFLINE LOGIC: Save locally
       const currentPending = JSON.parse(localStorage.getItem('pending_logs') || '[]');
       const updatedPending = [...currentPending, logData];
       localStorage.setItem('pending_logs', JSON.stringify(updatedPending));
@@ -490,6 +551,13 @@ function App() {
                <h2 style={{marginTop:0, fontSize: '1.4rem', color: '#60a5fa', fontWeight: '900', margin: 0}}>Activity Logs</h2>
                <button onClick={() => setShowLogsModal(false)} style={{background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', width: '35px', height: '35px', borderRadius: '50%', fontWeight: 'bold'}}>✕</button>
             </div>
+
+            <div style={{marginBottom: '15px', padding: '10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)'}}>
+               <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800'}}>LOGGED IN AS</div>
+               <div style={{fontWeight: '900', color: '#fff', fontSize: '1.1rem'}}>{localStorage.getItem('cached_name')}</div>
+               <div style={{fontSize: '0.75rem', color: '#60a5fa', fontWeight: 'bold'}}>ID: {localStorage.getItem('cached_id')}</div>
+            </div>
+
             <div style={{margin: '0 0 30px 0'}}>
                {personalLogs.length === 0 ? (
                  <div style={{textAlign: 'center', color: '#475569', padding: '40px 0'}}>
@@ -497,23 +565,41 @@ function App() {
                     <p style={{fontWeight: '700'}}>No history found yet.</p>
                  </div>
                ) : (
-                 personalLogs.slice().reverse().slice(0, 10).map((l, i) => (
-                   <div key={i} className="log-item">
-                     <div>
-                       <div style={{fontWeight:'900', fontSize:'1rem', color: '#fff'}}>{l.departmentName}</div>
-                       <div style={{fontSize:'0.75rem', color:'#94a3b8', marginTop: '2px', fontWeight: '600'}}>{new Date(l.timestamp).toLocaleDateString()} • {new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                 Object.entries(
+                   personalLogs.slice().reverse().reduce((acc, log) => {
+                     const dateKey = new Date(log.timestamp).toLocaleDateString();
+                     if (!acc[dateKey]) acc[dateKey] = [];
+                     acc[dateKey].push(log);
+                     return acc;
+                   }, {})
+                 ).slice(0, 7).map(([date, dayLogs], i) => (
+                   <div key={i} style={{marginBottom: '20px'}}>
+                     <div style={{fontSize: '0.7rem', color: '#3b82f6', fontWeight: '900', marginBottom: '10px', background: 'rgba(59, 130, 246, 0.05)', padding: '5px 10px', borderRadius: '8px', display: 'inline-block'}}>
+                       🗓️ {date}
                      </div>
-                     <span style={{
-                       fontSize: '0.7rem',
-                       fontWeight: '900',
-                       padding: '6px 12px',
-                       borderRadius: '12px',
-                       background: l.type === 'IN' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                       color: l.type === 'IN' ? '#34d399' : '#fbbf24',
-                       border: `1px solid ${l.type === 'IN' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
-                     }}>
-                       {l.type === 'IN' ? 'TIME IN' : 'TIME OUT'}
-                     </span>
+                     {dayLogs.map((l, j) => (
+                       <div key={j} className="log-item" style={{marginLeft: '10px'}}>
+                         <div>
+                           <div style={{fontWeight:'900', fontSize:'0.9rem', color: '#fff'}}>{l.departmentName}</div>
+                           <div style={{fontSize:'0.7rem', color:'#94a3b8', marginTop: '2px'}}>
+                             {l.timeIn && `IN: ${new Date(l.timeIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}
+                             {l.timeIn && l.timeOut && ` • `}
+                             {l.timeOut && `OUT: ${new Date(l.timeOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}
+                           </div>
+                         </div>
+                         <span style={{
+                           fontSize: '0.6rem',
+                           fontWeight: '900',
+                           padding: '4px 10px',
+                           borderRadius: '10px',
+                           background: l.status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                           color: l.status === 'Completed' ? '#34d399' : '#60a5fa',
+                           border: `1px solid ${l.status === 'Completed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`
+                         }}>
+                           {l.status.toUpperCase()}
+                         </span>
+                       </div>
+                     ))}
                    </div>
                  ))
                )}

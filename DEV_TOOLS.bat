@@ -1,5 +1,5 @@
 @echo off
-title TIMEKEY MASTER TOOLBOX (V5.7)
+title TIMEKEY MASTER TOOLBOX (V6.0)
 setlocal enabledelayedexpansion
 
 :: COLORS
@@ -19,9 +19,10 @@ set "ADB_EXE=%DEV_TOOLS%\platform-tools\adb.exe"
 set "PATH=%NODE_PATH%;%DEV_TOOLS%\platform-tools;%PATH%"
 
 :MENU
+set "choice="
 cls
 echo %CYAN%======================================================%RESET%
-echo           TIMEKEY MASTER TOOLBOX (V5.7)
+echo           TIMEKEY MASTER TOOLBOX (V6.0)
 echo %CYAN%======================================================%RESET%
 echo.
 echo  [1] %GREEN%🚀 DEPLOY ALL TO WEB (Admin, Dev, and App)%RESET%
@@ -69,13 +70,11 @@ echo %YELLOW%!!! PREPARING GLOBAL DEPLOYMENT !!!%RESET%
 echo This will update Admin, Dev, and Mobile App on GitHub.
 echo.
 
-:: 1. Create a unified deploy folder
 if exist "web_deploy" rd /s /q "web_deploy"
 mkdir "web_deploy"
 mkdir "web_deploy\dev"
 mkdir "web_deploy\app"
 
-:: 2. Build everything to production dist
 echo [%CYAN%*%RESET%] Building Admin (Root)...
 cd web-admin
 call npx vite build
@@ -94,40 +93,34 @@ call npx vite build
 cd ..
 xcopy /s /i /y "mobile-app\dist" "web_deploy\app"
 
-:: 3. Push to GitHub gh-pages
 echo [%GREEN%*%RESET%] Pushing Unified Build to GitHub...
 cd web_deploy
 "%GIT_EXE%" init >nul 2>&1
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Ninja Global Build V5.7: Multi-Portal Sync"
+"%GIT_EXE%" commit -m "Ninja Global Build: Multi-Portal Sync"
 "%GIT_EXE%" remote add origin https://github.com/bosslouie5/TimeAttendance-System.git >nul 2>&1
 "%GIT_EXE%" push -f origin master:gh-pages
 
-:: 4. Update Source Repo
 cd ..
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Ninja Source Sync V5.7"
+"%GIT_EXE%" commit -m "Ninja Source Sync"
 "%GIT_EXE%" push origin main
 
 echo.
 echo %GREEN%[SUCCESS] SYSTEM IS NOW LIVE!%RESET%
-echo Admin: https://bosslouie5.github.io/TimeAttendance-System/
-echo Dev:   https://bosslouie5.github.io/TimeAttendance-System/dev/
-echo App:   https://bosslouie5.github.io/TimeAttendance-System/app/
-echo.
 rd /s /q "web_deploy"
 pause
 goto MENU
 
 :RUN_LAB
+set "lab_mode="
 echo.
 if not exist "backend\data-test.json" (
-    echo [%YELLOW%*%RESET%] Initializing Lab Data from Production...
     if exist "backend\data.json" copy /y "backend\data.json" "backend\data-test.json" >nul
 )
 echo [?] Saan mo ite-test, Master?
-echo  [0] ONLINE - SaaS Tunnel
-echo  [1] LOCAL - USB Bridge
+echo  [0] ONLINE - SaaS Tunnel (Port 4002)
+echo  [1] LOCAL - USB Bridge (Port 4002)
 set /p lab_mode="Pili ka (0/1): "
 if "%lab_mode%"=="0" goto LAB_ONLINE
 if "%lab_mode%"=="1" goto LAB_LOCAL
@@ -135,7 +128,7 @@ goto MENU
 
 :LAB_ONLINE
 cls
-echo [%YELLOW%*%RESET%] Starting SaaS Lab...
+echo [%YELLOW%*%RESET%] Starting SaaS Lab on Port 4002...
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 cd backend
@@ -143,7 +136,7 @@ set SYSTEM_MODE=test
 start /b node server.js > server_test.log 2>&1
 start /b "" "%DEV_TOOLS%\cloudflared.exe" tunnel --url http://127.0.0.1:4002 > tunnel.log 2>&1
 cd ..
-echo %GREEN%SUCCESS: System running. Check GitHub for link update.%RESET%
+echo %GREEN%SUCCESS: Lab System running in background.%RESET%
 pause
 goto MENU
 
@@ -159,20 +152,32 @@ cd ..
 goto MENU
 
 :SYNC_DATA
-echo %RED%!!! SYNC WARNING !!!%RESET%
-set /p confirm="Sync 4002 to 4001? (Y/N): "
+set "confirm="
+echo %YELLOW%!!! SYNCING UI/LOGIC ONLY !!!%RESET%
+set /p confirm="Proceed with UI Sync 4002 -> 4001? (Y/N): "
 if /i "%confirm%" neq "Y" goto MENU
-copy /y "backend\data-test.json" "backend\data.json"
-xcopy /s /i /y "web-dev\dist-test" "web-dev\dist"
-xcopy /s /i /y "web-admin\dist-test" "web-admin\dist"
-xcopy /s /i /y "mobile-app\dist-test" "mobile-app\dist"
-echo %GREEN%Synced!%RESET%
+echo [%MAGENTA%*%RESET%] Transferring Build Files...
+
+if exist "web-dev\dist-test" (
+    if exist "web-dev\dist" rd /s /q "web-dev\dist"
+    xcopy /s /i /y "web-dev\dist-test" "web-dev\dist"
+)
+if exist "web-admin\dist-test" (
+    if exist "web-admin\dist" rd /s /q "web-admin\dist"
+    xcopy /s /i /y "web-admin\dist-test" "web-admin\dist"
+)
+if exist "mobile-app\dist-test" (
+    if exist "mobile-app\dist" rd /s /q "mobile-app\dist"
+    xcopy /s /i /y "mobile-app\dist-test" "mobile-app\dist"
+)
+
+echo [%GREEN%SUCCESS%RESET%] UI Logic is now synced to Production!
 pause
 goto MENU
 
 :SAAS_START
 cls
-echo [%CYAN%*%RESET%] Starting SAAS HUB Port 4001...
+echo [%CYAN%*%RESET%] Starting Official SAAS HUB Port 4001...
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 cd backend
@@ -185,8 +190,17 @@ pause
 goto MENU
 
 :STOP_ALL
-taskkill /F /IM node.exe /T >nul 2>&1
-taskkill /F /IM cloudflared.exe /T >nul 2>&1
-echo %GREEN%All Halted.%RESET%
+echo [%RED%*%RESET%] Executing Global System Nuke...
+
+:: Kill processes using standard Taskkill
+taskkill /F /T /IM node.exe >nul 2>&1
+taskkill /F /T /IM cloudflared.exe >nul 2>&1
+taskkill /F /T /IM msedge.exe >nul 2>&1
+taskkill /F /T /IM chrome.exe >nul 2>&1
+
+:: Fallback: Use PowerShell for stuck background processes
+powershell -Command "Stop-Process -Name node, cloudflared, msedge, chrome -Force -ErrorAction SilentlyContinue" >nul 2>&1
+
+echo %GREEN%[SUCCESS] All systems and browsers have been force-stopped.%RESET%
 pause
 goto MENU

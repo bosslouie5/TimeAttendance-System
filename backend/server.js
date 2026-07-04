@@ -40,7 +40,7 @@ app.use('/apks', express.static(apksDir));
 
 // --- DATABASE UTILS ---
 function loadData() {
-  if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [] };
+  if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] };
   try {
     const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
     if (!data.employees) data.employees = [];
@@ -48,8 +48,11 @@ function loadData() {
     if (!data.logs) data.logs = [];
     if (!data.users) data.users = [];
     if (!data.orgUnits) data.orgUnits = [];
+    if (!data.assignments) data.assignments = [];
+    if (!data.positionTitles) data.positionTitles = [];
+    if (!data.schedules) data.schedules = [];
     return data;
-  } catch (e) { return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [] }; }
+  } catch (e) { return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] }; }
 }
 
 function saveData(data) {
@@ -177,7 +180,7 @@ app.post('/api/auth/web-login', (req, res) => {
           tenantId: tenantId,
           companyName: targetTenant.companyName,
           isConsultant: true,
-          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'assign-branch', 'reports', 'setup'] // Full Master Access
+          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'assign-branch', 'reports', 'setup', 'devices', 'position-titles'] // Restored Position Access
         }
       });
     }
@@ -284,6 +287,106 @@ app.post('/api/master/broadcast-link', async (req, res) => {
 });
 
 app.get('/api/master/logs', (req, res) => res.json(loadData().logs));
+app.get('/api/position-titles', tenantGuard, (req, res) => {
+  const data = loadData();
+  const tenantId = req.tenantId;
+  if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
+  const filtered = (data.positionTitles || []).filter(p => p.tenantId === tenantId);
+  res.json(filtered);
+});
+
+app.post('/api/position-titles', tenantGuard, (req, res) => {
+  const data = loadData();
+  if (!data.positionTitles) data.positionTitles = [];
+  const newTitle = { ...req.body, id: Date.now().toString(), tenantId: req.tenantId || 'master' };
+  data.positionTitles.push(newTitle);
+  saveData(data);
+  res.json(newTitle);
+});
+
+app.delete('/api/position-titles/:id', tenantGuard, (req, res) => {
+  const { id } = req.params;
+  const data = loadData();
+  const initialCount = (data.positionTitles || []).length;
+  data.positionTitles = (data.positionTitles || []).filter(p => !(p.id === id && p.tenantId === (req.tenantId || 'master')));
+  if (data.positionTitles.length < initialCount) {
+    saveData(data);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Position Title not found' });
+  }
+});
+
+app.get('/api/master/position-titles', (req, res) => {
+  const data = loadData();
+  res.json(data.positionTitles || []);
+});
+
+// Schedule Management Endpoints
+app.get('/api/schedules', tenantGuard, (req, res) => {
+  const data = loadData();
+  const tenantId = req.tenantId;
+  if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
+  const filtered = (data.schedules || []).filter(s => s.tenantId === tenantId);
+  res.json(filtered);
+});
+
+app.post('/api/schedules', tenantGuard, (req, res) => {
+  const data = loadData();
+  if (!data.schedules) data.schedules = [];
+  const newSchedule = { ...req.body, id: Date.now().toString(), tenantId: req.tenantId || 'master' };
+  data.schedules.push(newSchedule);
+  saveData(data);
+  res.json(newSchedule);
+});
+
+app.put('/api/schedules/:id', tenantGuard, (req, res) => {
+  const { id } = req.params;
+  const data = loadData();
+  const tenantId = req.tenantId || 'master';
+  const index = (data.schedules || []).findIndex(s => s.id === id && s.tenantId === tenantId);
+  if (index !== -1) {
+    data.schedules[index] = { ...data.schedules[index], ...req.body, tenantId };
+    saveData(data);
+    res.json(data.schedules[index]);
+  } else {
+    res.status(404).json({ error: 'Schedule not found' });
+  }
+});
+
+app.delete('/api/schedules/:id', tenantGuard, (req, res) => {
+  const { id } = req.params;
+  const data = loadData();
+  const tenantId = req.tenantId || 'master';
+  const initialCount = (data.schedules || []).length;
+  data.schedules = (data.schedules || []).filter(s => !(s.id === id && s.tenantId === tenantId));
+  if (data.schedules.length < initialCount) {
+    saveData(data);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Schedule not found' });
+  }
+});
+
+app.get('/api/master/schedules', (req, res) => {
+  const data = loadData();
+  res.json(data.schedules || []);
+});
+
+app.post('/api/schedule-assign', tenantGuard, (req, res) => {
+  const data = loadData();
+  const { employeeId, shift } = req.body;
+  const tenantId = req.tenantId || 'master';
+  const index = data.employees.findIndex(e => e.employeeId === employeeId && e.tenantId === tenantId);
+  if (index !== -1) {
+    data.employees[index].schedule = shift;
+    saveData(data);
+    res.json({ success: true, employee: data.employees[index] });
+  } else {
+    res.status(404).json({ error: 'Employee not found' });
+  }
+});
+
 app.get('/api/master/users', (req, res) => res.json(loadData().users));
 app.get('/api/master/employees', (req, res) => {
   const data = loadData();
@@ -356,20 +459,35 @@ app.get('/api/employees', tenantGuard, (req, res) => {
 app.get('/api/departments', tenantGuard, (req, res) => {
   const data = loadData();
   const { employeeId } = req.query;
-  const tenantId = req.tenantId;
+  const tenantId = String(req.tenantId || '').trim().toLowerCase();
 
   if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
 
-  let filtered = data.departments.filter(d => d.tenantId === tenantId);
+  // 1. Get all branches for this tenant with extreme string safety
+  let tenantBranches = (data.departments || []).filter(d =>
+    String(d.tenantId || '').trim().toLowerCase() === tenantId
+  );
 
-  // New: Filter by assignment if employeeId is provided
+  // 2. Filter by assignment if employeeId is provided
   if (employeeId) {
-    const myAssignments = (data.assignments || []).filter(a => a.employeeId === employeeId && a.tenantId === tenantId);
-    const assignedDeptIds = myAssignments.map(a => a.departmentId);
-    filtered = filtered.filter(d => assignedDeptIds.includes(d.departmentId));
+    const targetEmpId = String(employeeId).trim().toLowerCase();
+
+    const myAssignments = (data.assignments || []).filter(a =>
+      String(a.employeeId || '').trim().toLowerCase() === targetEmpId &&
+      String(a.tenantId || '').trim().toLowerCase() === tenantId
+    );
+
+    const assignedDeptIds = myAssignments.map(a => String(a.departmentId || '').trim().toLowerCase());
+
+    // Check by ID or fallback to name comparison if IDs are missing
+    tenantBranches = tenantBranches.filter(d =>
+      assignedDeptIds.includes(String(d.departmentId || '').trim().toLowerCase())
+    );
+
+    console.log(`[SYNC] Found ${tenantBranches.length} assigned branches for Emp ${targetEmpId} in Tenant ${tenantId}`);
   }
 
-  res.json(filtered);
+  res.json(tenantBranches);
 });
 
 app.get('/api/logs', tenantGuard, (req, res) => {
@@ -465,19 +583,27 @@ app.post('/api/timein', tenantGuard, (req, res) => {
   const { employeeId, type, timestamp, tenantId: logTenant } = req.body;
   const tenantId = logTenant || req.tenantId || 'master';
 
-  // Get date in YYYY-MM-DD format for comparison
-  const logDate = new Date(timestamp).toISOString().split('T')[0];
+  // Use Local Date (YYYY-MM-DD) for consistency
+  const dateObj = new Date(timestamp);
+  const logDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
 
-  // Find existing log for this employee on this day in this tenant
-  const existingLogIndex = data.logs.findIndex(l =>
-    l.employeeId === employeeId &&
-    l.tenantId === tenantId &&
-    new Date(l.timestamp).toISOString().split('T')[0] === logDate
+  // Find ANY log for this employee TODAY
+  const latestLogIndex = data.logs.slice().reverse().findIndex(l =>
+    String(l.employeeId) === String(employeeId) &&
+    String(l.tenantId) === String(tenantId) &&
+    (() => {
+      const d = new Date(l.timestamp);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === logDate;
+    })()
   );
 
+  // Real index in the original array
+  const existingLogIndex = latestLogIndex >= 0 ? (data.logs.length - 1 - latestLogIndex) : -1;
+
+  // 1. Logic for TIME IN
   if (type === 'IN') {
     if (existingLogIndex >= 0 && data.logs[existingLogIndex].timeIn) {
-      return res.status(400).json({ error: 'You have already timed in for today.' });
+      return res.status(400).json({ error: 'You have already recorded a TIME IN for today.' });
     }
 
     const newLog = {
@@ -487,36 +613,32 @@ app.post('/api/timein', tenantGuard, (req, res) => {
       departmentId: req.body.departmentId,
       departmentName: req.body.departmentName,
       tenantId,
-      timestamp, // This will be the base timestamp
+      timestamp,
       timeIn: timestamp,
       timeOut: null,
       status: 'Present'
     };
 
     if (existingLogIndex >= 0) {
-      data.logs[existingLogIndex] = { ...data.logs[existingLogIndex], ...newLog };
+      data.logs[existingLogIndex] = { ...data.logs[existingLogIndex], ...newLog, timeOut: data.logs[existingLogIndex].timeOut, status: data.logs[existingLogIndex].timeOut ? 'Completed' : 'Present' };
     } else {
       data.logs.push(newLog);
     }
-  } else if (type === 'OUT') {
-    if (existingLogIndex >= 0) {
-      // Update existing record
+  }
+
+  // 2. Logic for TIME OUT
+  else if (type === 'OUT') {
+    // SECURITY FIX: Must have a Time In record today before allowing Time Out
+    if (existingLogIndex >= 0 && data.logs[existingLogIndex].timeIn) {
+      // ANTI-OVERWRITE: Check if Time Out already exists
+      if (data.logs[existingLogIndex].timeOut) {
+        return res.status(400).json({ error: 'Attendance Denied: You have already recorded a TIME OUT for today.' });
+      }
       data.logs[existingLogIndex].timeOut = timestamp;
       data.logs[existingLogIndex].status = 'Completed';
     } else {
-      // Create new record if no Time In found (Optional: depending on business rule)
-      data.logs.push({
-        logId: Date.now().toString(),
-        employeeId,
-        employeeName: req.body.employeeName,
-        departmentId: req.body.departmentId,
-        departmentName: req.body.departmentName,
-        tenantId,
-        timestamp,
-        timeIn: null,
-        timeOut: timestamp,
-        status: 'Left'
-      });
+      // Rejection: No Time In found
+      return res.status(400).json({ error: 'Attendance Denied: No TIME IN record found for today. Please Time In first.' });
     }
   }
 
@@ -616,6 +738,9 @@ app.post('/api/master/clear-data', (req, res) => {
   } else if (target === 'orgUnits') {
     if (isGlobal) data.orgUnits = [];
     else data.orgUnits = (data.orgUnits || []).filter(o => o.tenantId !== tenantId);
+  } else if (target === 'schedules') {
+    if (isGlobal) data.schedules = [];
+    else data.schedules = (data.schedules || []).filter(s => s.tenantId !== tenantId);
   } else if (target === 'all') {
     if (isGlobal) {
       data.logs = [];
@@ -623,11 +748,13 @@ app.post('/api/master/clear-data', (req, res) => {
       data.departments = [];
       data.orgUnits = [];
       data.assignments = [];
+      data.schedules = [];
     } else {
       data.logs = data.logs.filter(l => l.tenantId !== tenantId);
       data.employees = data.employees.filter(e => e.tenantId !== tenantId);
       data.departments = data.departments.filter(d => d.tenantId !== tenantId);
       data.orgUnits = (data.orgUnits || []).filter(o => o.tenantId !== tenantId);
+      data.schedules = (data.schedules || []).filter(s => s.tenantId !== tenantId);
       if (data.assignments) data.assignments = data.assignments.filter(a => a.tenantId !== tenantId);
     }
   }
@@ -673,6 +800,7 @@ app.delete('/api/users/:tenantId', (req, res) => {
     data.employees = (data.employees || []).filter(e => (e.tenantId || '').toLowerCase() !== lowerTenantId);
     data.departments = (data.departments || []).filter(d => (d.tenantId || '').toLowerCase() !== lowerTenantId);
     data.orgUnits = (data.orgUnits || []).filter(o => (o.tenantId || '').toLowerCase() !== lowerTenantId);
+    data.schedules = (data.schedules || []).filter(s => (s.tenantId || '').toLowerCase() !== lowerTenantId);
     data.logs = (data.logs || []).filter(l => (l.tenantId || '').toLowerCase() !== lowerTenantId);
     if (data.assignments) {
       data.assignments = data.assignments.filter(a => (a.tenantId || '').toLowerCase() !== lowerTenantId);

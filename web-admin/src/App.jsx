@@ -32,11 +32,14 @@ function App() {
   const [departments, setDepartments] = useState([]);
   const [orgUnits, setOrgUnits] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [positionTitles, setPositionTitles] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [tenantDetails, setTenantDetails] = useState(null);
   const [status, setStatus] = useState('');
 
   // Form States
   const [newOrgName, setNewOrgName] = useState('');
+  const [newPositionTitle, setNewPositionTitle] = useState('');
   const [branchName, setBranchName] = useState('');
   const [branchLat, setBranchLat] = useState('');
   const [branchLon, setBranchLon] = useState('');
@@ -72,6 +75,10 @@ function App() {
   const [reportSearch, setReportSearch] = useState('');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+
+  const [selectedScheduleEmp, setSelectedScheduleEmp] = useState(null);
+  const [newShiftValue, setNewShiftValue] = useState('');
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -123,16 +130,20 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      const [e, b, o, l] = await Promise.all([
+      const [e, b, o, l, pt, sc] = await Promise.all([
         requestJson('/employees'),
         requestJson('/departments'),
         requestJson('/org-units'),
-        requestJson('/logs')
+        requestJson('/logs'),
+        requestJson('/position-titles'),
+        requestJson('/schedules')
       ]);
       setEmployees(e || []);
       setDepartments(b || []);
       setOrgUnits(o || []);
       setLogs(l || []);
+      setPositionTitles(pt || []);
+      setSchedules(sc || []);
     } catch (err) { console.error('Load failed', err); }
   };
 
@@ -285,6 +296,58 @@ function App() {
     } catch (e) {
       alert('Failed to delete department');
       setStatus('Error deleting department');
+    }
+  };
+
+  const savePositionTitle = async () => {
+    if (!newPositionTitle) return alert('Enter Position Title');
+    setStatus('Adding Position...');
+    try {
+      await requestJson('/position-titles', {
+        method: 'POST',
+        body: JSON.stringify({ name: newPositionTitle, tenantId: detectedTenantId })
+      });
+      setStatus('Position Created! ✓');
+      setNewPositionTitle('');
+      loadInitialData();
+    } catch (e) {
+      alert('Failed to add position');
+      setStatus('Error adding position');
+    }
+  };
+
+  const deletePositionTitle = async (id) => {
+    if (!confirm('Sigurado ka bang buburahin ang position na ito?')) return;
+    setStatus('Deleting position...');
+    try {
+      await requestJson(`/position-titles/${id}`, {
+        method: 'DELETE'
+      });
+      setStatus('Position Removed ✓');
+      loadInitialData();
+    } catch (e) {
+      alert('Failed to delete position');
+      setStatus('Error deleting position');
+    }
+  };
+
+  const saveShiftAssignment = async () => {
+    if (!newShiftValue) return alert('Pumili o mag-type ng schedule.');
+    setStatus('Updating Schedule...');
+    try {
+      await requestJson('/schedule-assign', {
+        method: 'POST',
+        body: JSON.stringify({
+          employeeId: selectedScheduleEmp.employeeId,
+          shift: newShiftValue
+        })
+      });
+      setStatus('Schedule Updated! ✓');
+      setIsScheduleModalOpen(false);
+      loadInitialData();
+    } catch (e) {
+      alert('Failed to save schedule');
+      setStatus('Error saving schedule');
     }
   };
 
@@ -494,7 +557,7 @@ function App() {
     XLSX.writeFile(wb, `${companyName}_Employee_List.xlsx`);
   };
 
-  const hasPerm = (perm) => user?.permissions?.includes(perm);
+  const hasPerm = (perm) => user?.isConsultant || user?.permissions?.includes(perm);
 
   if (!user) {
     return (
@@ -584,6 +647,8 @@ function App() {
             <div className="menu-item" onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard Overview</div>
             {hasPerm('employees') && <div className="menu-item" onClick={() => { setActiveTab('employees'); setIsMenuOpen(false); }}>👥 Staff Management</div>}
             {hasPerm('org-units') && <div className="menu-item" onClick={() => { setActiveTab('org-units'); setIsMenuOpen(false); }}>🏢 Dept. Management</div>}
+            {hasPerm('position-titles') && <div className="menu-item" onClick={() => { setActiveTab('position-titles'); setIsMenuOpen(false); }}>💼 Position titles</div>}
+            {hasPerm('schedules') && <div className="menu-item" onClick={() => { setActiveTab('schedules'); setIsMenuOpen(false); }}>📅 Work Schedules</div>}
             {hasPerm('branches') && <div className="menu-item" onClick={() => { setActiveTab('branches'); setIsMenuOpen(false); }}>📍 Branch Setup</div>}
             {hasPerm('assign-branch') && <div className="menu-item" onClick={() => { setActiveTab('assign-branch'); setIsMenuOpen(false); }}>🔗 Branch Assignment</div>}
             {hasPerm('devices') && <div className="menu-item" onClick={() => { setActiveTab('devices'); setIsMenuOpen(false); }}>📱 Registered Devices</div>}
@@ -602,6 +667,8 @@ function App() {
           {activeTab === 'dashboard' && '📊 Dashboard Overview'}
           {activeTab === 'employees' && '👥 Employee Management'}
           {activeTab === 'org-units' && '🏢 Organizational Units'}
+          {activeTab === 'position-titles' && '💼 Job Position Titles'}
+          {activeTab === 'schedules' && '📅 Work Schedules'}
           {activeTab === 'branches' && '📍 Branch Locations'}
           {activeTab === 'assign-branch' && '🔗 Branch Assignment'}
           {activeTab === 'devices' && '📱 Registered Devices'}
@@ -648,6 +715,22 @@ function App() {
                  <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>🏢</div>
                  <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Departments</h3>
                  <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Manage organizational units like IT, HR, or Sales.</p>
+                 <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
+               </div>
+             )}
+             {hasPerm('position-titles') && (
+               <div className="module-card" onClick={() => setActiveTab('position-titles')}>
+                 <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>💼</div>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Job Titles</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Define custom job positions for your employees.</p>
+                 <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
+               </div>
+             )}
+             {hasPerm('schedules') && (
+               <div className="module-card" onClick={() => setActiveTab('schedules')}>
+                 <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>📅</div>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Schedules</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Assign work shifts and office hours to your staff.</p>
                  <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
                </div>
              )}
@@ -825,6 +908,111 @@ function App() {
                 </table>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'position-titles' && (
+        <div className="card fade-in">
+          <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'30px'}}>
+            {/* CREATE FORM */}
+            <div style={{background:'rgba(255,255,255,0.03)', padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
+              <h3 style={{marginTop:0, color:'#60a5fa', fontWeight: '900', textTransform: 'uppercase', fontSize: '0.9rem'}}>💼 Create Position</h3>
+              <p style={{fontSize:'0.8rem', color:'#64748b', marginBottom:'25px'}}>Define job position titles for your staff.</p>
+              <div className="form-group">
+                <label>Position Title</label>
+                <input
+                  placeholder="Ex: Sales Manager"
+                  value={newPositionTitle}
+                  onChange={e => setNewPositionTitle(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && savePositionTitle()}
+                />
+              </div>
+              <button onClick={savePositionTitle} className="btn-blue" style={{marginTop:'25px', width:'100%', padding: '15px'}}>SAVE POSITION TITLE</button>
+            </div>
+
+            {/* LIST TABLE */}
+            <div>
+              <h2 style={{marginTop:0, fontSize: '1.2rem', color: 'white'}}>📋 Job Positions</h2>
+              <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Title Name</th>
+                      <th style={{textAlign:'right'}}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positionTitles.map((p, i) => (
+                      <tr key={i}>
+                        <td style={{fontWeight:'900', color:'#60a5fa'}}>{p.name}</td>
+                        <td style={{textAlign:'right'}}>
+                          <button onClick={() => deletePositionTitle(p.id)} className="btn-red" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {positionTitles.length === 0 && (
+                      <tr><td colSpan="2" style={{textAlign:'center', padding:'50px', color:'#64748b', fontWeight: 'bold'}}>No positions defined yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'schedules' && (
+        <div className="card fade-in">
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px', borderBottom: '1px solid #334155', paddingBottom: '20px'}}>
+            <h2 style={{margin:0, color: 'white'}}>📅 Work Schedule Management</h2>
+            <input
+              placeholder="🔍 Search staff identity..."
+              style={{padding:'12px', borderRadius:'10px', border:'1px solid #334155', width:'350px'}}
+              value={empSearch}
+              onChange={e => setEmpSearch(e.target.value)}
+            />
+          </div>
+          <div style={{maxHeight:'60vh', overflowY:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee ID</th>
+                  <th>Full Name</th>
+                  <th>Department</th>
+                  <th>Current Schedule</th>
+                  <th style={{textAlign:'center'}}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
+                    <tr key={idx}>
+                      <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
+                      <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
+                      <td>{e.department || '-'}</td>
+                      <td>
+                        <span style={{background:'rgba(245, 158, 11, 0.1)', color:'#f59e0b', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(245, 158, 11, 0.3)'}}>
+                          ⏰ {e.schedule || 'Regular Shift'}
+                        </span>
+                      </td>
+                      <td style={{textAlign:'center'}}>
+                        <button
+                          onClick={() => { setSelectedScheduleEmp(e); setNewShiftValue(e.schedule || ''); setIsScheduleModalOpen(true); }}
+                          className="btn-edit"
+                          style={{padding:'10px 20px', borderRadius: '10px', background:'#f59e0b'}}
+                        >
+                          SET SCHEDULE
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -1150,6 +1338,49 @@ function App() {
         </div>
       )}
 
+      {/* SCHEDULE MODAL */}
+      {isScheduleModalOpen && selectedScheduleEmp && (
+        <div className="modal-overlay">
+          <div className="modal-content fade-in" style={{maxWidth:'550px'}}>
+            <h2 style={{marginTop:0, color:'#f59e0b', fontWeight: '900'}}>📅 Work Schedule Assignment</h2>
+            <div style={{background: 'rgba(245, 158, 11, 0.05)', padding: '15px', borderRadius: '15px', marginBottom: '25px', border: '1px solid rgba(245, 158, 11, 0.2)'}}>
+               <p style={{color:'#94a3b8', margin: '0 0 5px 0', fontSize: '0.75rem', fontWeight: '800'}}>SETTING HOURS FOR:</p>
+               <h3 style={{margin: 0, color: 'white', fontSize: '1.2rem', fontWeight: '900'}}>{selectedScheduleEmp.name}</h3>
+            </div>
+
+            <div className="form-group">
+              <label>TYPE OR SELECT SHIFT</label>
+              <input
+                list="shifts-admin"
+                style={{width: '100%', fontSize: '1.1rem', padding: '15px', background:'#0f172a', border:'1px solid #334155', color:'white', borderRadius:'12px'}}
+                value={newShiftValue}
+                onChange={e => setNewShiftValue(e.target.value)}
+                placeholder="Ex: 07:00 to 17:00"
+              />
+              <datalist id="shifts-admin">
+                {schedules.map(s => (
+                  <option key={s.id} value={`${s.name} (${s.startTime}-${s.endTime})`} />
+                ))}
+                {schedules.length === 0 && (
+                  <>
+                    <option value="07:00 to 17:00" />
+                    <option value="07:30 to 17:30" />
+                    <option value="08:00 to 18:00" />
+                    <option value="09:00 to 19:00" />
+                    <option value="Night: 19:00 to 05:00" />
+                  </>
+                )}
+              </datalist>
+            </div>
+
+            <div style={{display:'flex', gap:'15px', marginTop:'40px'}}>
+               <button onClick={saveShiftAssignment} className="btn-blue" style={{background:'#f59e0b', flex:1, padding: '18px', fontSize: '1rem', fontWeight: '900'}}>COMMIT SCHEDULE</button>
+               <button onClick={() => setIsScheduleModalOpen(false)} style={{padding:'18px 25px', background:'transparent', color:'#64748b', border:'1px solid #334155', borderRadius:'16px', fontWeight:'900', cursor:'pointer', fontSize: '0.9rem'}}>CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* NEW EMPLOYEE MODAL */}
       {isAddEmpModalOpen && (
         <div className="modal-overlay">
@@ -1160,8 +1391,13 @@ function App() {
 
             <div className="form-grid">
               <div className="form-group">
-                <label>EMPLOYEE ID (AUTO)</label>
-                <input style={{background:'#0f172a', opacity: 0.6}} value={empId} disabled />
+                <label>EMPLOYEE ID {employees.length === 0 ? '(EDITABLE)' : '(AUTO)'}</label>
+                <input
+                  style={{background:'#0f172a', opacity: (employees.length > 0 && !isEditingEmp) ? 0.6 : 1}}
+                  value={empId}
+                  onChange={e => employees.length === 0 && setEmpId(e.target.value)}
+                  disabled={employees.length > 0 && !isEditingEmp}
+                />
               </div>
               <div className="form-group">
                 <label>FULL NAME</label>
@@ -1172,13 +1408,20 @@ function App() {
                 <label>POSITION TITLE</label>
                 <select value={empJobTitle} onChange={e => setEmpJobTitle(e.target.value)}>
                   <option value="">-- Select Title --</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Supervisor">Supervisor</option>
-                  <option value="Team Lead">Team Lead</option>
-                  <option value="Staff">Staff</option>
-                  <option value="Consultant">Consultant</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Developer">Developer</option>
+                  {positionTitles.map(p => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
+                  ))}
+                  {positionTitles.length === 0 && (
+                    <>
+                      <option value="Manager">Manager</option>
+                      <option value="Supervisor">Supervisor</option>
+                      <option value="Team Lead">Team Lead</option>
+                      <option value="Staff">Staff</option>
+                      <option value="Consultant">Consultant</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Developer">Developer</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div className="form-group">
