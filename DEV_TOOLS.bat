@@ -263,6 +263,7 @@ mkdir "web_deploy"
 mkdir "web_deploy\dev"
 mkdir "web_deploy\app"
 echo. > "web_deploy\.nojekyll"
+echo Last Deploy: %date% %time% > "web_deploy\version.txt"
 
 echo [*] Step 5: Copying Builds...
 xcopy /s /i /y "web-admin\dist\*" "web_deploy\"
@@ -271,16 +272,18 @@ xcopy /s /i /y "mobile-app\dist\*" "web_deploy\app\"
 
 echo [*] Step 6: Deploying to GitHub Pages...
 cd /d "%ROOT_DIR%\web_deploy"
-"%GIT_EXE%" init
+"%GIT_EXE%" init >nul 2>&1
+"%GIT_EXE%" config user.name "bosslouie5"
+"%GIT_EXE%" config user.email "johnlouiecruz23@gmail.com"
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Production Build: %date% %time%"
-"%GIT_EXE%" remote add origin https://github.com/bosslouie5/TimeAttendance-System.git
+"%GIT_EXE%" commit -m "Production Build: %date% %time%" >nul 2>&1
+"%GIT_EXE%" remote add origin https://github.com/bosslouie5/TimeAttendance-System.git >nul 2>&1
 "%GIT_EXE%" push -f origin master:gh-pages
 
 echo [*] Step 7: Updating Source Repository...
 cd /d "%ROOT_DIR%"
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Source Update: %date% %time%"
+"%GIT_EXE%" commit -m "Source Update: %date% %time%" >nul 2>&1
 "%GIT_EXE%" push origin main
 
 echo.
