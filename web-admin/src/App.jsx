@@ -76,6 +76,11 @@ function App() {
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
 
+  const [shiftName, setShiftName] = useState('');
+  const [startTime, setStartTime] = useState('08:00');
+  const [endTime, setEndTime] = useState('17:00');
+  const [gracePeriod, setGracePeriod] = useState('15');
+
   const [selectedScheduleEmp, setSelectedScheduleEmp] = useState(null);
   const [newShiftValue, setNewShiftValue] = useState('');
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -328,6 +333,44 @@ function App() {
     } catch (e) {
       alert('Failed to delete position');
       setStatus('Error deleting position');
+    }
+  };
+
+  const saveShift = async () => {
+    if (!shiftName) return alert('Enter Shift Name');
+    setStatus('Saving Shift...');
+    try {
+      await requestJson('/schedules', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: shiftName,
+          startTime,
+          endTime,
+          gracePeriod,
+          tenantId: detectedTenantId
+        })
+      });
+      setStatus('Shift Saved! ✓');
+      setShiftName('');
+      loadInitialData();
+    } catch (e) {
+      alert('Failed to save shift');
+      setStatus('Error saving shift');
+    }
+  };
+
+  const deleteShift = async (id) => {
+    if (!confirm('Sigurado ka bang buburahin ang shift na ito?')) return;
+    setStatus('Deleting shift...');
+    try {
+      await requestJson(`/schedules/${id}`, {
+        method: 'DELETE'
+      });
+      setStatus('Shift Deleted ✓');
+      loadInitialData();
+    } catch (e) {
+      alert('Failed to delete shift');
+      setStatus('Error deleting shift');
     }
   };
 
@@ -648,11 +691,15 @@ function App() {
             {hasPerm('employees') && <div className="menu-item" onClick={() => { setActiveTab('employees'); setIsMenuOpen(false); }}>👥 Staff Management</div>}
             {hasPerm('org-units') && <div className="menu-item" onClick={() => { setActiveTab('org-units'); setIsMenuOpen(false); }}>🏢 Dept. Management</div>}
             {hasPerm('position-titles') && <div className="menu-item" onClick={() => { setActiveTab('position-titles'); setIsMenuOpen(false); }}>💼 Position titles</div>}
-            {hasPerm('schedules') && <div className="menu-item" onClick={() => { setActiveTab('schedules'); setIsMenuOpen(false); }}>📅 Work Schedules</div>}
+            {hasPerm('schedules') && <div className="menu-item" onClick={() => { setActiveTab('schedules'); setIsMenuOpen(false); }}>⏰ Schedule Management</div>}
+            {hasPerm('assign-schedule') && <div className="menu-item" onClick={() => { setActiveTab('assign-schedule'); setIsMenuOpen(false); }}>📅 Assign Schedule</div>}
             {hasPerm('branches') && <div className="menu-item" onClick={() => { setActiveTab('branches'); setIsMenuOpen(false); }}>📍 Branch Setup</div>}
             {hasPerm('assign-branch') && <div className="menu-item" onClick={() => { setActiveTab('assign-branch'); setIsMenuOpen(false); }}>🔗 Branch Assignment</div>}
             {hasPerm('devices') && <div className="menu-item" onClick={() => { setActiveTab('devices'); setIsMenuOpen(false); }}>📱 Registered Devices</div>}
             {hasPerm('reports') && <div className="menu-item" onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}>📈 Attendance Logs</div>}
+            {hasPerm('announcements') && <div className="menu-item" onClick={() => { setActiveTab('announcements'); setIsMenuOpen(false); }}>📢 Announcements</div>}
+            {hasPerm('leave-management') && <div className="menu-item" onClick={() => { setActiveTab('leave-management'); setIsMenuOpen(false); }}>⛱️ Leave System</div>}
+            {hasPerm('payroll-bridge') && <div className="menu-item" onClick={() => { setActiveTab('payroll-bridge'); setIsMenuOpen(false); }}>💰 Payroll Bridge</div>}
             <div className="menu-item" style={{color:'#ef4444', borderTop:'1px solid #334155'}} onClick={() => { sessionStorage.removeItem(sessionKey); window.location.reload(); }}>🏃 Session Logout</div>
           </div>
         )}
@@ -668,11 +715,15 @@ function App() {
           {activeTab === 'employees' && '👥 Employee Management'}
           {activeTab === 'org-units' && '🏢 Organizational Units'}
           {activeTab === 'position-titles' && '💼 Job Position Titles'}
-          {activeTab === 'schedules' && '📅 Work Schedules'}
+          {activeTab === 'schedules' && '⏰ Schedule Management'}
+          {activeTab === 'assign-schedule' && '📅 Assign Schedule'}
           {activeTab === 'branches' && '📍 Branch Locations'}
           {activeTab === 'assign-branch' && '🔗 Branch Assignment'}
           {activeTab === 'devices' && '📱 Registered Devices'}
           {activeTab === 'reports' && '📈 Attendance Reports'}
+          {activeTab === 'announcements' && '📢 Company Announcements'}
+          {activeTab === 'leave-management' && '⛱️ Leave Management'}
+          {activeTab === 'payroll-bridge' && '💰 Payroll Bridge'}
         </span>
         {activeTab !== 'dashboard' && (
            <button onClick={() => setActiveTab('dashboard')} style={{marginLeft:'auto', background:'rgba(59, 130, 246, 0.1)', border:'1px solid #3b82f6', color:'#3b82f6', padding: '5px 15px', borderRadius: '8px', cursor:'pointer', fontWeight:'900', fontSize: '0.75rem'}}>← BACK TO HUB</button>
@@ -728,9 +779,17 @@ function App() {
              )}
              {hasPerm('schedules') && (
                <div className="module-card" onClick={() => setActiveTab('schedules')}>
+                 <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>⏰</div>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Schedule Setup</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Create and manage work shift templates.</p>
+                 <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
+               </div>
+             )}
+             {hasPerm('assign-schedule') && (
+               <div className="module-card" onClick={() => setActiveTab('assign-schedule')}>
                  <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>📅</div>
-                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Schedules</h3>
-                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Assign work shifts and office hours to your staff.</p>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Assign Schedule</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Map work shifts to specific employees.</p>
                  <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
                </div>
              )}
@@ -766,6 +825,30 @@ function App() {
                  <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
                </div>
              )}
+             {hasPerm('announcements') && (
+               <div className="module-card" onClick={() => setActiveTab('announcements')}>
+                 <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>📢</div>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Announcements</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Broadcast news and updates to all employees.</p>
+                 <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
+               </div>
+             )}
+             {hasPerm('leave-management') && (
+               <div className="module-card" onClick={() => setActiveTab('leave-management')}>
+                 <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>⛱️</div>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Leave System</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Manage time-off requests and leave balances.</p>
+                 <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
+               </div>
+             )}
+             {hasPerm('payroll-bridge') && (
+               <div className="module-card" onClick={() => setActiveTab('payroll-bridge')}>
+                 <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>💰</div>
+                 <h3 style={{margin:'0 0 10px 0', color: 'white'}}>Payroll Bridge</h3>
+                 <p style={{fontSize:'0.85rem', color:'#64748b', margin:0}}>Export attendance data formatted for payroll.</p>
+                 <button className="btn-blue" style={{marginTop:'20px', width:'100%'}}>OPEN MODULE</button>
+               </div>
+             )}
              {(!user?.permissions || user.permissions.length === 0) && (
                <div style={{gridColumn:'1 / -1', padding:'100px', textAlign:'center', background:'#1e293b', borderRadius:'20px', border:'1px dashed #334155'}}>
                  <div style={{fontSize:'4rem', marginBottom:'20px'}}>🔒</div>
@@ -778,7 +861,9 @@ function App() {
       )}
 
       {activeTab === 'employees' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', borderBottom:'1px solid #334155', paddingBottom:'20px'}}>
             <h2 style={{margin:0, color: 'white'}}>👥 Employee Master List</h2>
             <div style={{display:'flex', gap:'10px'}}>
@@ -860,10 +945,13 @@ function App() {
             {employees.length === 0 && <div style={{textAlign:'center', padding:'40px', color:'#64748b', fontWeight: 'bold'}}>No employee records found.</div>}
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'org-units' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'30px'}}>
             {/* CREATE FORM */}
             <div style={{background:'rgba(255,255,255,0.03)', padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
@@ -910,10 +998,13 @@ function App() {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'position-titles' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'30px'}}>
             {/* CREATE FORM */}
             <div style={{background:'rgba(255,255,255,0.03)', padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
@@ -960,12 +1051,89 @@ function App() {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'schedules' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
+          <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'30px'}}>
+            {/* CREATE FORM */}
+            <div style={{background:'rgba(255,255,255,0.03)', padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
+              <h3 style={{marginTop:0, color:'#f59e0b', fontWeight: '900', textTransform: 'uppercase', fontSize: '0.9rem'}}>⏰ Create Work Shift</h3>
+              <p style={{fontSize:'0.8rem', color:'#64748b', marginBottom:'25px'}}>Define shift timings and grace periods.</p>
+
+              <div className="form-group" style={{marginBottom:'15px'}}>
+                <label>Shift Name</label>
+                <input
+                  placeholder="Ex: Morning Shift"
+                  value={shiftName}
+                  onChange={e => setShiftName(e.target.value)}
+                />
+              </div>
+
+              <div className="form-grid" style={{marginBottom:'15px'}}>
+                <div className="form-group">
+                  <label>Start Time</label>
+                  <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>End Time</label>
+                  <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Grace Period (Minutes)</label>
+                <input type="number" value={gracePeriod} onChange={e => setGracePeriod(e.target.value)} />
+              </div>
+
+              <button onClick={saveShift} className="btn-blue" style={{marginTop:'25px', width:'100%', padding: '15px', background: '#f59e0b'}}>SAVE SHIFT TEMPLATE</button>
+            </div>
+
+            {/* LIST TABLE */}
+            <div>
+              <h2 style={{marginTop:0, fontSize: '1.2rem', color: 'white'}}>📋 Registered Shifts</h2>
+              <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Shift Name</th>
+                      <th>Timings</th>
+                      <th>Grace</th>
+                      <th style={{textAlign:'right'}}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedules.map((s, i) => (
+                      <tr key={i}>
+                        <td style={{fontWeight:'900', color:'#f59e0b'}}>{s.name}</td>
+                        <td style={{fontSize:'0.9rem'}}>{s.startTime} - {s.endTime}</td>
+                        <td style={{fontSize:'0.9rem'}}>{s.gracePeriod} mins</td>
+                        <td style={{textAlign:'right'}}>
+                          <button onClick={() => deleteShift(s.id)} className="btn-red" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {schedules.length === 0 && (
+                      <tr><td colSpan="4" style={{textAlign:'center', padding:'50px', color:'#64748b', fontWeight: 'bold'}}>No shifts defined yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {activeTab === 'assign-schedule' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px', borderBottom: '1px solid #334155', paddingBottom: '20px'}}>
-            <h2 style={{margin:0, color: 'white'}}>📅 Work Schedule Management</h2>
+            <h2 style={{margin:0, color: 'white'}}>📅 Employee Schedule Assignment</h2>
             <input
               placeholder="🔍 Search staff identity..."
               style={{padding:'12px', borderRadius:'10px', border:'1px solid #334155', width:'350px'}}
@@ -1015,10 +1183,13 @@ function App() {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'branches' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'30px'}}>
             {/* CREATE/EDIT FORM */}
             <div style={{background:'rgba(255,255,255,0.03)', padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
@@ -1091,10 +1262,13 @@ function App() {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'reports' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px'}}>
             <h2 style={{margin:0, color: 'white'}}>📊 Attendance Analytics</h2>
             <div style={{display:'flex', gap:'12px'}}>
@@ -1185,10 +1359,13 @@ function App() {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'assign-branch' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px', borderBottom: '1px solid #334155', paddingBottom: '20px'}}>
             <h2 style={{margin:0, color: 'white'}}>🔗 Employee Branch Assignment</h2>
             <input
@@ -1240,10 +1417,13 @@ function App() {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {activeTab === 'devices' && (
-        <div className="card fade-in">
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'25px', borderBottom: '1px solid #334155', paddingBottom: '20px'}}>
             <h2 style={{margin:0, color: 'white'}}>📱 Registered Device Security</h2>
             <input
@@ -1304,6 +1484,43 @@ function App() {
             </table>
           </div>
         </div>
+      </div>
+      )}
+
+      {activeTab === 'announcements' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card" style={{textAlign:'center', padding:'100px'}}>
+             <div style={{fontSize:'5rem', marginBottom:'20px'}}>📢</div>
+             <h2 style={{color:'white'}}>Company Announcements</h2>
+             <p style={{color:'#64748b'}}>This module is currently being optimized for your tenant.</p>
+             <button onClick={() => setActiveTab('dashboard')} style={{marginTop:'30px'}}>Return Home</button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'leave-management' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card" style={{textAlign:'center', padding:'100px'}}>
+             <div style={{fontSize:'5rem', marginBottom:'20px'}}>⛱️</div>
+             <h2 style={{color:'white'}}>Leave Management System</h2>
+             <p style={{color:'#64748b'}}>Track and approve employee time-off requests here.</p>
+             <button onClick={() => setActiveTab('dashboard')} style={{marginTop:'30px'}}>Return Home</button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'payroll-bridge' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card" style={{textAlign:'center', padding:'100px'}}>
+             <div style={{fontSize:'5rem', marginBottom:'20px'}}>💰</div>
+             <h2 style={{color:'white'}}>Payroll Integration Bridge</h2>
+             <p style={{color:'#64748b'}}>Securely export attendance data to your payroll software.</p>
+             <button onClick={() => setActiveTab('dashboard')} style={{marginTop:'30px'}}>Return Home</button>
+          </div>
+        </div>
       )}
 
       {/* ASSIGN BRANCH MODAL */}
@@ -1349,28 +1566,28 @@ function App() {
             </div>
 
             <div className="form-group">
-              <label>TYPE OR SELECT SHIFT</label>
-              <input
-                list="shifts-admin"
-                style={{width: '100%', fontSize: '1.1rem', padding: '15px', background:'#0f172a', border:'1px solid #334155', color:'white', borderRadius:'12px'}}
+              <label>SELECT WORK SHIFT</label>
+              <select
+                style={{width: '100%', fontSize: '1.1rem', padding: '15px', background:'#0f172a', border:'1px solid #334155', color:'white', borderRadius:'12px', cursor: 'pointer'}}
                 value={newShiftValue}
                 onChange={e => setNewShiftValue(e.target.value)}
-                placeholder="Ex: 07:00 to 17:00"
-              />
-              <datalist id="shifts-admin">
+              >
+                <option value="">-- Choose Schedule from Management --</option>
                 {schedules.map(s => (
-                  <option key={s.id} value={`${s.name} (${s.startTime}-${s.endTime})`} />
+                  <option key={s.id} value={`${s.name} (${s.startTime}-${s.endTime})`}>
+                    {s.name} ({s.startTime} - {s.endTime})
+                  </option>
                 ))}
                 {schedules.length === 0 && (
                   <>
-                    <option value="07:00 to 17:00" />
-                    <option value="07:30 to 17:30" />
-                    <option value="08:00 to 18:00" />
-                    <option value="09:00 to 19:00" />
-                    <option value="Night: 19:00 to 05:00" />
+                    <option value="07:00 to 17:00">07:00 to 17:00</option>
+                    <option value="07:30 to 17:30">07:30 to 17:30</option>
+                    <option value="08:00 to 18:00">08:00 to 18:00</option>
+                    <option value="09:00 to 19:00">09:00 to 19:00</option>
+                    <option value="Night: 19:00 to 05:00">Night: 19:00 to 05:00</option>
                   </>
                 )}
-              </datalist>
+              </select>
             </div>
 
             <div style={{display:'flex', gap:'15px', marginTop:'40px'}}>
@@ -1526,3 +1743,33 @@ function App() {
 }
 
 export default App;
+
+const BackToDashboard = ({ onClick }) => (
+  <button onClick={onClick} style={{
+    background:'rgba(59, 130, 246, 0.1)',
+    border:'1px solid rgba(59, 130, 246, 0.3)',
+    color: '#60a5fa',
+    marginBottom:'25px',
+    display:'flex',
+    alignItems:'center',
+    gap:'10px',
+    padding:'12px 24px',
+    borderRadius:'15px',
+    backdropFilter:'blur(10px)',
+    transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+    fontWeight: '900',
+    fontSize: '0.8rem',
+    cursor: 'pointer',
+    marginTop: 0
+  }} onMouseOver={e => {
+    e.currentTarget.style.transform = 'translateX(-5px)';
+    e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)';
+  }} onMouseOut={e => {
+    e.currentTarget.style.transform = 'translateX(0)';
+    e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)';
+  }}>
+    <span style={{fontSize:'1.4rem'}}>⬅️</span>
+    <span style={{letterSpacing:'1px'}}>BACK TO DASHBOARD</span>
+  </button>
+);

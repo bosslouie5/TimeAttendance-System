@@ -38,6 +38,24 @@ const apksDir = path.join(__dirname, 'apks');
 if (!fs.existsSync(apksDir)) fs.mkdirSync(apksDir);
 app.use('/apks', express.static(apksDir));
 
+// Force Download Endpoint for APKs
+app.get('/api/master/download-apk/:filename', (req, res) => {
+  const { filename } = req.params;
+  const filePath = path.join(apksDir, filename);
+
+  if (fs.existsSync(filePath)) {
+    console.log(`[DOWNLOAD] Serving APK: ${filename}`);
+    res.download(filePath, filename, (err) => {
+      if (err) {
+        console.error(`[DOWNLOAD] Error sending file:`, err);
+        if (!res.headersSent) res.status(500).send("Error downloading file.");
+      }
+    });
+  } else {
+    res.status(404).send("File not found.");
+  }
+});
+
 // --- DATABASE UTILS ---
 function loadData() {
   if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] };
@@ -802,6 +820,7 @@ app.delete('/api/users/:tenantId', (req, res) => {
     data.orgUnits = (data.orgUnits || []).filter(o => (o.tenantId || '').toLowerCase() !== lowerTenantId);
     data.schedules = (data.schedules || []).filter(s => (s.tenantId || '').toLowerCase() !== lowerTenantId);
     data.logs = (data.logs || []).filter(l => (l.tenantId || '').toLowerCase() !== lowerTenantId);
+    data.positionTitles = (data.positionTitles || []).filter(p => (p.tenantId || '').toLowerCase() !== lowerTenantId);
     if (data.assignments) {
       data.assignments = data.assignments.filter(a => (a.tenantId || '').toLowerCase() !== lowerTenantId);
     }
@@ -860,18 +879,18 @@ app.get('/api/tenant-info/:tenantId', (req, res) => {
 
 app.post('/api/master/build-apk', (req, res) => {
   const clientIp = req.ip.replace('::ffff:', '');
-  const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
-
-  console.log(`[BUILD] APK Build request from: ${clientIp}`);
-
   const { tenantId, companyName, publicUrl } = req.body;
   const ip = getNetworkIP();
   const apiUrl = publicUrl || `http://${ip}:${PORT}/api`;
 
-  console.log(`[BUILD] Starting build for ${companyName} (${tenantId}). API: ${apiUrl}`);
+  console.log(`[BUILD] Starting APK Build for ${companyName} (${tenantId})...`);
 
   try {
     const mobileAppPath = path.join(__dirname, '../mobile-app');
+    const sourceApk = path.join(mobileAppPath, 'android/app/build/outputs/apk/debug/app-debug.apk');
+
+    // 0. Cleanup old build to ensure fresh APK
+    if (fs.existsSync(sourceApk)) fs.unlinkSync(sourceApk);
 
     // 1. Update app_config.json
     const configPath = path.join(mobileAppPath, 'src/app_config.json');
@@ -886,9 +905,7 @@ app.post('/api/master/build-apk', (req, res) => {
       fs.writeFileSync(stringsPath, stringsXml);
     }
 
-    // 3. Run the "Sureball" Portable Build Script
-    console.log(`[BUILD] Triggering build_apk_portable.bat...`);
-
+    // 3. Build Environment Setup
     const DEV_TOOLS = "C:\\Users\\60003078\\Desktop\\Advance Software\\DEV_TOOLS";
     const buildEnv = {
       ...process.env,
@@ -896,45 +913,39 @@ app.post('/api/master/build-apk', (req, res) => {
       PATH: `${path.join(DEV_TOOLS, "node-v20.11.1-win-x64")};${path.join(DEV_TOOLS, "platform-tools")};${path.join(DEV_TOOLS, "jdk-17.0.10+7", "bin")};${process.env.PATH}`
     };
 
-    try {
-      const output = execSync('build_apk_portable.bat', {
-        cwd: mobileAppPath,
-        shell: true,
-        env: buildEnv,
-        stdio: 'pipe'
-      }).toString();
-      console.log(`[BUILD] Batch Output Summary: ${output.substring(output.length - 300)}`);
-    } catch (batchError) {
-      console.error(`[BUILD] Batch script execution failed!`);
-      if (batchError.stdout) console.error(`[STDOUT]: ${batchError.stdout.toString()}`);
-      if (batchError.stderr) console.error(`[STDERR]: ${batchError.stderr.toString()}`);
-      throw batchError;
-    }
+    // 4. Run Build Script
+    console.log(`[BUILD] Running build_apk_portable.bat...`);
+    execSync('build_apk_portable.bat', {
+      cwd: mobileAppPath,
+      shell: true,
+      env: buildEnv,
+      stdio: 'pipe'
+    });
 
-    const sourceApk = path.join(mobileAppPath, 'android/app/build/outputs/apk/debug/app-debug.apk');
+    // 5. Verify and Move APK
     const safeFileName = (companyName || tenantId).toString().replace(/[^a-z0-9]/gi, '_');
     const destName = `${tenantId}_${safeFileName}.apk`;
     const destPath = path.join(apksDir, destName);
 
     if (fs.existsSync(sourceApk)) {
       fs.copyFileSync(sourceApk, destPath);
-      console.log(`[BUILD] SUCCESS: ${destName}`);
+      console.log(`[BUILD] SUCCESS: Generated ${destName}`);
 
-      // Smart URL detection for Download (Use the current domain/host)
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const host = req.headers['host'];
-      const finalDownloadUrl = `${protocol}://${host}/apks/${destName}`;
+      // Point to the force download endpoint instead of static file
+      const finalDownloadUrl = `${protocol}://${host}/api/master/download-apk/${destName}`;
 
       res.json({ success: true, downloadUrl: finalDownloadUrl, file: destName });
     } else {
-      throw new Error("APK not found after batch execution.");
+      throw new Error("Build finished but app-debug.apk was not found.");
     }
   } catch (error) {
-    console.error(`[BUILD] FATAL ERROR:`, error.message);
+    console.error(`[BUILD] ERROR:`, error.message);
     res.status(500).json({
-      error: "Build failed",
-      details: error.message,
-      stderr: error.stderr ? error.stderr.toString() : 'Check backend console for logs.'
+      success: false,
+      error: "Build failed or timed out",
+      details: error.message
     });
   }
 });
