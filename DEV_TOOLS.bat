@@ -262,6 +262,7 @@ if exist "web_deploy" rd /s /q "web_deploy"
 mkdir "web_deploy"
 mkdir "web_deploy\dev"
 mkdir "web_deploy\app"
+echo. > "web_deploy\.nojekyll"
 
 echo [*] Step 5: Copying Builds...
 xcopy /s /i /y "web-admin\dist\*" "web_deploy\"
