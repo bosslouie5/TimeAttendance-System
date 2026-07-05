@@ -312,19 +312,20 @@ set "CURRENT_VER=1.0.0"
 if exist "%VER_FILE%" (
     for /f "delims=" %%v in ('powershell -Command "(Get-Content %VER_FILE% | ConvertFrom-Json).version"') do set CURRENT_VER=%%v
 )
-echo [STATUS] Current Version: %CURRENT_VER%
-echo.
-set /p NEW_VER="Enter New Version (Current: %CURRENT_VER%): "
-if "!NEW_VER!"=="" set "NEW_VER=%CURRENT_VER%"
-set /p msg="Enter Changelog: "
-if "!msg!"=="" set msg="Performance enhancements and security updates."
-set /p force="Force Update? (Y/N): "
-set "FORCE_VAL=false"
-if /i "%force%"=="Y" set "FORCE_VAL=true"
+
+:: PRO GUI FOR VERSION BUMP
+set "psCommand=Add-Type -AssemblyName System.Windows.Forms; $form = New-Object Windows.Forms.Form; $form.Text = 'TIMEKEY - VERSION BUMP'; $form.Size = New-Object Drawing.Size(400,250); $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'; $form.MaximizeBox = $false; $lbl = New-Object Windows.Forms.Label; $lbl.Text = 'Enter New Version (Current: %CURRENT_VER%):'; $lbl.Location = '20,20'; $lbl.Size = '300,20'; $txt = New-Object Windows.Forms.TextBox; $txt.Text = '%CURRENT_VER%'; $txt.Location = '20,45'; $txt.Size = '340,30'; $lbl2 = New-Object Windows.Forms.Label; $lbl2.Text = 'Changelog:'; $lbl2.Location = '20,80'; $lbl2.Size = '300,20'; $txt2 = New-Object Windows.Forms.TextBox; $txt2.Text = 'Performance enhancements and security updates.'; $txt2.Location = '20,105'; $txt2.Size = '340,30'; $btn = New-Object Windows.Forms.Button; $btn.Text = 'BUMP VERSION NOW'; $btn.Location = '20,150'; $btn.Size = '340,40'; $btn.DialogResult = [Windows.Forms.DialogResult]::OK; $form.AcceptButton = $btn; $form.Controls.AddRange(@($lbl,$txt,$lbl2,$txt2,$btn)); $form.Add_Shown({$txt.Focus()}); if($form.ShowDialog() -eq 'OK'){$txt.Text + '|' + $txt2.Text}"
+
+for /f "tokens=1,2 delims=|" %%a in ('powershell -Command "%psCommand%"') do (
+    set "NEW_VER=%%a"
+    set "msg=%%b"
+)
+
+if "!NEW_VER!"=="" goto MENU
 
 echo.
 echo [*] Updating Version Files (Direct Disk Write)...
-powershell -Command "$v = @{ version='!NEW_VER!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); changelog='!msg!'; apkUrl='/api/master/download-apk/TimeKey_Master.apk'; forceUpdate=$!FORCE_VAL! }; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
+powershell -Command "$v = @{ version='!NEW_VER!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); changelog='!msg!'; apkUrl='/api/master/download-apk/TimeKey_Master.apk'; forceUpdate=$false }; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
 
 if exist "%CONFIG_FILE%" (
     echo [*] Syncing to Mobile App Configuration...
@@ -332,11 +333,7 @@ if exist "%CONFIG_FILE%" (
 )
 
 echo.
-echo [*] Notifying Live Server (Optional)...
-powershell -Command "Invoke-RestMethod -Uri 'http://localhost:4002/api/master/update-version' -Method Post -Body (@{version='!NEW_VER!'; changelog='!msg!'; forceUpdate=$!FORCE_VAL!} | ConvertTo-Json) -ContentType 'application/json'" >nul 2>&1
-
-echo.
-echo [SUCCESS] Version bumped to !NEW_VER! and synced to source.
+echo [SUCCESS] Version bumped to !NEW_VER! and synced.
 pause
 goto MENU
 

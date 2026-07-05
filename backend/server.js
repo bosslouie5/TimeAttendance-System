@@ -932,31 +932,32 @@ app.post('/api/device/register', tenantGuard, async (req, res) => {
   const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const employee = data.employees.find(e => e.employeeId === employeeId && (e.tenantId === tenantId || !e.tenantId));
+
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-  if (!employee.registeredDeviceId) {
-    const deviceInUse = data.employees.find(e => e.registeredDeviceId === deviceId && e.employeeId !== employeeId && (e.tenantId === tenantId || !e.tenantId));
-    if (deviceInUse) return res.status(403).json({ error: `This device is already linked to ${deviceInUse.name}.` });
+  // SECURITY: Check if this specific device is already linked to ANOTHER employee
+  const deviceInUse = data.employees.find(e => e.registeredDeviceId === deviceId && e.employeeId !== employeeId && (e.tenantId === tenantId || !e.tenantId));
+
+  if (deviceInUse) {
+    return res.status(403).json({ error: `This device is already linked to ${deviceInUse.name}.` });
+  }
+
+  // BUSINESS LOGIC: If the device is NOT registered to anyone else, allow this employee to use/register it.
+  // This allows users to switch devices as long as the new device is "clean".
+  if (!employee.registeredDeviceId || employee.registeredDeviceId !== deviceId) {
+    console.log(`[DEVICE] Registering/Updating device for ${employee.name}: ${deviceId}`);
     employee.registeredDeviceId = deviceId;
     employee.registeredDeviceName = deviceName || 'Unknown Device';
     employee.registrationDate = new Date().toISOString();
     await saveData(data);
-    return res.json({
-      success: true,
-      message: 'Registered',
-      tenantId: employee.tenantId, // Return the actual tenantId
-      employee: { employeeId: employee.employeeId, name: employee.name }
-    });
-  } else if (employee.registeredDeviceId === deviceId) {
-    return res.json({
-      success: true,
-      message: 'Verified',
-      tenantId: employee.tenantId, // Return the actual tenantId
-      employee: { employeeId: employee.employeeId, name: employee.name }
-    });
-  } else {
-    return res.status(403).json({ error: 'Already registered on another device.' });
   }
+
+  return res.json({
+    success: true,
+    message: 'Verified ✓',
+    tenantId: employee.tenantId,
+    employee: { employeeId: employee.employeeId, name: employee.name }
+  });
 });
 
 app.post('/api/device/reset', tenantGuard, async (req, res) => {

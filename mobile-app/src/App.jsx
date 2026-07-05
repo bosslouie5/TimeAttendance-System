@@ -327,7 +327,7 @@ function App() {
       setStatus('Offline Access ✓');
       alert('OFFLINE MODE: Logged in using cached credentials.');
     } else {
-      alert(`CONNECTION REQUIRED\n\n1. Ensure you are connected to the internet.\n2. First-time login for ID [${cleanId}] must be done while the system is ONLINE.\n3. Server: ${apiUrl}`);
+      alert(`CONNECTION REQUIRED: First-time login for ID [${cleanId}] must be performed while online.\n\nServer: ${apiUrl}`);
     }
     setLoading(false);
   };
