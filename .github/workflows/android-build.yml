@@ -13,6 +13,10 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Heto ang fix: Kailangan itong environment definition
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout Code
