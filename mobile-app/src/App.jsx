@@ -60,7 +60,6 @@ function App() {
 
     let base = appConfig.defaultApiUrl || 'https://timeattendance-system.onrender.com/api';
 
-    // Auto-switch to local API if we are developing locally in browser
     if (isLocalHost && base.includes('onrender.com')) {
        base = 'http://127.0.0.1:4002/api';
     }
@@ -80,59 +79,59 @@ function App() {
   const [tenantId, setTenantId] = useState(() => {
     const saved = localStorage.getItem('tenant_id');
     if (saved) return saved;
-
-    // Check if the build has a hardcoded tenant (from Admin Portal build)
     const configTenantId = appConfig.defaultTenantId;
     if (configTenantId && configTenantId !== "/" && configTenantId !== "master" && configTenantId !== "MASTER_UNIVERSAL") {
       localStorage.setItem('tenant_id', configTenantId);
       return configTenantId;
     }
-    return null; // Show setup screen if no tenant is identified
+    return null;
   });
 
   const [setupId, setSetupId] = useState('');
   const [isSettingUp, setIsSettingUp] = useState(false);
 
-  const handleSetupTenant = async () => {
-    if (!setupId.trim()) return alert('Please enter a valid Company ID');
-    setIsSettingUp(true);
-    setStatus('Linking Company...');
-
+  const [employeeId, setEmployeeId] = useState(localStorage.getItem('cached_id') || '');
+  const [departments, setDepartments] = useState(() => {
     try {
-      const res = await getJson(`${apiUrl}/tenant-info/${setupId.trim()}`);
-      if (res.ok && res.data) {
-        const tid = res.data.tenantId || setupId.trim();
-        localStorage.setItem('tenant_id', tid);
-        localStorage.setItem('tenant_info', JSON.stringify(res.data));
-        setTenantId(tid);
-        setTenantInfo(res.data);
-        setStatus('Company Linked ✓');
-        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is now ready.`);
-      } else {
-        alert('INVALID COMPANY ID: Please check the ID provided by your administrator.');
-      }
-    } catch (e) {
-      alert('CONNECTION ERROR: Make sure you are online to link your company for the first time.');
-    } finally {
-      setIsSettingUp(false);
-      setStatus('System Ready');
-    }
-  };
+      return JSON.parse(localStorage.getItem('all_departments')) || initialData.departments;
+    } catch (e) { return initialData.departments; }
+  });
+  const [status, setStatus] = useState('System Online');
+  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('cached_id'));
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [tenantInfo, setTenantInfo] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('tenant_info')) || null;
+    } catch (e) { return null; }
+  });
+  const [pendingLogs, setPendingLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pending_logs')) || [];
+    } catch (e) { return []; }
+  });
+
+  const [updateAvailable, setUpdateAvailable] = useState(null);
+  const [personalLogs, setPersonalLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('personal_logs')) || [];
+    } catch (e) { return []; }
+  });
+  const [isServerDown, setIsServerDown] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
   useEffect(() => {
     checkConnection();
     const connInterval = setInterval(checkConnection, 15000);
-
     if (!localStorage.getItem('all_employees')) {
       localStorage.setItem('all_employees', JSON.stringify(initialData.employees));
       localStorage.setItem('all_departments', JSON.stringify(initialData.departments));
     }
-
     if (tenantId) {
         fetchTenantInfo();
         if (loggedIn) syncSystemData();
     }
-
     return () => clearInterval(connInterval);
   }, [tenantId]);
 
@@ -158,27 +157,15 @@ function App() {
     if (isSyncing || isServerDown) return;
     const currentLogs = forcedLogs || JSON.parse(localStorage.getItem('pending_logs') || '[]');
     if (currentLogs.length === 0) return;
-
     setIsSyncing(true);
     const logsToSync = [...currentLogs];
     let processedCount = 0;
-
     for (const log of logsToSync) {
       try {
-        const response = await postJson(
-          `${apiUrl}/timein`,
-          { ...log, tenantId },
-          { 'x-tenant-id': tenantId }
-        );
-
-        if (response.status === 200 || response.status === 400) {
-           processedCount++;
-        } else {
-           break;
-        }
+        const response = await postJson(`${apiUrl}/timein`, { ...log, tenantId }, { 'x-tenant-id': tenantId });
+        if (response.status === 200 || response.status === 400) { processedCount++; } else { break; }
       } catch (e) { break; }
     }
-
     if (processedCount > 0) {
       const latestFromStorage = JSON.parse(localStorage.getItem('pending_logs') || '[]');
       const remaining = latestFromStorage.slice(processedCount);
@@ -213,7 +200,6 @@ function App() {
         const text = await res.text();
         const lines = text.trim().split('\n');
         const newUrl = lines[lines.length - 1];
-
         if (newUrl && newUrl.includes('trycloudflare.com')) {
           const formatted = newUrl.endsWith('/api') ? newUrl : `${newUrl}/api`;
           if (formatted !== apiUrl) {
@@ -245,14 +231,12 @@ function App() {
     try {
       const targetTenantId = forcedTenantId || tenantId;
       const targetEmpId = forcedEmpId || localStorage.getItem('cached_id');
-
       const headers = { 'x-tenant-id': targetTenantId };
       const [empRes, deptRes, logRes] = await Promise.all([
         getJson(`${apiUrl}/employees`, headers),
         getJson(`${apiUrl}/departments?employeeId=${targetEmpId}`, headers),
         getJson(`${apiUrl}/logs`, headers)
       ]);
-
       if (empRes.status === 200 && deptRes.status === 200) {
         localStorage.setItem('all_employees', JSON.stringify(empRes.data));
         localStorage.setItem('all_departments', JSON.stringify(deptRes.data));
@@ -268,24 +252,42 @@ function App() {
     setIsSyncing(false);
   };
 
+  const handleSetupTenant = async () => {
+    if (!setupId.trim()) return alert('Please enter a valid Company ID');
+    setIsSettingUp(true);
+    setStatus('Linking Company...');
+    try {
+      const res = await getJson(`${apiUrl}/tenant-info/${setupId.trim()}`);
+      if (res.ok && res.data) {
+        const tid = res.data.tenantId || setupId.trim();
+        localStorage.setItem('tenant_id', tid);
+        localStorage.setItem('tenant_info', JSON.stringify(res.data));
+        setTenantId(tid);
+        setTenantInfo(res.data);
+        setStatus('Company Linked ✓');
+        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is now ready.`);
+      } else {
+        alert('INVALID COMPANY ID: Please check the ID provided by your administrator.');
+      }
+    } catch (e) {
+      alert('CONNECTION ERROR: Make sure you are online to link your company for the first time.');
+    } finally {
+      setIsSettingUp(false);
+      setStatus('System Ready');
+    }
+  };
+
   const login = async () => {
     if (!employeeId.trim()) return alert('Please enter your Employee ID');
     setLoading(true);
     setStatus('Authenticating...');
-
     const cleanId = employeeId.trim();
     const allEmployees = JSON.parse(localStorage.getItem('all_employees') || '[]');
     const cachedEmployee = allEmployees.find(e => e.employeeId === cleanId);
-
     try {
       const idInfo = await Device.getId();
       const devInfo = await Device.getInfo();
-      const res = await postJson(
-        `${apiUrl}/device/register`,
-        { employeeId: cleanId, deviceId: idInfo.identifier, deviceName: `${devInfo.model}` },
-        { 'x-tenant-id': tenantId }
-      );
-
+      const res = await postJson(`${apiUrl}/device/register`, { employeeId: cleanId, deviceId: idInfo.identifier, deviceName: `${devInfo.model}` }, { 'x-tenant-id': tenantId });
       if (res.status === 200) {
         const empData = res.data.employee;
         const actualTenantId = res.data.tenantId || tenantId;
@@ -314,9 +316,7 @@ function App() {
         setLoading(false);
         return;
       }
-    } catch (e) {
-      console.error('Login exception:', e);
-    }
+    } catch (e) { console.error('Login exception:', e); }
 
     if (cachedEmployee) {
       setLoggedIn(true);
@@ -334,10 +334,8 @@ function App() {
     if (!selectedDepartment) return alert('Please select a branch first!');
     const dept = departments.find(d => d.departmentId === selectedDepartment);
     if (!dept) return;
-
     setLoading(true);
     setStatus('📡 Checking Location...');
-
     let pos;
     try {
       pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
@@ -351,43 +349,21 @@ function App() {
         return;
       }
     }
-
     const dist = calculateDistance(pos.coords.latitude, pos.coords.longitude, dept.pinLatitude, dept.pinLongitude);
     const allowedRadius = dept.radiusMeters || 50;
-
     if (dist > allowedRadius) {
       setStatus('❌ Too Far');
       alert(`ACCESS DENIED!\n\nYou are ${Math.round(dist)}m away from ${dept.name}.\nYou must be within ${allowedRadius}m.`);
       setLoading(false);
       return;
     }
-
-    const logData = {
-      employeeId: localStorage.getItem('cached_id'),
-      employeeName: localStorage.getItem('cached_name'),
-      departmentId: selectedDepartment,
-      departmentName: dept.name,
-      type,
-      timestamp: new Date().toISOString(),
-      distanceMeters: Math.round(dist),
-      tenantId
-    };
-
+    const logData = { employeeId: localStorage.getItem('cached_id'), employeeName: localStorage.getItem('cached_name'), departmentId: selectedDepartment, departmentName: dept.name, type, timestamp: new Date().toISOString(), distanceMeters: Math.round(dist), tenantId };
     setStatus('💾 Saving log...');
-
     try {
       const response = await postJson(`${apiUrl}/timein`, logData, { 'x-tenant-id': tenantId });
-      if (response.status === 200) {
-        setStatus(`${type} Success ✓`);
-        alert(`SUCCESS recorded on server.`);
-        syncSystemData();
-      } else if (response.status === 400) {
-        setStatus('⚠️ Duplicate rejected');
-        alert(response.data?.error || 'Attendance already recorded.');
-        syncSystemData();
-      } else {
-          throw new Error('Network Issue');
-      }
+      if (response.status === 200) { setStatus(`${type} Success ✓`); alert(`SUCCESS recorded on server.`); syncSystemData(); }
+      else if (response.status === 400) { setStatus('⚠️ Duplicate rejected'); alert(response.data?.error || 'Attendance already recorded.'); syncSystemData(); }
+      else { throw new Error('Network Issue'); }
     } catch (err) {
       const currentPending = JSON.parse(localStorage.getItem('pending_logs') || '[]');
       const updatedPending = [...currentPending, logData];
@@ -395,95 +371,38 @@ function App() {
       setPendingLogs(updatedPending);
       setStatus('Log Cached ✓');
       alert(`OFFLINE SUCCESS! Saved locally.`);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   useEffect(() => {
     const checkUpdate = async () => {
       if (!apiUrl.startsWith('http') || isServerDown) return;
-
-      console.log(`[OTA] Checking for updates at ${apiUrl}/app-version...`);
       try {
         const res = await getJson(`${apiUrl}/app-version`);
         if (res.ok && res.data) {
           const latest = res.data;
           const currentVer = appConfig.version;
-
-          console.log(`[OTA] Current: ${currentVer}, Latest: ${latest.version}`);
-
           const currentParts = currentVer.split('.').map(Number);
           const latestParts = latest.version.split('.').map(Number);
-
           let isNewer = false;
           for (let i = 0; i < 3; i++) {
             if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
             if (latestParts[i] < currentParts[i]) { isNewer = false; break; }
           }
-
-          if (isNewer) {
-            console.log(`[OTA] NEW VERSION FOUND: ${latest.version}`);
-            setUpdateAvailable(latest);
-          }
+          if (isNewer) setUpdateAvailable(latest);
         }
-      } catch (err) {
-        console.warn('[OTA] Update check failed:', err.message);
-      }
+      } catch (err) { console.warn('[OTA] Update check failed:', err.message); }
     };
-
-    // Initial check with small delay to ensure network is ready
     const timer = setTimeout(checkUpdate, 5000);
-    const updateInterval = setInterval(checkUpdate, 60000); // Check every 1 minute for faster testing
-    return () => {
-        clearTimeout(timer);
-        clearInterval(updateInterval);
-    };
+    const updateInterval = setInterval(checkUpdate, 60000);
+    return () => { clearTimeout(timer); clearInterval(updateInterval); };
   }, [apiUrl, isServerDown]);
 
   const handleDownloadUpdate = () => {
     if (!updateAvailable) return;
-    const downloadUrl = updateAvailable.apkUrl.startsWith('http')
-      ? updateAvailable.apkUrl
-      : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
-
+    const downloadUrl = updateAvailable.apkUrl.startsWith('http') ? updateAvailable.apkUrl : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
     window.open(downloadUrl, '_blank');
   };
-
-  if (!tenantId) {
-    return (
-      <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '40px 25px', display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center'}}>
-         <div className="glass-card fade-in" style={{padding: '50px 30px'}}>
-            <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
-            <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>System Setup</h1>
-            <p style={{color: '#94a3b8', marginBottom: '40px', fontSize: '0.95rem'}}>Please enter your <b style={{color:'#fff'}}>Company ID</b> to activate this terminal.</p>
-
-            <div className="form-group">
-               <span className="label-visible">COMPANY IDENTIFICATION</span>
-               <input
-                 value={setupId}
-                 onChange={e => setSetupId(e.target.value)}
-                 placeholder="Enter ID (e.g. 571044)"
-                 className="input-field"
-                 style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900', letterSpacing: '2px'}}
-               />
-            </div>
-
-            <button
-              onClick={handleSetupTenant}
-              disabled={isSettingUp}
-              className="btn-primary"
-              style={{marginTop: '20px', padding: '22px'}}
-            >
-              {isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}
-            </button>
-            <div style={{marginTop: '30px', fontSize: '0.7rem', color: '#475569', letterSpacing: '1px'}}>
-               POWERED BY TIMEKEY SaaS INFRASTRUCTURE
-            </div>
-         </div>
-      </div>
-    );
-  }
 
   return (
     <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 60px 15px', fontFamily: 'system-ui, sans-serif'}}>
@@ -506,158 +425,119 @@ function App() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .pulse { animation: pulseAnim 2s infinite; }
         @keyframes pulseAnim { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } 100% { transform: scale(1); opacity: 1; } }
-
-        /* Pro Update Modal Styles */
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; box-shadow: 0 40px 100px rgba(0,0,0,0.8); }
-        .update-icon { fontSize: 5rem; marginBottom: 25px; display: block; filter: drop-shadow(0 0 20px #3b82f6); }
-        .version-text { color: #3b82f6; font-weight: 900; fontSize: 0.8rem; letterSpacing: 2px; background: rgba(59, 130, 246, 0.1); padding: 8px 15px; border-radius: 12px; display: inline-block; marginBottom: 20px; }
-        .update-notes { color: #94a3b8; fontSize: 0.9rem; lineHeight: 1.6; marginBottom: 35px; background: rgba(255,255,255,0.03); padding: 20px; border-radius: 20px; text-align: left; }
-        .update-btn { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border: none; padding: 22px; border-radius: 25px; font-weight: 900; width: 100%; fontSize: 1.1rem; letterSpacing: 1px; cursor: pointer; box-shadow: 0 15px 35px rgba(59, 130, 246, 0.4); transition: 0.3s; }
+        .update-icon { font-size: 5rem; margin-bottom: 25px; display: block; filter: drop-shadow(0 0 20px #3b82f6); }
+        .version-text { color: #3b82f6; font-weight: 900; font-size: 0.8rem; letter-spacing: 2px; background: rgba(59, 130, 246, 0.1); padding: 8px 15px; border-radius: 12px; display: inline-block; margin-bottom: 20px; }
+        .update-notes { color: #94a3b8; font-size: 0.9rem; line-height: 1.6; margin-bottom: 35px; background: rgba(255,255,255,0.03); padding: 20px; border-radius: 20px; text-align: left; }
+        .update-btn { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border: none; padding: 22px; border-radius: 25px; font-weight: 900; width: 100%; font-size: 1.1rem; letter-spacing: 1px; cursor: pointer; box-shadow: 0 15px 35px rgba(59, 130, 246, 0.4); transition: 0.3s; }
         .update-btn:active { transform: scale(0.95); }
       `}</style>
 
-      {/* TOP HEADER */}
-      {updateAvailable && (
-        <div className="update-overlay fade-in">
-           <div className="update-card slide-up">
-              <span className="update-icon">🚀</span>
-              <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Upgrade Available</h2>
-              <div className="version-text">V{updateAvailable.version}</div>
-              <div className="update-notes">
-                 <div style={{fontWeight:'800', color:'#fff', marginBottom:'5px'}}>What's New:</div>
-                 {updateAvailable.changelog || 'Performance enhancements and critical stability updates for your enterprise attendance system.'}
+      {!tenantId ? (
+        <div style={{padding: '40px 10px', display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center', minHeight: '80vh'}}>
+           <div className="glass-card fade-in">
+              <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
+              <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>System Setup</h1>
+              <p style={{color: '#94a3b8', marginBottom: '40px', fontSize: '0.95rem'}}>Please enter your <b style={{color:'#fff'}}>Company ID</b> to activate this terminal.</p>
+              <div className="form-group">
+                 <span className="label-visible">COMPANY IDENTIFICATION</span>
+                 <input value={setupId} onChange={e => setSetupId(e.target.value)} placeholder="Enter ID (e.g. 571044)" className="input-field" style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900', letterSpacing: '2px'}} />
               </div>
-              <button
-                className="update-btn"
-                onClick={handleDownloadUpdate}
-              >
-                INSTALL UPDATE
-              </button>
-              {!updateAvailable.forceUpdate && (
-                <button
-                  onClick={() => setUpdateAvailable(null)}
-                  style={{background: 'transparent', border: 'none', color: '#64748b', marginTop: '20px', fontWeight: '800', cursor: 'pointer'}}
-                >
-                  MAYBE LATER
-                </button>
-              )}
+              <button onClick={handleSetupTenant} disabled={isSettingUp} className="btn-primary" style={{marginTop: '20px', padding: '22px'}}>{isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}</button>
+              <div style={{marginTop: '30px', fontSize: '0.7rem', color: '#475569', letterSpacing: '1px'}}>POWERED BY TIMEKEY SaaS INFRASTRUCTURE</div>
            </div>
         </div>
-      )}
-      <div style={{textAlign: 'center', padding: '20px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '25px'}}>
-          <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Official Attendance Hub</div>
-          <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff', letterSpacing: '1px'}}>
-             {tenantInfo && tenantInfo.companyName ? tenantInfo.companyName.toUpperCase() : 'TIMEKEY HUB'}
-          </h1>
-      </div>
-
-      <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '20px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '25px'}} onDoubleClick={handleUpdateServer}>
-        <div>
-          <div style={{fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '1.5px', fontWeight: '800'}}>SYSTEM STATUS</div>
-          <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px'}}>
-            <div style={{width: '12px', height: '12px', borderRadius: '50%', background: isServerDown ? '#ef4444' : '#10b981', boxShadow: isServerDown ? '0 0 12px #ef4444' : '0 0 12px #10b981'}}></div>
-            <span style={{fontSize: '0.9rem', fontWeight: '900', color: isServerDown ? '#fca5a5' : '#34d399', letterSpacing: '0.5px'}}>{isServerDown ? 'OFFLINE' : 'ONLINE'}</span>
-          </div>
-        </div>
-        <div style={{textAlign: 'right'}}>
-          <div style={{fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '1.5px', fontWeight: '800'}}>QUEUE</div>
-          <div style={{marginTop: '6px'}}>
-            <span className={`badge ${pendingLogs.length > 0 ? 'badge-pending' : 'badge-online'}`}>
-               {pendingLogs.length} Records
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {!loggedIn ? (
-        <div className="glass-card fade-in" style={{padding: '50px 30px'}}>
-          <div style={{textAlign: 'center', marginBottom: '45px'}}>
-             <div style={{fontSize: '5.5rem', marginBottom: '20px', filter: 'drop-shadow(0 15px 25px rgba(0,0,0,0.4))'}} className="pulse">🛡️</div>
-             <h1 style={{fontSize: '2rem', margin: 0, fontWeight: '900', color: '#fff', letterSpacing: '0.5px'}}>Security Hub</h1>
-             <p style={{color: '#94a3b8', fontSize: '1rem', marginTop: '8px', fontWeight: '500'}}>Identity Verification Required</p>
-          </div>
-
-          <div className="form-group">
-            <span className="label-visible">EMPLOYEE IDENTIFICATION</span>
-            <input
-              value={employeeId}
-              onChange={e => setEmployeeId(e.target.value)}
-              placeholder="Enter ID (e.g. 0001)"
-              className="input-field"
-              style={{textAlign: 'center', fontSize: '1.4rem', letterSpacing: '3px', fontWeight: '900'}}
-            />
-          </div>
-
-          <button onClick={login} disabled={loading} className="btn-primary" style={{marginTop: '15px', padding: '22px'}}>
-            {loading ? 'VERIFYING IDENTITY...' : 'SIGN IN TO SYSTEM'}
-          </button>
-        </div>
       ) : (
-        <div className="glass-card fade-in">
-          <div style={{display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '35px', background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '25px', border: '1px solid rgba(255,255,255,0.05)'}}>
-            <div style={{width: '70px', height: '70px', borderRadius: '22px', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', boxShadow: '0 10px 25px rgba(37, 99, 235, 0.4)'}}>👤</div>
-            <div>
-              <span className="label-visible" style={{marginBottom: '4px'}}>WELCOME BACK</span>
-              <div style={{fontSize: '1.5rem', fontWeight: '900', color: '#fff', letterSpacing: '0.5px'}}>{localStorage.getItem('cached_name')}</div>
-            </div>
-          </div>
-
-          <div className="form-group" style={{marginBottom: '30px'}}>
-            <span className="label-visible">SELECT WORK LOCATION</span>
-            <select
-              value={selectedDepartment}
-              onChange={e => setSelectedDepartment(e.target.value)}
-              className="input-field"
-              style={{marginBottom: 0, cursor: 'pointer', fontWeight: '700'}}
-            >
-              <option value="" style={{color: '#000'}}>-- Select Office/Branch --</option>
-              {departments.map(d => <option key={d.departmentId} value={d.departmentId} style={{color: '#000'}}>{d.name}</option>)}
-            </select>
-          </div>
-
-          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px'}}>
-            <button
-              onClick={() => recordAttendance('IN')}
-              disabled={loading}
-              style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '28px', fontWeight: '900', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '30px 10px', transition: '0.3s', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.3)'}}
-              className="btn-hover"
-            >
-              <span style={{fontSize: '2.5rem', filter: 'drop-shadow(0 5px 8px rgba(0,0,0,0.3))'}}>📥</span>
-              <span style={{letterSpacing: '1.5px', fontSize: '1rem'}}>TIME IN</span>
-            </button>
-            <button
-              onClick={() => recordAttendance('OUT')}
-              disabled={loading}
-              style={{background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', borderRadius: '28px', fontWeight: '900', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '30px 10px', transition: '0.3s', boxShadow: '0 10px 25px rgba(245, 158, 11, 0.3)'}}
-              className="btn-hover"
-            >
-              <span style={{fontSize: '2.5rem', filter: 'drop-shadow(0 5px 8px rgba(0,0,0,0.3))'}}>📤</span>
-              <span style={{letterSpacing: '1.5px', fontSize: '1rem'}}>TIME OUT</span>
-            </button>
-          </div>
-
-          {selectedDepartment && departments.find(d => d.departmentId === selectedDepartment) && (
-            <div className="fade-in" style={{fontSize: '0.9rem', color: '#60a5fa', marginBottom: '30px', textAlign: 'center', background: 'rgba(59, 130, 246, 0.1)', padding: '20px', borderRadius: '22px', border: '2px dashed rgba(59, 130, 246, 0.4)', fontWeight: '800'}}>
-              <div style={{marginBottom: '5px'}}>📍 {departments.find(d => d.departmentId === selectedDepartment).name}</div>
-              <div style={{fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px'}}>
-                Geofence Active: {departments.find(d => d.departmentId === selectedDepartment).radiusMeters || 50}m Radius
-              </div>
+        <div className="fade-in">
+          {updateAvailable && (
+            <div className="update-overlay fade-in">
+               <div className="update-card slide-up">
+                  <span className="update-icon">🚀</span>
+                  <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Upgrade Available</h2>
+                  <div className="version-text">V{updateAvailable.version}</div>
+                  <div className="update-notes">
+                     <div style={{fontWeight:'800', color:'#fff', marginBottom:'5px'}}>What's New:</div>
+                     {updateAvailable.changelog || 'Performance enhancements and critical stability updates for your enterprise attendance system.'}
+                  </div>
+                  <button className="update-btn" onClick={handleDownloadUpdate}>INSTALL UPDATE</button>
+                  {!updateAvailable.forceUpdate && (
+                    <button onClick={() => setUpdateAvailable(null)} style={{background: 'transparent', border: 'none', color: '#64748b', marginTop: '20px', fontWeight: '800', cursor: 'pointer'}}>MAYBE LATER</button>
+                  )}
+               </div>
             </div>
           )}
+          <div style={{textAlign: 'center', padding: '20px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '25px'}}>
+              <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Official Attendance Hub</div>
+              <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff', letterSpacing: '1px'}}>{tenantInfo && tenantInfo.companyName ? tenantInfo.companyName.toUpperCase() : 'TIMEKEY HUB'}</h1>
+          </div>
 
-          <button
-            onClick={() => { syncSystemData(); setShowLogsModal(true); }}
-            style={{width: '100%', padding: '22px', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '2px solid rgba(59, 130, 246, 0.3)', borderRadius: '22px', fontWeight: '900', marginBottom: '25px', cursor:'pointer', fontSize: '1rem', letterSpacing: '1px', transition: '0.3s'}}
-          >
-            📋 VIEW ACTIVITY HISTORY
-          </button>
+          <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '20px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '25px'}} onDoubleClick={handleUpdateServer}>
+            <div>
+              <div style={{fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '1.5px', fontWeight: '800'}}>SYSTEM STATUS</div>
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px'}}>
+                <div style={{width: '12px', height: '12px', borderRadius: '50%', background: isServerDown ? '#ef4444' : '#10b981', boxShadow: isServerDown ? '0 0 12px #ef4444' : '0 0 12px #10b981'}}></div>
+                <span style={{fontSize: '0.9rem', fontWeight: '900', color: isServerDown ? '#fca5a5' : '#34d399', letterSpacing: '0.5px'}}>{isServerDown ? 'OFFLINE' : 'ONLINE'}</span>
+              </div>
+            </div>
+            <div style={{textAlign: 'right'}}>
+              <div style={{fontSize: '0.65rem', color: '#94a3b8', letterSpacing: '1.5px', fontWeight: '800'}}>QUEUE</div>
+              <div style={{marginTop: '6px'}}><span className={`badge ${pendingLogs.length > 0 ? 'badge-pending' : 'badge-online'}`}>{pendingLogs.length} Records</span></div>
+            </div>
+          </header>
 
-          <button onClick={() => {if(confirm('Logout of this account?')){setLoggedIn(false); localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} style={{width: '100%', padding: '15px', background: 'transparent', color: '#64748b', border: 'none', borderRadius: '15px', fontSize: '0.8rem', fontWeight: '800', letterSpacing: '1.5px', textTransform: 'uppercase'}}>Logout Account</button>
+          {!loggedIn ? (
+            <div className="glass-card fade-in" style={{padding: '50px 30px'}}>
+              <div style={{textAlign: 'center', marginBottom: '45px'}}>
+                 <div style={{fontSize: '5.5rem', marginBottom: '20px', filter: 'drop-shadow(0 15px 25px rgba(0,0,0,0.4))'}} className="pulse">🛡️</div>
+                 <h1 style={{fontSize: '2rem', margin: 0, fontWeight: '900', color: '#fff', letterSpacing: '0.5px'}}>Security Hub</h1>
+                 <p style={{color: '#94a3b8', fontSize: '1rem', marginTop: '8px', fontWeight: '500'}}>Identity Verification Required</p>
+              </div>
+              <div className="form-group">
+                <span className="label-visible">EMPLOYEE IDENTIFICATION</span>
+                <input value={employeeId} onChange={e => setEmployeeId(e.target.value)} placeholder="Enter ID (e.g. 0001)" className="input-field" style={{textAlign: 'center', fontSize: '1.4rem', letterSpacing: '3px', fontWeight: '900'}} />
+              </div>
+              <button onClick={login} disabled={loading} className="btn-primary" style={{marginTop: '15px', padding: '22px'}}>{loading ? 'VERIFYING IDENTITY...' : 'SIGN IN TO SYSTEM'}</button>
+            </div>
+          ) : (
+            <div className="glass-card fade-in">
+              <div style={{display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '35px', background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '25px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                <div style={{width: '70px', height: '70px', borderRadius: '22px', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', boxShadow: '0 10px 25px rgba(37, 99, 235, 0.4)'}}>👤</div>
+                <div>
+                  <span className="label-visible" style={{marginBottom: '4px'}}>WELCOME BACK</span>
+                  <div style={{fontSize: '1.5rem', fontWeight: '900', color: '#fff', letterSpacing: '0.5px'}}>{localStorage.getItem('cached_name')}</div>
+                </div>
+              </div>
+              <div className="form-group" style={{marginBottom: '30px'}}>
+                <span className="label-visible">SELECT WORK LOCATION</span>
+                <select value={selectedDepartment} onChange={e => setSelectedDepartment(e.target.value)} className="input-field" style={{marginBottom: 0, cursor: 'pointer', fontWeight: '700'}}>
+                  <option value="" style={{color: '#000'}}>-- Select Office/Branch --</option>
+                  {departments.map(d => <option key={d.departmentId} value={d.departmentId} style={{color: '#000'}}>{d.name}</option>)}
+                </select>
+              </div>
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px'}}>
+                <button onClick={() => recordAttendance('IN')} disabled={loading} style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '28px', fontWeight: '900', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '30px 10px', transition: '0.3s', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.2)'}} className="btn-hover">
+                  <span style={{fontSize: '2.5rem', filter: 'drop-shadow(0 5px 8px rgba(0,0,0,0.3))'}}>📥</span>
+                  <span style={{letterSpacing: '1.5px', fontSize: '1rem'}}>TIME IN</span>
+                </button>
+                <button onClick={() => recordAttendance('OUT')} disabled={loading} style={{background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', borderRadius: '28px', fontWeight: '900', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '30px 10px', transition: '0.3s', boxShadow: '0 10px 25px rgba(245, 158, 11, 0.3)'}} className="btn-hover">
+                  <span style={{fontSize: '2.5rem', filter: 'drop-shadow(0 5px 8px rgba(0,0,0,0.3))'}}>📤</span>
+                  <span style={{letterSpacing: '1.5px', fontSize: '1rem'}}>TIME OUT</span>
+                </button>
+              </div>
+              {selectedDepartment && departments.find(d => d.departmentId === selectedDepartment) && (
+                <div className="fade-in" style={{fontSize: '0.9rem', color: '#60a5fa', marginBottom: '30px', textAlign: 'center', background: 'rgba(59, 130, 246, 0.1)', padding: '20px', borderRadius: '22px', border: '2px dashed rgba(59, 130, 246, 0.4)', fontWeight: '800'}}>
+                  <div style={{marginBottom: '5px'}}>📍 {departments.find(d => d.departmentId === selectedDepartment).name}</div>
+                  <div style={{fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px'}}>Geofence Active: {departments.find(d => d.departmentId === selectedDepartment).radiusMeters || 50}m Radius</div>
+                </div>
+              )}
+              <button onClick={() => { syncSystemData(); setShowLogsModal(true); }} style={{width: '100%', padding: '22px', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '2px solid rgba(59, 130, 246, 0.3)', borderRadius: '22px', fontWeight: '900', marginBottom: '25px', cursor:'pointer', fontSize: '1rem', letterSpacing: '1px', transition: '0.3s'}}>📋 VIEW ACTIVITY HISTORY</button>
+              <button onClick={() => {if(confirm('Logout of this account?')){setLoggedIn(false); localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} style={{width: '100%', padding: '15px', background: 'transparent', color: '#64748b', border: 'none', borderRadius: '15px', fontSize: '0.8rem', fontWeight: '800', letterSpacing: '1.5px', textTransform: 'uppercase'}}>Logout Account</button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* LOGS MODAL */}
       {showLogsModal && (
         <div className="modal-overlay" onClick={() => setShowLogsModal(false)}>
           <div className="modal-content fade-in" onClick={e => e.stopPropagation()}>
@@ -665,13 +545,11 @@ function App() {
                <h2 style={{marginTop:0, fontSize: '1.6rem', color: '#60a5fa', fontWeight: '900', margin: 0}}>Personal Logs</h2>
                <button onClick={() => setShowLogsModal(false)} style={{background: 'rgba(255,255,255,0.08)', border: 'none', color: '#94a3b8', width: '40px', height: '40px', borderRadius: '50%', fontWeight: 'bold', fontSize: '1.2rem', cursor: 'pointer'}}>✕</button>
             </div>
-
             <div style={{marginBottom: '20px', padding: '15px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '18px', border: '1px solid rgba(59, 130, 246, 0.2)'}}>
                <div style={{fontSize: '0.7rem', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px'}}>Logged in as</div>
                <div style={{fontWeight: '900', color: '#fff', fontSize: '1.3rem', marginTop: '2px'}}>{localStorage.getItem('cached_name')}</div>
                <div style={{fontSize: '0.8rem', color: '#60a5fa', fontWeight: '900', marginTop: '4px'}}>ID: {localStorage.getItem('cached_id')}</div>
             </div>
-
             <div style={{margin: '0 0 35px 0'}}>
                {personalLogs.length === 0 ? (
                  <div style={{textAlign: 'center', color: '#475569', padding: '50px 0'}}>
@@ -679,40 +557,21 @@ function App() {
                     <p style={{fontWeight: '800', fontSize: '1.1rem'}}>No history recorded yet.</p>
                  </div>
                ) : (
-                 Object.entries(
-                   personalLogs.slice().reverse().reduce((acc, log) => {
+                 Object.entries(personalLogs.slice().reverse().reduce((acc, log) => {
                      const dateKey = new Date(log.timestamp).toLocaleDateString();
                      if (!acc[dateKey]) acc[dateKey] = [];
                      acc[dateKey].push(log);
                      return acc;
-                   }, {})
-                 ).slice(0, 10).map(([date, dayLogs], i) => (
+                   }, {})).slice(0, 10).map(([date, dayLogs], i) => (
                    <div key={i} style={{marginBottom: '25px'}}>
-                     <div style={{fontSize: '0.75rem', color: '#3b82f6', fontWeight: '900', marginBottom: '12px', background: 'rgba(59, 130, 246, 0.08)', padding: '8px 15px', borderRadius: '12px', display: 'inline-block', letterSpacing: '0.5px'}}>
-                       🗓️ {date}
-                     </div>
+                     <div style={{fontSize: '0.75rem', color: '#3b82f6', fontWeight: '900', marginBottom: '12px', background: 'rgba(59, 130, 246, 0.08)', padding: '8px 15px', borderRadius: '12px', display: 'inline-block', letterSpacing: '0.5px'}}>🗓️ {date}</div>
                      {dayLogs.map((l, j) => (
                        <div key={j} className="log-item" style={{marginLeft: '15px'}}>
                          <div>
                            <div style={{fontWeight:'900', fontSize:'1rem', color: '#fff'}}>{l.departmentName}</div>
-                           <div style={{fontSize:'0.75rem', color:'#94a3b8', marginTop: '4px', fontWeight: '600'}}>
-                             {l.timeIn && `IN: ${new Date(l.timeIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}
-                             {l.timeIn && l.timeOut && `  •  `}
-                             {l.timeOut && `OUT: ${new Date(l.timeOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}
-                           </div>
+                           <div style={{fontSize:'0.75rem', color:'#94a3b8', marginTop: '4px', fontWeight: '600'}}>{l.timeIn && `IN: ${new Date(l.timeIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}{l.timeIn && l.timeOut && `  •  `}{l.timeOut && `OUT: ${new Date(l.timeOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}</div>
                          </div>
-                         <span style={{
-                           fontSize: '0.65rem',
-                           fontWeight: '900',
-                           padding: '6px 12px',
-                           borderRadius: '12px',
-                           background: l.status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                           color: l.status === 'Completed' ? '#34d399' : '#60a5fa',
-                           border: `1px solid ${l.status === 'Completed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                           textTransform: 'uppercase'
-                         }}>
-                           {l.status}
-                         </span>
+                         <span style={{fontSize: '0.65rem', fontWeight: '900', padding: '6px 12px', borderRadius: '12px', background: l.status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)', color: l.status === 'Completed' ? '#34d399' : '#60a5fa', border: `1px solid ${l.status === 'Completed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`, textTransform: 'uppercase'}}>{l.status}</span>
                        </div>
                      ))}
                    </div>
