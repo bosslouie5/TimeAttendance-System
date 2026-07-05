@@ -5,9 +5,17 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout Code
@@ -44,7 +52,7 @@ jobs:
       - name: Build Mobile APK (Universal)
         run: |
           cd mobile-app
-          # Ensure config is production-ready
+          # Keep the version from laptop but set production URLs
           node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('src/app_config.json')); c.defaultApiUrl='https://timeattendance-system.onrender.com/api'; c.defaultTenantId='MASTER_UNIVERSAL'; fs.writeFileSync('src/app_config.json', JSON.stringify(c, null, 2));"
           npm run build
           npx cap sync android
@@ -59,10 +67,13 @@ jobs:
           cp -r web-dev/dist/* final-deploy/dev/
           cp -r mobile-app/dist/* final-deploy/app/
           cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-deploy/apks/TimeKey_Master.apk
+          echo "Last Deploy: $(date)" > final-deploy/version.txt
 
-      - name: Deploy to gh-pages branch 🚀
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          folder: final-deploy
-          branch: gh-pages
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: final-deploy/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
