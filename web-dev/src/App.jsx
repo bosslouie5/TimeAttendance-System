@@ -512,20 +512,45 @@ function App() {
   };
 
   const handleBuildApk = async (tenant) => {
+    const GITHUB_APK_URL = "https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk";
     const apiToUse = tunnelBase || activeApiBase;
+    const safeName = (tenant.companyName || tenant.tenantId).replace(/[^a-z0-9]/gi, '_');
+    const targetFileName = `${tenant.tenantId || 'App'}_${safeName}.apk`;
 
-    if (apiToUse.includes('onrender.com') || apiToUse === '/api') {
-      if (!tunnelBase) {
-        alert("CRITICAL: APK Building requires your LAPTOP to be ONLINE with DEV_TOOLS Option 2 or S running.\n\nPlease turn on your laptop and start the tunnel first.");
-        return;
+    setProcessing(true);
+    setStatus('Preparing APK...');
+
+    // Logic: Try Laptop Build first IF laptop is reachable, otherwise GitHub Direct Download
+    const isLaptopOffline = !tunnelBase && (apiToUse.includes('onrender.com') || apiToUse === '/api');
+
+    if (isLaptopOffline) {
+      setProcessingMsg(`Downloading Master APK for ${tenant.companyName} from GitHub...`);
+      try {
+        const response = await fetch(GITHUB_APK_URL);
+        if (!response.ok) throw new Error("GitHub File Not Found");
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = targetFileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setStatus('Downloaded from GitHub ✓');
+        alert(`Success! Master APK for ${tenant.companyName} has been downloaded and renamed.`);
+      } catch (err) {
+        alert("Error: Master APK not found on GitHub. Please run DEPLOY (Option 1) on your laptop first.");
+      } finally {
+        setProcessing(false);
       }
+      return;
     }
 
-    setProcessingMsg(`Building Custom APK for ${tenant.companyName}... This usually takes 2-3 minutes. Please do not close this tab.`);
-    setProcessing(true);
-    setStatus('Building APK...');
+    // Standard Laptop Build Logic (when laptop is online)
+    setProcessingMsg(`Building Custom APK for ${tenant.companyName}... Please wait.`);
     try {
-      // Increase timeout for build process (300 seconds)
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 300000);
 
@@ -561,7 +586,9 @@ function App() {
       if (e.name === 'AbortError') {
          alert('Build process timed out (5 mins). Check your laptop if the build finished.');
       } else {
-         alert('Build process encountered an error. Is your laptop online?');
+         // Fallback to GitHub if Build fails
+         setProcessingMsg("Build server busy. Redirecting to GitHub Master APK...");
+         window.location.href = GITHUB_APK_URL;
       }
     }
     finally { setProcessing(false); }

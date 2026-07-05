@@ -243,6 +243,9 @@ xcopy /s /i /y "web-admin\dist\*" "web_deploy\"
 xcopy /s /i /y "web-dev\dist\*" "web_deploy\dev\"
 xcopy /s /i /y "mobile-app\dist\*" "web_deploy\app\"
 xcopy /s /i /y "backend\apks\*" "web_deploy\apks\"
+if exist "mobile-app\android\app\build\outputs\apk\debug\app-debug.apk" (
+    copy "mobile-app\android\app\build\outputs\apk\debug\app-debug.apk" "web_deploy\apks\TimeKey_Master.apk" /y >nul
+)
 echo Last Deploy: %date% %time% > "web_deploy\version.txt"
 
 echo [*] Pushing to GitHub (Render will auto-deploy)...
