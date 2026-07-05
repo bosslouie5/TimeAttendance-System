@@ -242,10 +242,18 @@ mkdir "web_deploy\apks"
 xcopy /s /i /y "web-admin\dist\*" "web_deploy\"
 xcopy /s /i /y "web-dev\dist\*" "web_deploy\dev\"
 xcopy /s /i /y "mobile-app\dist\*" "web_deploy\app\"
-xcopy /s /i /y "backend\apks\*" "web_deploy\apks\"
-if exist "mobile-app\android\app\build\outputs\apk\debug\app-debug.apk" (
-    copy "mobile-app\android\app\build\outputs\apk\debug\app-debug.apk" "web_deploy\apks\TimeKey_Master.apk" /y >nul
+echo [*] Copying APKs to Deployment...
+if not exist "web_deploy\apks" mkdir "web_deploy\apks"
+xcopy /y "backend\apks\*" "web_deploy\apks\"
+:: Ensure a Master APK exists for GitHub distribution
+if not exist "web_deploy\apks\TimeKey_Master.apk" (
+    echo [*] Creating Master APK from first available build...
+    for %%f in (backend\apks\*.apk) do (
+        copy "%%f" "web_deploy\apks\TimeKey_Master.apk" /y >nul
+        goto :MASTER_DONE
+    )
 )
+:MASTER_DONE
 echo Last Deploy: %date% %time% > "web_deploy\version.txt"
 
 echo [*] Pushing to GitHub (Render will auto-deploy)...

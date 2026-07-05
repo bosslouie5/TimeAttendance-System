@@ -521,7 +521,8 @@ function App() {
     setStatus('Preparing APK...');
 
     // Logic: Try Laptop Build first IF laptop is reachable, otherwise GitHub Direct Download
-    const isLaptopOffline = !tunnelBase && (apiToUse.includes('onrender.com') || apiToUse === '/api');
+    const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isLaptopOffline = !isLocalHost && !tunnelBase && (apiToUse.includes('onrender.com') || apiToUse === '/api');
 
     if (isLaptopOffline) {
       setProcessingMsg(`Downloading Master APK for ${tenant.companyName} from GitHub...`);

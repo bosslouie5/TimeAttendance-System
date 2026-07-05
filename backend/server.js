@@ -1076,7 +1076,10 @@ app.post('/api/master/build-apk', async (req, res) => {
 
     if (fs.existsSync(sourceApk)) {
       fs.copyFileSync(sourceApk, destPath);
-      console.log(`[BUILD] SUCCESS: Generated ${destName}`);
+      // Create a Master copy for GitHub Distribution
+      fs.copyFileSync(sourceApk, path.join(apksDir, 'TimeKey_Master.apk'));
+
+      console.log(`[BUILD] SUCCESS: Generated ${destName} and updated TimeKey_Master.apk`);
 
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const host = req.headers['host'];

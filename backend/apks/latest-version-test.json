@@ -1,0 +1,8 @@
+{
+  "version": "0.1.2",
+  "downloadUrl": "http://localhost:4002/api/master/download-apk/189706_Dev_John_Testing_Company.apk",
+  "tenantId": "189706",
+  "companyName": "Dev John Testing Company",
+  "releaseDate": "2026-07-05T13:55:27.914Z",
+  "notes": "LAB TEST: Dev John Testing Company"
+}
