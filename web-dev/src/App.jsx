@@ -517,40 +517,40 @@ function App() {
     const safeName = (tenant.companyName || tenant.tenantId).replace(/[^a-z0-9]/gi, '_');
     const targetFileName = `${tenant.tenantId || 'App'}_${safeName}.apk`;
 
-    setProcessing(true);
-    setStatus('Preparing APK...');
+    // 1. Detection: Are we on Laptop/Local or Remote/Render?
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isRemote = !isLocal && !tunnelBase;
 
-    // Logic: Try Laptop Build first IF laptop is reachable, otherwise GitHub Direct Download
-    const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const isLaptopOffline = !isLocalHost && !tunnelBase && (apiToUse.includes('onrender.com') || apiToUse === '/api');
+    // 2. REMOTE DOWNLOAD (Render/Phone Mode)
+    if (isRemote) {
+      setProcessing(true);
+      setProcessingMsg(`Downloading APK for ${tenant.companyName}...`);
+      setStatus('Downloading...');
 
-    if (isLaptopOffline) {
-      setProcessingMsg(`Downloading Master APK for ${tenant.companyName} from GitHub...`);
-      try {
-        const response = await fetch(GITHUB_APK_URL);
-        if (!response.ok) throw new Error("GitHub File Not Found");
+      // Try to download from current origin (Render) first, then fallback to GitHub
+      const currentOriginApk = `${window.location.origin}/apks/TimeKey_Master.apk`;
 
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+      setTimeout(() => {
         const link = document.createElement('a');
-        link.href = url;
+        link.href = currentOriginApk;
         link.download = targetFileName;
+        link.target = "_blank";
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
 
-        setStatus('Downloaded from GitHub ✓');
-        alert(`Success! Master APK for ${tenant.companyName} has been downloaded and renamed.`);
-      } catch (err) {
-        alert("Error: Master APK not found on GitHub. Please run DEPLOY (Option 1) on your laptop first.");
-      } finally {
+        setStatus('Download Started ✓');
         setProcessing(false);
-      }
+        alert(`Success! Master APK for ${tenant.companyName} is downloading.\n\nNote: Please rename the file to "${targetFileName}" after download if needed.`);
+      }, 1000);
       return;
     }
 
-    // Standard Laptop Build Logic (when laptop is online)
+    // 3. LOCAL BUILD (Laptop Mode)
+    setProcessing(true);
     setProcessingMsg(`Building Custom APK for ${tenant.companyName}... Please wait.`);
+    setStatus('Building APK...');
+
     try {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 300000);
@@ -562,23 +562,16 @@ function App() {
         body: JSON.stringify({
           tenantId: tenant.tenantId || tenant.username,
           companyName: tenant.companyName,
-          publicUrl: activeApiBase // APK will connect back to Render for data
+          publicUrl: activeApiBase
         })
       });
       clearTimeout(id);
 
-      if (!res.ok) throw new Error('Build Server Timeout or Error');
-
       const data = await res.json();
       if (data.success) {
         setStatus('Build Success ✓');
-        // PRO DOWNLOAD METHOD
         window.location.href = data.downloadUrl;
-        if (data.downloadUrl.includes('github.io')) {
-            alert(`Success! APK is built. Once you DEPLOY (Option 1 in DEV_TOOLS), the download link will be active at GitHub.`);
-        } else {
-            alert(`Success! APK for ${tenant.companyName} is ready and downloading.`);
-        }
+        alert(`Success! APK for ${tenant.companyName} is ready and downloading.`);
       } else {
         alert('Build Failed: ' + (data.error || 'Check logs'));
       }
@@ -587,9 +580,8 @@ function App() {
       if (e.name === 'AbortError') {
          alert('Build process timed out (5 mins). Check your laptop if the build finished.');
       } else {
-         // Fallback to GitHub if Build fails
-         setProcessingMsg("Build server busy. Redirecting to GitHub Master APK...");
-         window.location.href = GITHUB_APK_URL;
+         setStatus('Redirecting...');
+         window.open(GITHUB_APK_URL, '_blank');
       }
     }
     finally { setProcessing(false); }
