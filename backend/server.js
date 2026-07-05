@@ -470,6 +470,9 @@ app.delete('/api/master/dev-accounts/:username', async (req, res) => {
 const VERSION_FILE = path.join(__dirname, 'version.json');
 
 app.get('/api/app-version', (req, res) => {
+  // Always ensure CORS for OTA checks from any tenant app
+  res.header("Access-Control-Allow-Origin", "*");
+
   if (fs.existsSync(VERSION_FILE)) {
     const versionData = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
     res.json(versionData);
@@ -1161,12 +1164,14 @@ app.get('/api/tenant-info/:tenantId', async (req, res) => {
 });
 
 app.post('/api/master/build-apk', async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
   const { tenantId, companyName, publicUrl } = req.body;
   const ip = getNetworkIP();
-  const apiUrl = publicUrl || `http://${ip}:${PORT}/api`;
+
+  // Failsafe: Default to Render URL if no publicUrl provided
+  const apiUrl = publicUrl || 'https://timeattendance-system.onrender.com/api';
 
   console.log(`[BUILD] Starting APK Build for ${companyName} (${tenantId})...`);
+  console.log(`[BUILD] API URL: ${apiUrl}`);
 
   try {
     const mobileAppPath = path.join(__dirname, '../mobile-app');

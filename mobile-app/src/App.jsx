@@ -78,44 +78,46 @@ function App() {
   });
 
   const [tenantId, setTenantId] = useState(() => {
-    // Rule: Each app build is specific to a tenant
+    const saved = localStorage.getItem('tenant_id');
+    if (saved) return saved;
+
+    // Check if the build has a hardcoded tenant (from Admin Portal build)
     const configTenantId = appConfig.defaultTenantId;
-    if (configTenantId && configTenantId !== "/") {
+    if (configTenantId && configTenantId !== "/" && configTenantId !== "master" && configTenantId !== "MASTER_UNIVERSAL") {
       localStorage.setItem('tenant_id', configTenantId);
       return configTenantId;
     }
-    return localStorage.getItem('tenant_id') || 'master';
-  });
-  const [employeeId, setEmployeeId] = useState(localStorage.getItem('cached_id') || '');
-  const [departments, setDepartments] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('all_departments')) || initialData.departments;
-    } catch (e) { return initialData.departments; }
-  });
-  const [status, setStatus] = useState('System Online');
-  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('cached_id'));
-  const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [tenantInfo, setTenantInfo] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('tenant_info')) || null;
-    } catch (e) { return null; }
-  });
-  const [pendingLogs, setPendingLogs] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pending_logs')) || [];
-    } catch (e) { return []; }
+    return null; // Show setup screen if no tenant is identified
   });
 
-  const [updateAvailable, setUpdateAvailable] = useState(null);
-  const [personalLogs, setPersonalLogs] = useState(() => {
+  const [setupId, setSetupId] = useState('');
+  const [isSettingUp, setIsSettingUp] = useState(false);
+
+  const handleSetupTenant = async () => {
+    if (!setupId.trim()) return alert('Please enter a valid Company ID');
+    setIsSettingUp(true);
+    setStatus('Linking Company...');
+
     try {
-      return JSON.parse(localStorage.getItem('personal_logs')) || [];
-    } catch (e) { return []; }
-  });
-  const [isServerDown, setIsServerDown] = useState(false);
-  const [showLogsModal, setShowLogsModal] = useState(false);
+      const res = await getJson(`${apiUrl}/tenant-info/${setupId.trim()}`);
+      if (res.ok && res.data) {
+        const tid = res.data.tenantId || setupId.trim();
+        localStorage.setItem('tenant_id', tid);
+        localStorage.setItem('tenant_info', JSON.stringify(res.data));
+        setTenantId(tid);
+        setTenantInfo(res.data);
+        setStatus('Company Linked ✓');
+        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is now ready.`);
+      } else {
+        alert('INVALID COMPANY ID: Please check the ID provided by your administrator.');
+      }
+    } catch (e) {
+      alert('CONNECTION ERROR: Make sure you are online to link your company for the first time.');
+    } finally {
+      setIsSettingUp(false);
+      setStatus('System Ready');
+    }
+  };
 
   useEffect(() => {
     checkConnection();
@@ -128,14 +130,11 @@ function App() {
 
     if (tenantId) {
         fetchTenantInfo();
-    }
-
-    if (loggedIn) {
-        syncSystemData();
+        if (loggedIn) syncSystemData();
     }
 
     return () => clearInterval(connInterval);
-  }, []);
+  }, [tenantId]);
 
   const fetchTenantInfo = async () => {
     if (!apiUrl.startsWith('http')) return;
@@ -450,6 +449,41 @@ function App() {
 
     window.open(downloadUrl, '_blank');
   };
+
+  if (!tenantId) {
+    return (
+      <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '40px 25px', display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center'}}>
+         <div className="glass-card fade-in" style={{padding: '50px 30px'}}>
+            <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
+            <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>System Setup</h1>
+            <p style={{color: '#94a3b8', marginBottom: '40px', fontSize: '0.95rem'}}>Please enter your <b style={{color:'#fff'}}>Company ID</b> to activate this terminal.</p>
+
+            <div className="form-group">
+               <span className="label-visible">COMPANY IDENTIFICATION</span>
+               <input
+                 value={setupId}
+                 onChange={e => setSetupId(e.target.value)}
+                 placeholder="Enter ID (e.g. 571044)"
+                 className="input-field"
+                 style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900', letterSpacing: '2px'}}
+               />
+            </div>
+
+            <button
+              onClick={handleSetupTenant}
+              disabled={isSettingUp}
+              className="btn-primary"
+              style={{marginTop: '20px', padding: '22px'}}
+            >
+              {isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}
+            </button>
+            <div style={{marginTop: '30px', fontSize: '0.7rem', color: '#475569', letterSpacing: '1px'}}>
+               POWERED BY TIMEKEY SaaS INFRASTRUCTURE
+            </div>
+         </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 60px 15px', fontFamily: 'system-ui, sans-serif'}}>
