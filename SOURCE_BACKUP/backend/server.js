@@ -283,8 +283,9 @@ app.use('/portal/:tenantId', async (req, res, next) => {
 
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
-  // Master/Developer Bypass: allow access if local or in test mode
-  if (isLocal || isTestMode) return next();
+  // Master/Developer Bypass: allow access if local, in test mode, or via devMode bypass
+  const isDevBypass = req.query.devMode === 'true' || req.headers.referer?.includes('devMode=true');
+  if (isLocal || isTestMode || isDevBypass) return next();
 
   // WORLDWIDE IP GATEKEEPER WITH WILDCARD SUPPORT
   const allowedIp = user.publicIp || user.adminIp;
@@ -350,8 +351,9 @@ app.post('/api/auth/web-login', async (req, res) => {
 
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
     const allowedIp = user.publicIp || user.adminIp;
+    const isDevBypass = req.body.devMode === true || req.query.devMode === 'true';
 
-    if (!isLocal && !isTestMode && allowedIp && !matchIp(clientIp, allowedIp)) {
+    if (!isLocal && !isTestMode && !isDevBypass && allowedIp && !matchIp(clientIp, allowedIp)) {
        console.warn(`[AUTH] Login Blocked: Unauthorized IP ${clientIp} for Tenant ${tenantId}`);
        return res.status(403).json({ error: 'Access Denied: Please login from the office network.' });
     }
@@ -468,6 +470,9 @@ app.delete('/api/master/dev-accounts/:username', async (req, res) => {
 const VERSION_FILE = path.join(__dirname, 'version.json');
 
 app.get('/api/app-version', (req, res) => {
+  // Always ensure CORS for OTA checks from any tenant app
+  res.header("Access-Control-Allow-Origin", "*");
+
   if (fs.existsSync(VERSION_FILE)) {
     const versionData = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
     res.json(versionData);
@@ -930,31 +935,32 @@ app.post('/api/device/register', tenantGuard, async (req, res) => {
   const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const employee = data.employees.find(e => e.employeeId === employeeId && (e.tenantId === tenantId || !e.tenantId));
+
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-  if (!employee.registeredDeviceId) {
-    const deviceInUse = data.employees.find(e => e.registeredDeviceId === deviceId && e.employeeId !== employeeId && (e.tenantId === tenantId || !e.tenantId));
-    if (deviceInUse) return res.status(403).json({ error: `This device is already linked to ${deviceInUse.name}.` });
+  // SECURITY: Check if this specific device is already linked to ANOTHER employee
+  const deviceInUse = data.employees.find(e => e.registeredDeviceId === deviceId && e.employeeId !== employeeId && (e.tenantId === tenantId || !e.tenantId));
+
+  if (deviceInUse) {
+    return res.status(403).json({ error: `This device is already linked to ${deviceInUse.name}.` });
+  }
+
+  // BUSINESS LOGIC: If the device is NOT registered to anyone else, allow this employee to use/register it.
+  // This allows users to switch devices as long as the new device is "clean".
+  if (!employee.registeredDeviceId || employee.registeredDeviceId !== deviceId) {
+    console.log(`[DEVICE] Registering/Updating device for ${employee.name}: ${deviceId}`);
     employee.registeredDeviceId = deviceId;
     employee.registeredDeviceName = deviceName || 'Unknown Device';
     employee.registrationDate = new Date().toISOString();
     await saveData(data);
-    return res.json({
-      success: true,
-      message: 'Registered',
-      tenantId: employee.tenantId, // Return the actual tenantId
-      employee: { employeeId: employee.employeeId, name: employee.name }
-    });
-  } else if (employee.registeredDeviceId === deviceId) {
-    return res.json({
-      success: true,
-      message: 'Verified',
-      tenantId: employee.tenantId, // Return the actual tenantId
-      employee: { employeeId: employee.employeeId, name: employee.name }
-    });
-  } else {
-    return res.status(403).json({ error: 'Already registered on another device.' });
   }
+
+  return res.json({
+    success: true,
+    message: 'Verified ✓',
+    tenantId: employee.tenantId,
+    employee: { employeeId: employee.employeeId, name: employee.name }
+  });
 });
 
 app.post('/api/device/reset', tenantGuard, async (req, res) => {
@@ -1158,12 +1164,14 @@ app.get('/api/tenant-info/:tenantId', async (req, res) => {
 });
 
 app.post('/api/master/build-apk', async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
   const { tenantId, companyName, publicUrl } = req.body;
   const ip = getNetworkIP();
-  const apiUrl = publicUrl || `http://${ip}:${PORT}/api`;
+
+  // Failsafe: Default to Render URL if no publicUrl provided
+  const apiUrl = publicUrl || 'https://timeattendance-system.onrender.com/api';
 
   console.log(`[BUILD] Starting APK Build for ${companyName} (${tenantId})...`);
+  console.log(`[BUILD] API URL: ${apiUrl}`);
 
   try {
     const mobileAppPath = path.join(__dirname, '../mobile-app');

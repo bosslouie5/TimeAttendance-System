@@ -1,4 +1,4 @@
-name: Build Universal Master APK
+name: Build & Deploy All (SaaS Cloud)
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,40 +28,60 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Dependencies
+      - name: Install All Dependencies
         run: |
-          cd mobile-app
-          npm install --no-package-lock
+          cd mobile-app && npm install --no-package-lock
+          cd ../web-admin && npm install --no-package-lock
+          cd ../web-dev && npm install --no-package-lock
 
-      - name: Build Web Assets
+      - name: Build Web Admin
+        run: |
+          cd web-admin
+          npm run build
+
+      - name: Build Web Dev
+        run: |
+          cd web-dev
+          npm run build
+
+      - name: Build Mobile APK (Universal)
         run: |
           cd mobile-app
           echo '{"defaultApiUrl":"https://timeattendance-system.onrender.com/api","defaultTenantId":"MASTER_UNIVERSAL","version":"1.0.6","buildDate":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > src/app_config.json
           npm run build
-
-      - name: Sync Capacitor
-        run: |
-          cd mobile-app
           npx cap sync android
-
-      - name: Build Android APK
-        run: |
-          cd mobile-app/android
+          cd android
           chmod +x gradlew
           ./gradlew clean assembleDebug
 
-      - name: Deploy APK to gh-pages
+      - name: Prepare Final Deployment
+        run: |
+          mkdir -p final-deploy/dev
+          mkdir -p final-deploy/app
+          mkdir -p final-deploy/apks
+          
+          # Copy Web Admin (Root)
+          cp -r web-admin/dist/* final-deploy/
+          # Copy Web Dev (/dev)
+          cp -r web-dev/dist/* final-deploy/dev/
+          # Copy Mobile Web (/app)
+          cp -r mobile-app/dist/* final-deploy/app/
+          # Copy APK
+          cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-deploy/apks/TimeKey_Master.apk
+          
+          # Add version file
+          echo "Last Deploy: $(date)" > final-deploy/version.txt
+
+      - name: Deploy to GitHub Pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p final-apk/apks
-          cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-apk/apks/TimeKey_Master.apk
-          cd final-apk
+          cd final-deploy
           git init
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git remote add origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           git checkout -b gh-pages
-          git add apks/TimeKey_Master.apk
-          git commit -m "Cloud Build: Updated Master APK (V1.0.6)"
+          git add .
+          git commit -m "Cloud Auto-Deploy: Web + APK (V1.0.6)"
           git push origin gh-pages --force

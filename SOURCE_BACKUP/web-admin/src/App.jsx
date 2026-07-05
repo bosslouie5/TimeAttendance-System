@@ -14,6 +14,9 @@ function App() {
   const portalIndex = pathParts.indexOf('portal');
   const detectedTenantId = portalIndex !== -1 ? pathParts[portalIndex + 1] : '';
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const isDevMode = searchParams.get('devMode') === 'true';
+
   const sessionKey = `admin_user_${detectedTenantId || 'default'}`;
 
   const [user, setUser] = useState(() => {
@@ -37,6 +40,7 @@ function App() {
   const [tenantDetails, setTenantDetails] = useState(null);
   const [appVersionInfo, setAppVersionInfo] = useState(null);
   const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Form States
   const [newOrgName, setNewOrgName] = useState('');
@@ -165,7 +169,7 @@ function App() {
       const res = await fetch(`${activeApiBase}/auth/web-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: detectedTenantId, username, password })
+        body: JSON.stringify({ tenantId: detectedTenantId, username, password, devMode: isDevMode })
       });
       const data = await res.json();
       if (data.success) {
@@ -830,7 +834,11 @@ function App() {
         <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'8px'}}>
           <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
             <button
-              onClick={() => window.open(`${activeApiBase}/master/download-apk/TimeKey_Master.apk`, '_blank')}
+              onClick={() => {
+                const masterApkUrl = "https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk";
+                alert(`📥 REDIRECTING TO CLOUD STORAGE\n\nDOWNLOAD INSTRUCTIONS:\n1. Install the APK on your Android device.\n2. Open the app and enter your COMPANY ID: ${detectedTenantId}\n3. Login with your employee credentials.\n\nYour system is ready for use!`);
+                window.open(masterApkUrl, '_blank');
+              }}
               className="btn-hover"
               style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', padding: '10px 25px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '900', fontSize: '0.8rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)'}}
             >

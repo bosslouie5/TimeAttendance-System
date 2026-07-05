@@ -56,67 +56,68 @@ function App() {
   const [apiUrl, setApiUrl] = useState(() => {
     const saved = localStorage.getItem('server_url');
     const isNative = Capacitor.getPlatform() !== 'web';
+    const isLocalHost = !isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-    // Resolve relative API URLs to full URLs for native builds
-    let base = appConfig.defaultApiUrl || 'http://127.0.0.1:4002/api';
-    if (isNative && base.startsWith('/')) {
-       // Fallback to a common local IP if it's just a path
-       base = `http://127.0.0.1:4002${base}`;
+    let base = appConfig.defaultApiUrl || 'https://timeattendance-system.onrender.com/api';
+
+    // Auto-switch to local API if we are developing locally in browser
+    if (isLocalHost && base.includes('onrender.com')) {
+       base = 'http://127.0.0.1:4002/api';
     }
 
     if (saved) {
-      if (isNative) {
-        if (saved.startsWith('http://localhost')) return saved.replace('localhost', '127.0.0.1');
-        return saved;
-      }
+      if (isNative && saved.startsWith('http://localhost')) return saved.replace('localhost', '127.0.0.1');
       return saved;
     }
 
-    if (isNative) {
-      return base.replace('localhost', '127.0.0.1');
+    if (isNative && base.startsWith('/')) {
+       base = `http://127.0.0.1:4002${base}`;
     }
-    return base.startsWith('http') ? base : `${window.location.origin}${base}`;
+
+    return isNative ? base.replace('localhost', '127.0.0.1') : (base.startsWith('http') ? base : `${window.location.origin}${base}`);
   });
 
   const [tenantId, setTenantId] = useState(() => {
-    // Rule: Each app build is specific to a tenant
+    const saved = localStorage.getItem('tenant_id');
+    if (saved) return saved;
+
+    // Check if the build has a hardcoded tenant (from Admin Portal build)
     const configTenantId = appConfig.defaultTenantId;
-    if (configTenantId && configTenantId !== "/") {
+    if (configTenantId && configTenantId !== "/" && configTenantId !== "master" && configTenantId !== "MASTER_UNIVERSAL") {
       localStorage.setItem('tenant_id', configTenantId);
       return configTenantId;
     }
-    return localStorage.getItem('tenant_id') || 'master';
-  });
-  const [employeeId, setEmployeeId] = useState(localStorage.getItem('cached_id') || '');
-  const [departments, setDepartments] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('all_departments')) || initialData.departments;
-    } catch (e) { return initialData.departments; }
-  });
-  const [status, setStatus] = useState('System Online');
-  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('cached_id'));
-  const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [tenantInfo, setTenantInfo] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('tenant_info')) || null;
-    } catch (e) { return null; }
-  });
-  const [pendingLogs, setPendingLogs] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pending_logs')) || [];
-    } catch (e) { return []; }
+    return null; // Show setup screen if no tenant is identified
   });
 
-  const [updateAvailable, setUpdateAvailable] = useState(null);
-  const [personalLogs, setPersonalLogs] = useState(() => {
+  const [setupId, setSetupId] = useState('');
+  const [isSettingUp, setIsSettingUp] = useState(false);
+
+  const handleSetupTenant = async () => {
+    if (!setupId.trim()) return alert('Please enter a valid Company ID');
+    setIsSettingUp(true);
+    setStatus('Linking Company...');
+
     try {
-      return JSON.parse(localStorage.getItem('personal_logs')) || [];
-    } catch (e) { return []; }
-  });
-  const [isServerDown, setIsServerDown] = useState(false);
-  const [showLogsModal, setShowLogsModal] = useState(false);
+      const res = await getJson(`${apiUrl}/tenant-info/${setupId.trim()}`);
+      if (res.ok && res.data) {
+        const tid = res.data.tenantId || setupId.trim();
+        localStorage.setItem('tenant_id', tid);
+        localStorage.setItem('tenant_info', JSON.stringify(res.data));
+        setTenantId(tid);
+        setTenantInfo(res.data);
+        setStatus('Company Linked ✓');
+        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is now ready.`);
+      } else {
+        alert('INVALID COMPANY ID: Please check the ID provided by your administrator.');
+      }
+    } catch (e) {
+      alert('CONNECTION ERROR: Make sure you are online to link your company for the first time.');
+    } finally {
+      setIsSettingUp(false);
+      setStatus('System Ready');
+    }
+  };
 
   useEffect(() => {
     checkConnection();
@@ -129,14 +130,11 @@ function App() {
 
     if (tenantId) {
         fetchTenantInfo();
-    }
-
-    if (loggedIn) {
-        syncSystemData();
+        if (loggedIn) syncSystemData();
     }
 
     return () => clearInterval(connInterval);
-  }, []);
+  }, [tenantId]);
 
   const fetchTenantInfo = async () => {
     if (!apiUrl.startsWith('http')) return;
@@ -327,7 +325,7 @@ function App() {
       setStatus('Offline Access ✓');
       alert('OFFLINE MODE: Logged in using cached credentials.');
     } else {
-      alert(`CONNECTION REQUIRED\n\n1. Ensure you are connected to the internet.\n2. First-time login for ID [${cleanId}] must be done while the system is ONLINE.\n3. Server: ${apiUrl}`);
+      alert(`CONNECTION REQUIRED: First-time login for ID [${cleanId}] must be performed while online.\n\nServer: ${apiUrl}`);
     }
     setLoading(false);
   };
@@ -404,24 +402,28 @@ function App() {
 
   useEffect(() => {
     const checkUpdate = async () => {
-      if (!apiUrl.startsWith('http')) return;
+      if (!apiUrl.startsWith('http') || isServerDown) return;
 
+      console.log(`[OTA] Checking for updates at ${apiUrl}/app-version...`);
       try {
         const res = await getJson(`${apiUrl}/app-version`);
         if (res.ok && res.data) {
           const latest = res.data;
-          // Version comparison logic
-          const currentParts = appConfig.version.split('.').map(Number);
+          const currentVer = appConfig.version;
+
+          console.log(`[OTA] Current: ${currentVer}, Latest: ${latest.version}`);
+
+          const currentParts = currentVer.split('.').map(Number);
           const latestParts = latest.version.split('.').map(Number);
 
           let isNewer = false;
           for (let i = 0; i < 3; i++) {
             if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
-            if (latestParts[i] < currentParts[i]) break;
+            if (latestParts[i] < currentParts[i]) { isNewer = false; break; }
           }
 
           if (isNewer) {
-            console.log(`[OTA] New version detected: ${latest.version}`);
+            console.log(`[OTA] NEW VERSION FOUND: ${latest.version}`);
             setUpdateAvailable(latest);
           }
         }
@@ -430,9 +432,13 @@ function App() {
       }
     };
 
-    checkUpdate();
-    const updateInterval = setInterval(checkUpdate, 300000); // Check every 5 mins
-    return () => clearInterval(updateInterval);
+    // Initial check with small delay to ensure network is ready
+    const timer = setTimeout(checkUpdate, 5000);
+    const updateInterval = setInterval(checkUpdate, 60000); // Check every 1 minute for faster testing
+    return () => {
+        clearTimeout(timer);
+        clearInterval(updateInterval);
+    };
   }, [apiUrl, isServerDown]);
 
   const handleDownloadUpdate = () => {
@@ -443,6 +449,41 @@ function App() {
 
     window.open(downloadUrl, '_blank');
   };
+
+  if (!tenantId) {
+    return (
+      <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '40px 25px', display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center'}}>
+         <div className="glass-card fade-in" style={{padding: '50px 30px'}}>
+            <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
+            <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>System Setup</h1>
+            <p style={{color: '#94a3b8', marginBottom: '40px', fontSize: '0.95rem'}}>Please enter your <b style={{color:'#fff'}}>Company ID</b> to activate this terminal.</p>
+
+            <div className="form-group">
+               <span className="label-visible">COMPANY IDENTIFICATION</span>
+               <input
+                 value={setupId}
+                 onChange={e => setSetupId(e.target.value)}
+                 placeholder="Enter ID (e.g. 571044)"
+                 className="input-field"
+                 style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900', letterSpacing: '2px'}}
+               />
+            </div>
+
+            <button
+              onClick={handleSetupTenant}
+              disabled={isSettingUp}
+              className="btn-primary"
+              style={{marginTop: '20px', padding: '22px'}}
+            >
+              {isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}
+            </button>
+            <div style={{marginTop: '30px', fontSize: '0.7rem', color: '#475569', letterSpacing: '1px'}}>
+               POWERED BY TIMEKEY SaaS INFRASTRUCTURE
+            </div>
+         </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 60px 15px', fontFamily: 'system-ui, sans-serif'}}>

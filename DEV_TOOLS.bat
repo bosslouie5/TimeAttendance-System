@@ -257,58 +257,20 @@ if exist "%CONFIG_FILE%" (
 )
 
 :SKIP_BUMP
-echo [*] Building Production Assets...
-set "NODE_OPTIONS=--max-old-space-size=4096"
-cd /d "%ROOT_DIR%\web-admin"
-call npm run build
-cd /d "%ROOT_DIR%\web-dev"
-call npm run build
-cd /d "%ROOT_DIR%\mobile-app"
-call npm run build
-cd /d "%ROOT_DIR%"
+echo [*] CLOUD DEPLOYMENT MODE ACTIVE...
+echo [*] (Laptop building is disabled. Cloud will handle All Builds)
 
-echo [*] Preparing GitHub Pages Deployment...
-if exist "web_deploy" rd /s /q "web_deploy"
-mkdir "web_deploy"
-mkdir "web_deploy\dev"
-mkdir "web_deploy\app"
-mkdir "web_deploy\apks"
-xcopy /s /i /y "web-admin\dist\*" "web_deploy\"
-xcopy /s /i /y "web-dev\dist\*" "web_deploy\dev\"
-xcopy /s /i /y "mobile-app\dist\*" "web_deploy\app\"
-echo [*] Copying APKs to Deployment...
-if not exist "web_deploy\apks" mkdir "web_deploy\apks"
-xcopy /y "backend\apks\*" "web_deploy\apks\"
-:: Ensure a Master APK exists for GitHub distribution
-if not exist "web_deploy\apks\TimeKey_Master.apk" (
-    echo [*] Creating Master APK from first available build...
-    for %%f in (backend\apks\*.apk) do (
-        copy "%%f" "web_deploy\apks\TimeKey_Master.apk" /y >nul
-        goto :MASTER_DONE
-    )
-)
-:MASTER_DONE
-echo Last Deploy: %date% %time% > "web_deploy\version.txt"
-
-echo [*] Pushing to GitHub (Render will auto-deploy)...
+echo [*] Pushing Source Code to GitHub...
 cd /d "%ROOT_DIR%"
 "%GIT_EXE%" add .
 "%GIT_EXE%" commit -m "Production Sync: %date% %time%" >nul 2>&1
 "%GIT_EXE%" push origin main
 
-cd /d "%ROOT_DIR%\web_deploy"
-"%GIT_EXE%" init >nul 2>&1
-"%GIT_EXE%" config user.name "bosslouie5"
-"%GIT_EXE%" config user.email "johnlouiecruz23@gmail.com"
-"%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Build Update: %date% %time%" >nul 2>&1
-"%GIT_EXE%" remote add origin https://github.com/bosslouie5/TimeAttendance-System.git >nul 2>&1
-"%GIT_EXE%" push -f origin master:gh-pages
-
 echo.
-echo [SUCCESS] PRODUCTION DEPLOYED!
+echo [SUCCESS] SOURCE CODE UPLOADED!
+echo [*] GitHub Cloud is now building your Website and APK.
+echo [*] Please wait 5-8 minutes for the process to finish.
 echo Web: https://timeattendance-system.onrender.com/dev
-rd /s /q "web_deploy"
 pause
 goto MENU
 
