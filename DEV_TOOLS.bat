@@ -10,9 +10,9 @@ set "GIT_EXE=%DEV_TOOLS%\Git\cmd\git.exe"
 set "ADB_EXE=%DEV_TOOLS%\platform-tools\adb.exe"
 
 :: MONGODB CONFIGURATION (Atlas Cloud)
-:: Siguraduhing tama ang URIs mo dito para sa 24/7 Cloud Access
-set "MONGODB_URI_TEST=mongodb+srv://johnlouiecruz23_db_user:b6VvErL6I1HPFG06@timekeydev.2fvpmdy.mongodb.net/?appName=TimeKeyDev"
-set "MONGODB_URI_PROD=mongodb+srv://johnlouiecruz23_db_user:b6VvErL6I1HPFG06@timekeydev.2fvpmdy.mongodb.net/?appName=TimeKeyDev"
+:: ISOLATED ENVIRONMENTS: PRODUCTION ONLY
+:: Port 4002 will strictly use LOCAL JSON files for privacy.
+set "MONGODB_URI_PROD=mongodb+srv://johnlouiecruz23_db_user:b6VvErL6I1HPFG06@timekeydev.2fvpmdy.mongodb.net/TimeKeyPROD?retryWrites=true&w=majority&appName=TimeKeyDev"
 
 :: LOCK PORTABLE ENVIRONMENT
 set "PATH=%NODE_PATH%;%NODE_PATH%\node_modules\npm\bin;%DEV_TOOLS%\platform-tools;%DEV_TOOLS%\Git\cmd;%PATH%"
@@ -179,11 +179,12 @@ goto MENU
 :LAB_ONLINE
 cls
 echo [*] Activating Lab Port 4002 ONLINE...
+echo [*] DATA MODE: LOCAL JSON (Laptop Privacy Active)
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 pushd backend
 set SYSTEM_MODE=test
-set "MONGODB_URI=%MONGODB_URI_TEST%"
+set "MONGODB_URI="
 start /b node server.js > server_test.log 2>&1
 start /b "" "%DEV_TOOLS%\cloudflared.exe" tunnel --url http://127.0.0.1:4002 > tunnel.log 2>&1
 popd
@@ -194,11 +195,12 @@ goto MENU
 :LAB_LOCAL
 cls
 echo [*] Activating Lab Port 4002 LOCAL...
+echo [*] DATA MODE: LOCAL JSON (Laptop Privacy Active)
 "%ADB_EXE%" reverse tcp:4002 tcp:4002
 taskkill /F /IM node.exe /T >nul 2>&1
 pushd backend
 set SYSTEM_MODE=test
-set "MONGODB_URI=%MONGODB_URI_TEST%"
+set "MONGODB_URI="
 start /b node server.js > server_test.log 2>&1
 popd
 echo [LIVE] Running on http://localhost:4002

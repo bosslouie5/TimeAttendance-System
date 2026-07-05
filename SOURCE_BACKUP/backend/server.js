@@ -18,24 +18,31 @@ const HOST = '0.0.0.0';
 const distFolder = isTestMode ? 'dist-test' : 'dist';
 const dbFile = isTestMode ? 'data-test.json' : 'data.json';
 
-console.log(`\n\x1b[36m[${brand.brandName.toUpperCase()}] System Starting...\x1b[0m`);
-console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + brand.devHostname + ')' : 'PRODUCTION (' + brand.prodHostname + ')'}\x1b[0m`);
-console.log(`\x1b[35m[ENV] Database: ${dbFile}\x1b[0m\n`);
-
 const DB_PATH = path.join(__dirname, dbFile);
 const MONGODB_URI = process.env.MONGODB_URI;
 let dbClient = null;
 
+console.log(`\n\x1b[36m[${brand.brandName.toUpperCase()}] System Starting...\x1b[0m`);
+console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + brand.devHostname + ')' : 'PRODUCTION (' + brand.prodHostname + ')'}\x1b[0m`);
+console.log(`\x1b[35m[ENV] Database: ${MONGODB_URI ? 'MONGODB ATLAS (Cloud)' : dbFile + ' (Local JSON)'}\x1b[0m\n`);
+
 async function getDb() {
-  if (!MONGODB_URI) return null;
+  const uri = process.env.MONGODB_URI;
+  if (!uri || uri.includes('PASTE_YOUR_MONGODB')) {
+    return null;
+  }
+
   if (dbClient) return dbClient.db();
+
   try {
-    dbClient = new MongoClient(MONGODB_URI);
+    dbClient = new MongoClient(uri);
     await dbClient.connect();
-    console.log(`\x1b[32m[DB] Connected to MongoDB Atlas ✓\x1b[0m`);
+    const dbName = dbClient.db().databaseName;
+    console.log(`\x1b[32m[DB] Connected to MongoDB Atlas ✓ (DB: ${dbName})\x1b[0m`);
     return dbClient.db();
   } catch (e) {
     console.error(`\x1b[31m[DB] Connection Failed: ${e.message}\x1b[0m`);
+    dbClient = null; // Reset client on failure
     return null;
   }
 }
@@ -51,6 +58,22 @@ const webDevDist = path.join(__dirname, `../web-dev/${distFolder}`);
 const webAdminDist = path.join(__dirname, `../web-admin/${distFolder}`);
 const mobileDist = path.join(__dirname, `../mobile-app/${distFolder}`);
 const apksDir = path.join(__dirname, 'apks');
+
+// --- PRO DIAGNOSTICS (Render Debugging) ---
+console.log(`\n\x1b[33m[DIAGNOSTICS] Checking UI Folders...\x1b[0m`);
+[
+  { name: 'Web-Admin', path: webAdminDist },
+  { name: 'Web-Dev', path: webDevDist },
+  { name: 'Mobile-App', path: mobileDist }
+].forEach(ui => {
+  if (fs.existsSync(ui.path)) {
+    console.log(`\x1b[32m[✓] ${ui.name}: Found at ${ui.path}\x1b[0m`);
+  } else {
+    console.log(`\x1b[31m[✗] ${ui.name}: MISSING! (Expected at ${ui.path})\x1b[0m`);
+    console.log(`    Tip: Make sure to run 'npm run build' in the Render build command.`);
+  }
+});
+console.log('');
 
 if (!fs.existsSync(apksDir)) fs.mkdirSync(apksDir);
 app.use('/apks', express.static(apksDir));
@@ -117,12 +140,34 @@ async function saveData(data) {
 
 // --- DEV ACCOUNTS UTILS ---
 const DEV_ACCOUNTS_PATH = path.join(__dirname, 'dev_accounts.json');
-function loadDevAccounts() {
+
+async function loadDevAccounts() {
+  const db = await getDb();
+  if (db) {
+    const accounts = await db.collection('devAccounts').find({}).toArray();
+    if (accounts.length > 0) return accounts.map(({ _id, ...acc }) => acc);
+
+    // Seed DB with local data if empty
+    let local = [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }];
+    if (fs.existsSync(DEV_ACCOUNTS_PATH)) {
+      try { local = JSON.parse(fs.readFileSync(DEV_ACCOUNTS_PATH, 'utf8')); } catch (e) {}
+    }
+    await db.collection('devAccounts').insertMany(local);
+    return local;
+  }
+
   if (!fs.existsSync(DEV_ACCOUNTS_PATH)) return [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }];
   try { return JSON.parse(fs.readFileSync(DEV_ACCOUNTS_PATH, 'utf8')); }
   catch (e) { return [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }]; }
 }
-function saveDevAccounts(accounts) {
+
+async function saveDevAccounts(accounts) {
+  const db = await getDb();
+  if (db) {
+    await db.collection('devAccounts').deleteMany({});
+    if (accounts.length > 0) await db.collection('devAccounts').insertMany(accounts);
+    return;
+  }
   fs.writeFileSync(DEV_ACCOUNTS_PATH, JSON.stringify(accounts, null, 2), 'utf8');
 }
 
@@ -214,7 +259,7 @@ app.use('/portal/:tenantId', express.static(webAdminDist));
 app.post('/api/auth/web-login', async (req, res) => {
   const { tenantId, username, password } = req.body;
   const data = await loadData();
-  const devAccounts = loadDevAccounts();
+  const devAccounts = await loadDevAccounts();
 
   console.log(`[AUTH] Login attempt: Tenant=${tenantId || 'ANY'}, User=${username}`);
 
@@ -268,9 +313,9 @@ app.post('/api/auth/web-login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/dev-login', (req, res) => {
+app.post('/api/auth/dev-login', async (req, res) => {
   const { username, password } = req.body;
-  const accounts = loadDevAccounts();
+  const accounts = await loadDevAccounts();
   const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase() && a.password === password);
 
   if (user) {
@@ -282,37 +327,37 @@ app.post('/api/auth/dev-login', (req, res) => {
   }
 });
 
-app.get('/api/master/dev-accounts', (req, res) => res.json(loadDevAccounts()));
+app.get('/api/master/dev-accounts', async (req, res) => res.json(await loadDevAccounts()));
 
-app.post('/api/master/dev-accounts', (req, res) => {
-  const accounts = loadDevAccounts();
+app.post('/api/master/dev-accounts', async (req, res) => {
+  const accounts = await loadDevAccounts();
   if (accounts.find(a => a.username.toLowerCase() === req.body.username.toLowerCase())) {
     return res.status(400).json({ error: 'Username already exists' });
   }
   accounts.push(req.body);
-  saveDevAccounts(accounts);
+  await saveDevAccounts(accounts);
   res.json({ success: true });
 });
 
-app.put('/api/master/dev-accounts/:username', (req, res) => {
+app.put('/api/master/dev-accounts/:username', async (req, res) => {
   const { username } = req.params;
-  const accounts = loadDevAccounts();
+  const accounts = await loadDevAccounts();
   const index = accounts.findIndex(a => a.username.toLowerCase() === username.toLowerCase());
   if (index !== -1) {
     accounts[index] = { ...accounts[index], ...req.body };
-    saveDevAccounts(accounts);
+    await saveDevAccounts(accounts);
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Account not found' });
   }
 });
 
-app.delete('/api/master/dev-accounts/:username', (req, res) => {
+app.delete('/api/master/dev-accounts/:username', async (req, res) => {
   const { username } = req.params;
-  let accounts = loadDevAccounts();
+  let accounts = await loadDevAccounts();
   if (accounts.length <= 1) return res.status(400).json({ error: 'Cannot delete the last admin account' });
   accounts = accounts.filter(a => a.username.toLowerCase() !== username.toLowerCase());
-  saveDevAccounts(accounts);
+  await saveDevAccounts(accounts);
   res.json({ success: true });
 });
 

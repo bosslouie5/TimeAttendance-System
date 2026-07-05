@@ -31,6 +31,7 @@ function App() {
   const [newDevUser, setNewDevUser] = useState('');
   const [newDevPass, setNewDevPass] = useState('');
   const [newDevDisplay, setNewDevDisplay] = useState('');
+  const [editingDevUser, setEditingDevUser] = useState(null);
   const [systemIp, setSystemIp] = useState('127.0.0.1');
 
   const AVAILABLE_PERMISSIONS = [
@@ -214,21 +215,39 @@ function App() {
 
   const createDevAccount = async () => {
     if (!newDevUser || !newDevPass || !newDevDisplay) return alert('Fill all fields');
+    setProcessing(true);
+    setProcessingMsg(editingDevUser ? 'Updating Dev Account...' : 'Creating Dev Account...');
     try {
-      const res = await fetch(`${activeApiBase}/master/dev-accounts`, {
-        method: 'POST',
+      const url = editingDevUser
+        ? `${activeApiBase}/master/dev-accounts/${editingDevUser.username}`
+        : `${activeApiBase}/master/dev-accounts`;
+
+      const method = editingDevUser ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: newDevUser, password: newDevPass, displayName: newDevDisplay })
       });
       if (res.ok) {
         setNewDevUser(''); setNewDevPass(''); setNewDevDisplay('');
+        setEditingDevUser(null);
         loadInitialData();
-        setStatus('Dev Account Created ✓');
+        setStatus(editingDevUser ? 'Dev Account Updated ✓' : 'Dev Account Created ✓');
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to create account');
+        alert(err.error || 'Operation failed');
       }
-    } catch (e) { setStatus('Error creating dev account'); }
+    } catch (e) { setStatus('Error managing dev account'); }
+    finally { setProcessing(false); }
+  };
+
+  const prepareEditDev = (acc) => {
+    setNewDevUser(acc.username);
+    setNewDevDisplay(acc.displayName);
+    setNewDevPass(acc.password);
+    setEditingDevUser(acc);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const deleteDevAccount = async (username) => {
@@ -2209,28 +2228,70 @@ function App() {
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
           <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
-             <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
-                <h2 style={{marginTop:0}}>🔑 New Dev Account</h2>
-                <p style={{color:'#64748b', fontSize:'0.8rem'}}>Create credentials for Dev Portal access.</p>
-                <input style={inputStyle} placeholder="Display Name (e.g. Admin Juan)" value={newDevDisplay} onChange={e => setNewDevDisplay(e.target.value)} />
-                <input style={inputStyle} placeholder="Username" value={newDevUser} onChange={e => setNewDevUser(e.target.value)} />
-                <input style={inputStyle} type="password" placeholder="Password" value={newDevPass} onChange={e => setNewDevPass(e.target.value)} />
-                <button onClick={createDevAccount} style={{...addBtn, width:'100%'}}>Create Account</button>
+             <div className="glass-card" style={{padding:'25px', borderRadius:'20px', border:'1px solid #334155', position:'sticky', top:'20px', height:'fit-content'}}>
+                <h2 style={{marginTop:0, display:'flex', alignItems:'center', gap:'12px'}}>
+                  {editingDevUser ? '📝 Edit Dev Account' : '🔑 New Dev Account'}
+                </h2>
+                <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>
+                  {editingDevUser ? `Updating credentials for ${editingDevUser.username}` : 'Create credentials for Dev Portal access.'}
+                </p>
+
+                <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+                  <div>
+                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>DISPLAY NAME</label>
+                    <input style={{...inputStyle, marginBottom:0}} placeholder="e.g. Admin Juan" value={newDevDisplay} onChange={e => setNewDevDisplay(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>USERNAME</label>
+                    <input style={{...inputStyle, marginBottom:0}} placeholder="Username" value={newDevUser} onChange={e => setNewDevUser(e.target.value)} disabled={!!editingDevUser} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>PASSWORD</label>
+                    <input style={{...inputStyle, marginBottom:0}} type="password" placeholder="Password" value={newDevPass} onChange={e => setNewDevPass(e.target.value)} />
+                  </div>
+
+                  <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
+                    {editingDevUser && (
+                      <button onClick={() => {
+                        setEditingDevUser(null);
+                        setNewDevUser(''); setNewDevPass(''); setNewDevDisplay('');
+                      }} style={{...smallBtn, background:'#334155', flex:1, padding:'15px'}}>Cancel</button>
+                    )}
+                    <button onClick={createDevAccount} className="btn-hover" style={{...addBtn, flex:2, background: editingDevUser ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #2563eb)'}}>
+                      {editingDevUser ? 'Update Account ✓' : 'Create Account'}
+                    </button>
+                  </div>
+                </div>
              </div>
-             <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
-                <h2 style={{marginTop:0}}>Active Dev Accounts</h2>
-                <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
-                   <table>
+
+             <div className="glass-card" style={{padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
+                <h2 style={{marginTop:0, marginBottom:'25px'}}>Active Dev Accounts</h2>
+                <div style={{maxHeight:'70vh', overflowY:'auto'}} className="custom-scroll">
+                   <table style={{width:'100%', minWidth:'100%'}}>
                       <thead>
-                         <tr><th>Display Name</th><th>Username</th><th>Action</th></tr>
+                         <tr>
+                           <th style={{width:'40%'}}>Display Name</th>
+                           <th style={{width:'30%'}}>Username</th>
+                           <th style={{width:'30%', textAlign:'center'}}>Action</th>
+                         </tr>
                       </thead>
                       <tbody>
                          {devAccounts.map((acc, idx) => (
-                           <tr key={idx}>
-                              <td style={{fontWeight:'bold'}}>{acc.displayName}</td>
-                              <td>{acc.username}</td>
-                              <td>
-                                 <button onClick={() => deleteDevAccount(acc.username)} style={{...smallBtn, background:'#ef4444'}}>Remove</button>
+                           <tr key={idx} style={{background: editingDevUser?.username === acc.username ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
+                              <td style={{fontWeight:'bold', padding:'20px 12px'}}>
+                                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                                  <div style={{width:'35px', height:'35px', background:'#334155', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.8rem'}}>
+                                    {acc.displayName.charAt(0).toUpperCase()}
+                                  </div>
+                                  {acc.displayName}
+                                </div>
+                              </td>
+                              <td><code style={{background:'#0f172a', padding:'4px 8px', borderRadius:'5px', color:'#3b82f6'}}>{acc.username}</code></td>
+                              <td style={{textAlign:'center'}}>
+                                 <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
+                                   <button onClick={() => prepareEditDev(acc)} className="btn-hover" style={{...smallBtn, background:'#3b82f6', padding:'8px 15px'}}>Edit</button>
+                                   <button onClick={() => deleteDevAccount(acc.username)} className="btn-hover" style={{...smallBtn, background:'#ef444422', color:'#ef4444', border:'1px solid #ef444444', padding:'8px 15px'}}>Remove</button>
+                                 </div>
                               </td>
                            </tr>
                          ))}
