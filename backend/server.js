@@ -62,13 +62,14 @@ const apksDir = path.join(__dirname, 'apks');
 // --- SMART IP REDIRECT (PRO FEATURE) ---
 app.get('/', async (req, res, next) => {
   try {
-    const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+    let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+    if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
     const data = await loadData();
 
-    // Find a tenant that matches this IP (either Public IP or Virtual Host IP)
+    // Find a tenant that matches this IP (Public IP Lock)
     const matchingTenant = data.users.find(u =>
-      (u.publicIp && u.publicIp === clientIp) ||
-      (u.adminIp && u.adminIp === clientIp)
+      u.publicIp && u.publicIp === clientIp
     );
 
     if (matchingTenant && !isTestMode) {
@@ -271,7 +272,9 @@ app.use('/portal/:tenantId', async (req, res, next) => {
     }
   }
 
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   // Master/Developer Bypass: allow access if local or in test mode
@@ -336,8 +339,10 @@ app.post('/api/auth/web-login', async (req, res) => {
 
   if (user) {
     // IP GATEKEEPER CHECK FOR REGULAR USERS
-    const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
-    const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
+  const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
     const allowedIp = user.publicIp || user.adminIp;
 
     if (!isLocal && !isTestMode && allowedIp && !matchIp(clientIp, allowedIp)) {
@@ -376,11 +381,12 @@ app.get('/activate/:tenantId', async (req, res) => {
 
   if (userIndex === -1) return res.status(404).send('<h1>Invalid Activation Link</h1>');
 
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
 
   // Update Tenant Data in Atlas/Local JSON
   data.users[userIndex].publicIp = clientIp;
-  data.users[userIndex].adminIp = clientIp; // Assign as Virtual Host IP
+  data.users[userIndex].adminIp = '';
 
   await saveData(data);
 
@@ -1199,7 +1205,9 @@ app.post('/api/master/build-apk', async (req, res) => {
 
 // Build, install and launch on first connected device via ADB
 app.post('/api/master/build-and-run-apk', async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   if (!isTestMode && !isLocal) {
@@ -1308,7 +1316,9 @@ app.post('/api/master/build-and-run-apk', async (req, res) => {
 
 // List available APKs
 app.get('/api/master/apks', async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   if (!isTestMode && !isLocal) return res.status(403).json({ success: false, error: 'Not allowed' });
