@@ -35,6 +35,7 @@ function App() {
   const [positionTitles, setPositionTitles] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [tenantDetails, setTenantDetails] = useState(null);
+  const [appVersionInfo, setAppVersionInfo] = useState(null);
   const [status, setStatus] = useState('');
 
   // Form States
@@ -114,6 +115,12 @@ function App() {
             sessionStorage.setItem(sessionKey, JSON.stringify(updated));
           }
         })
+        .catch(() => {});
+
+      // Fetch App Version
+      fetch(`${activeApiBase}/app-version`)
+        .then(r => r.json())
+        .then(data => setAppVersionInfo(data))
         .catch(() => {});
     }
   }, [detectedTenantId, activeApiBase]);
@@ -820,7 +827,30 @@ function App() {
           </div>
         )}
 
-        <button onClick={() => { sessionStorage.removeItem(sessionKey); window.location.reload(); }} style={{background: '#ef4444', color: 'white', padding: '10px 25px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '900', fontSize: '0.8rem'}}>LOGOUT</button>
+        <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'8px'}}>
+          <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+            <button
+              onClick={() => window.open(`${activeApiBase}/master/download-apk/TimeKey_Master.apk`, '_blank')}
+              className="btn-hover"
+              style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', padding: '10px 25px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '900', fontSize: '0.8rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)'}}
+            >
+              🚀 BUILD APK
+            </button>
+            <button
+              onClick={() => { sessionStorage.removeItem(sessionKey); window.location.reload(); }}
+              style={{background: '#ef4444', color: 'white', padding: '10px 25px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '900', fontSize: '0.8rem'}}
+            >
+              LOGOUT
+            </button>
+          </div>
+          {appVersionInfo && (
+            <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
+              <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
+              APP VERSION: <span style={{color: '#10b981'}}>V{appVersionInfo.version}</span>
+              <span style={{color: '#64748b', marginLeft:'5px'}}>(LATEST SYSTEM)</span>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* PAGE LABEL INDICATOR */}

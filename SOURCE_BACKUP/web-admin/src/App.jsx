@@ -35,6 +35,7 @@ function App() {
   const [positionTitles, setPositionTitles] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [tenantDetails, setTenantDetails] = useState(null);
+  const [appVersionInfo, setAppVersionInfo] = useState(null);
   const [status, setStatus] = useState('');
 
   // Form States
