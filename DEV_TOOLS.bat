@@ -181,12 +181,12 @@ goto MENU
 :LAB_ONLINE
 cls
 echo [*] Activating Lab Port 4002 ONLINE...
-echo [*] DATA MODE: LOCAL JSON (Laptop Privacy Active)
+echo [*] DATA MODE: MONGODB ATLAS (Cloud Sync Active)
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 pushd backend
 set SYSTEM_MODE=test
-set "MONGODB_URI="
+set "MONGODB_URI=%MONGODB_URI_PROD%"
 start /b node server.js > server_test.log 2>&1
 start /b "" "%DEV_TOOLS%\cloudflared.exe" tunnel --url http://127.0.0.1:4002 > tunnel.log 2>&1
 popd
@@ -197,12 +197,12 @@ goto MENU
 :LAB_LOCAL
 cls
 echo [*] Activating Lab Port 4002 LOCAL...
-echo [*] DATA MODE: LOCAL JSON (Laptop Privacy Active)
+echo [*] DATA MODE: MONGODB ATLAS (Cloud Sync Active)
 "%ADB_EXE%" reverse tcp:4002 tcp:4002
 taskkill /F /IM node.exe /T >nul 2>&1
 pushd backend
 set SYSTEM_MODE=test
-set "MONGODB_URI="
+set "MONGODB_URI=%MONGODB_URI_PROD%"
 start /b node server.js > server_test.log 2>&1
 popd
 echo [LIVE] Running on http://localhost:4002
@@ -226,20 +226,35 @@ echo !!! Step 1: INITIATING GLOBAL PRODUCTION DEPLOYMENT !!!
 echo.
 set /p bump="Bump version before deploy? (Y/N): "
 if /i "%bump%"=="Y" (
-    echo [*] Bumping version...
-    powershell -Command "Invoke-RestMethod -Uri 'http://localhost:4002/api/master/update-version' -Method Post -Body (@{changelog='Production Release %date%'; forceUpdate=$false} | ConvertTo-Json) -ContentType 'application/json'"
+    echo [*] Fetching current system version...
+    set "VER_FILE=backend\version.json"
+    set "CONFIG_FILE=mobile-app\src\app_config.json"
+    set "CURRENT_VER=1.0.0"
+    if exist "!VER_FILE!" (
+        for /f "delims=" %%v in ('powershell -Command "(Get-Content !VER_FILE! | ConvertFrom-Json).version"') do set "CURRENT_VER=%%v"
+    )
+    echo [STATUS] Current Version: !CURRENT_VER!
+    set /p NEW_VER="Enter New Version (Default: !CURRENT_VER!): "
+    if "!NEW_VER!"=="" set "NEW_VER=!CURRENT_VER!"
+    set /p msg="Enter Changelog: "
+    if "!msg!"=="" set "msg=Production Release %date%"
+
+    echo [*] Updating Version Files...
+    powershell -Command "$v = @{ version='!NEW_VER!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); changelog='!msg!'; apkUrl='/api/master/download-apk/TimeKey_Master.apk'; forceUpdate=$false }; $v | ConvertTo-Json | Set-Content '!VER_FILE!'"
+    if exist "!CONFIG_FILE!" (
+        powershell -Command "$c = Get-Content '!CONFIG_FILE!' | ConvertFrom-Json; $c.version = '!NEW_VER!'; $c.buildDate = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '!CONFIG_FILE!'"
+    )
 )
 
 echo [*] Building Production Assets...
-pushd web-admin
+set "NODE_OPTIONS=--max-old-space-size=4096"
+cd /d "%ROOT_DIR%\web-admin"
 call npm run build
-popd
-pushd web-dev
+cd /d "%ROOT_DIR%\web-dev"
 call npm run build
-popd
-pushd mobile-app
+cd /d "%ROOT_DIR%\mobile-app"
 call npm run build
-popd
+cd /d "%ROOT_DIR%"
 
 echo [*] Preparing GitHub Pages Deployment...
 if exist "web_deploy" rd /s /q "web_deploy"
@@ -289,12 +304,39 @@ goto MENU
 :BUMP_VERSION
 cls
 echo.
-echo [*] Triggering OTA Mobile Version Bump...
+echo [*] Fetching current system version...
+set "VER_FILE=backend\version.json"
+set "CONFIG_FILE=mobile-app\src\app_config.json"
+set "CURRENT_VER=1.0.0"
+
+if exist "%VER_FILE%" (
+    for /f "delims=" %%v in ('powershell -Command "(Get-Content %VER_FILE% | ConvertFrom-Json).version"') do set CURRENT_VER=%%v
+)
+echo [STATUS] Current Version: %CURRENT_VER%
+echo.
+set /p NEW_VER="Enter New Version (Current: %CURRENT_VER%): "
+if "!NEW_VER!"=="" set "NEW_VER=%CURRENT_VER%"
 set /p msg="Enter Changelog: "
 if "!msg!"=="" set msg="Performance enhancements and security updates."
-powershell -Command "Invoke-RestMethod -Uri 'http://localhost:4002/api/master/update-version' -Method Post -Body (@{changelog='!msg!'; forceUpdate=$false} | ConvertTo-Json) -ContentType 'application/json'"
+set /p force="Force Update? (Y/N): "
+set "FORCE_VAL=false"
+if /i "%force%"=="Y" set "FORCE_VAL=true"
+
 echo.
-echo [OTA] Version successfully bumped in Lab (4002).
+echo [*] Updating Version Files (Direct Disk Write)...
+powershell -Command "$v = @{ version='!NEW_VER!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); changelog='!msg!'; apkUrl='/api/master/download-apk/TimeKey_Master.apk'; forceUpdate=$!FORCE_VAL! }; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
+
+if exist "%CONFIG_FILE%" (
+    echo [*] Syncing to Mobile App Configuration...
+    powershell -Command "$c = Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version = '!NEW_VER!'; $c.buildDate = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%CONFIG_FILE%'"
+)
+
+echo.
+echo [*] Notifying Live Server (Optional)...
+powershell -Command "Invoke-RestMethod -Uri 'http://localhost:4002/api/master/update-version' -Method Post -Body (@{version='!NEW_VER!'; changelog='!msg!'; forceUpdate=$!FORCE_VAL!} | ConvertTo-Json) -ContentType 'application/json'" >nul 2>&1
+
+echo.
+echo [SUCCESS] Version bumped to !NEW_VER! and synced to source.
 pause
 goto MENU
 

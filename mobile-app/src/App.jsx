@@ -78,7 +78,15 @@ function App() {
     return base.startsWith('http') ? base : `${window.location.origin}${base}`;
   });
 
-  const [tenantId, setTenantId] = useState(localStorage.getItem('tenant_id') || appConfig.defaultTenantId);
+  const [tenantId, setTenantId] = useState(() => {
+    // Rule: Each app build is specific to a tenant
+    const configTenantId = appConfig.defaultTenantId;
+    if (configTenantId && configTenantId !== "/") {
+      localStorage.setItem('tenant_id', configTenantId);
+      return configTenantId;
+    }
+    return localStorage.getItem('tenant_id') || 'master';
+  });
   const [employeeId, setEmployeeId] = useState(localStorage.getItem('cached_id') || '');
   const [departments, setDepartments] = useState(() => {
     try {
@@ -294,23 +302,32 @@ function App() {
         setLoading(false);
         return;
       } else if (res.status === 404) {
-        alert('IDENTIFICATION ERROR: ID not registered in Web Portal.');
+        alert(`IDENTIFICATION ERROR: Employee ID [${cleanId}] is not registered for Tenant [${tenantId}] in the Cloud Portal.`);
         setLoading(false);
         return;
       } else if (res.status === 403) {
         alert(`SECURITY REJECTION: ${res.data?.error || 'Unauthorized device.'}`);
         setLoading(false);
         return;
+      } else if (res.status === 0) {
+        console.warn('Network unreachable, checking cache...');
+      } else {
+        alert(`SERVER ERROR (${res.status}): Please contact support or check your connection.`);
+        setLoading(false);
+        return;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Login exception:', e);
+    }
 
     if (cachedEmployee) {
       setLoggedIn(true);
       localStorage.setItem('cached_id', cachedEmployee.employeeId);
       localStorage.setItem('cached_name', cachedEmployee.name);
       setStatus('Offline Access ✓');
+      alert('OFFLINE MODE: Logged in using cached credentials.');
     } else {
-      alert('CONNECTION REQUIRED: First-time login must be performed while online.');
+      alert(`CONNECTION REQUIRED\n\n1. Ensure you are connected to the internet.\n2. First-time login for ID [${cleanId}] must be done while the system is ONLINE.\n3. Server: ${apiUrl}`);
     }
     setLoading(false);
   };

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.2",
-  "buildDate": "2026-07-05T15:56:05.620Z",
-  "changelog": "Production Release 05/07/2026",
-  "apkUrl": "/api/master/download-apk/TimeKey_Master.apk",
-  "forceUpdate": false
+    "apkUrl":  "/api/master/download-apk/TimeKey_Master.apk",
+    "buildDate":  "2026-07-05T21:11:22.306Z",
+    "version":  "V.0",
+    "forceUpdate":  false,
+    "changelog":  "Enhance Login"
 }

@@ -10,6 +10,12 @@ const { MongoClient } = require('mongodb');
 
 const app = express();
 // --- BRANDING & ENVIRONMENT ---
+const ALL_MODULES = [
+  'dashboard', 'employees', 'org-units', 'branches', 'assign-branch',
+  'reports', 'setup', 'devices', 'position-titles', 'schedules',
+  'assign-schedule', 'announcements', 'leave-management', 'payroll-bridge',
+  'subscription-info'
+];
 const brand = JSON.parse(fs.readFileSync(path.join(__dirname, 'brand_config.json'), 'utf8'));
 const isTestMode = process.env.SYSTEM_MODE === 'test';
 const PORT = process.env.PORT || (isTestMode ? 4002 : 4001);
@@ -323,7 +329,7 @@ app.post('/api/auth/web-login', async (req, res) => {
           tenantId: tenantId,
           companyName: targetTenant.companyName,
           isConsultant: true,
-          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'assign-branch', 'reports', 'setup', 'devices', 'position-titles', 'schedules', 'assign-schedule']
+          permissions: ALL_MODULES
         }
       });
     }
@@ -352,7 +358,12 @@ app.post('/api/auth/web-login', async (req, res) => {
 
     const finalTenantId = user.tenantId || user.username;
     console.log(`[AUTH] Login success: ${username} (Tenant: ${finalTenantId})`);
-    res.json({ success: true, user: { ...user, tenantId: finalTenantId } });
+
+    // AUTO-INJECT NEW MODULES
+    const currentPermissions = user.permissions || [];
+    const updatedPermissions = Array.from(new Set([...ALL_MODULES, ...currentPermissions]));
+
+    res.json({ success: true, user: { ...user, tenantId: finalTenantId, permissions: updatedPermissions } });
   } else {
     console.warn(`[AUTH] Login failed for user: ${username}`);
     res.status(401).json({ error: 'Invalid Credentials' });
@@ -1129,13 +1140,17 @@ app.get('/api/tenant-info/:tenantId', async (req, res) => {
   const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
+    // AUTO-INJECT NEW MODULES: Ensure every tenant has access to all global modules
+    const currentPermissions = user.permissions || [];
+    const updatedPermissions = Array.from(new Set([...ALL_MODULES, ...currentPermissions]));
+
     // Only return non-sensitive public info
     res.json({
       companyName: user.companyName,
       tenantId: user.tenantId || user.username,
       adminIp: user.adminIp,
       endDate: user.endDate,
-      permissions: user.permissions || []
+      permissions: updatedPermissions
     });
   } else {
     res.status(404).json({ error: 'Tenant not found' });
