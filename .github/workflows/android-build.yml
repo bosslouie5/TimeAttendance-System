@@ -13,7 +13,6 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # Removed environment block temporarily to use standard deployment flow
 
     steps:
       - name: Checkout Code
@@ -50,7 +49,8 @@ jobs:
       - name: Build Mobile APK (Universal)
         run: |
           cd mobile-app
-          echo '{"defaultApiUrl":"https://timeattendance-system.onrender.com/api","defaultTenantId":"MASTER_UNIVERSAL","version":"1.0.7","buildDate":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > src/app_config.json
+          # Inject production URLs but keep the version pushed from laptop
+          node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('src/app_config.json')); c.defaultApiUrl='https://timeattendance-system.onrender.com/api'; c.defaultTenantId='MASTER_UNIVERSAL'; fs.writeFileSync('src/app_config.json', JSON.stringify(c, null, 2));"
           npm run build
           npx cap sync android
           cd android
