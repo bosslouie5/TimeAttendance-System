@@ -3,7 +3,10 @@ name: Build Universal Master APK
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -24,19 +27,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'mobile-app/package-lock.json'
 
-      - name: Install Dependencies (Mobile App)
+      - name: Install Dependencies
         run: |
           cd mobile-app
-          npm install
+          npm install --no-package-lock
 
-      - name: Build Web Assets (Universal SaaS Mode)
+      - name: Build Web Assets
         run: |
           cd mobile-app
-          # Ensure config is Universal
-          echo '{"defaultApiUrl":"https://timeattendance-system.onrender.com/api","defaultTenantId":"MASTER_UNIVERSAL","version":"1.0.5","buildDate":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > src/app_config.json
+          echo '{"defaultApiUrl":"https://timeattendance-system.onrender.com/api","defaultTenantId":"MASTER_UNIVERSAL","version":"1.0.6","buildDate":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > src/app_config.json
           npm run build
 
       - name: Sync Capacitor
@@ -44,28 +44,24 @@ jobs:
           cd mobile-app
           npx cap sync android
 
-      - name: Build Android APK (Debug)
+      - name: Build Android APK
         run: |
           cd mobile-app/android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew clean assembleDebug
 
-      - name: Upload APK to GitHub Pages Branch
+      - name: Deploy APK to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p deploy-apk
-          cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk deploy-apk/TimeKey_Master.apk
-          
-          # Push the APK to gh-pages so it's downloadable via URL
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          
-          # Clone only the gh-pages branch
-          git clone --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git gh-pages-dir
-          
-          mkdir -p gh-pages-dir/apks
-          cp deploy-apk/TimeKey_Master.apk gh-pages-dir/apks/TimeKey_Master.apk
-          
-          cd gh-pages-dir
+          mkdir -p final-apk/apks
+          cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-apk/apks/TimeKey_Master.apk
+          cd final-apk
+          git init
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git remote add origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git checkout -b gh-pages
           git add apks/TimeKey_Master.apk
-          git commit -m "Cloud Build: Updated Master APK (V1.0.5)"
-          git push origin gh-pages
+          git commit -m "Cloud Build: Updated Master APK (V1.0.6)"
+          git push origin gh-pages --force

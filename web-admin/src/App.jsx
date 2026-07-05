@@ -836,7 +836,7 @@ function App() {
             <button
               onClick={() => {
                 const masterApkUrl = "https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk";
-                alert("📥 REDIRECTING TO CLOUD STORAGE\n\nThe Master APK is being downloaded from our GitHub Secure Cloud.\n\nNote: If you just deployed, wait 5 minutes for the cloud build to finish.");
+                alert(`📥 REDIRECTING TO CLOUD STORAGE\n\nDOWNLOAD INSTRUCTIONS:\n1. Install the APK on your Android device.\n2. Open the app and enter your COMPANY ID: ${detectedTenantId}\n3. Login with your employee credentials.\n\nYour system is ready for use!`);
                 window.open(masterApkUrl, '_blank');
               }}
               className="btn-hover"
