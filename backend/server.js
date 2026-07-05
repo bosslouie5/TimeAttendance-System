@@ -147,13 +147,25 @@ async function loadDevAccounts() {
     const accounts = await db.collection('devAccounts').find({}).toArray();
     if (accounts.length > 0) return accounts.map(({ _id, ...acc }) => acc);
 
-    // Seed DB with local data if empty
-    let local = [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }];
+    // Seed DB with standard ninja accounts if empty
+    let seed = [
+      { username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' },
+      { username: 'dev', password: 'dev', displayName: 'Developer' },
+      { username: 'dev1', password: 'dev1', displayName: 'Developer 1' }
+    ];
+
     if (fs.existsSync(DEV_ACCOUNTS_PATH)) {
-      try { local = JSON.parse(fs.readFileSync(DEV_ACCOUNTS_PATH, 'utf8')); } catch (e) {}
+      try {
+        const local = JSON.parse(fs.readFileSync(DEV_ACCOUNTS_PATH, 'utf8'));
+        // Merge unique accounts from local json
+        local.forEach(l => {
+          if (!seed.find(s => s.username.toLowerCase() === l.username.toLowerCase())) seed.push(l);
+        });
+      } catch (e) {}
     }
-    await db.collection('devAccounts').insertMany(local);
-    return local;
+
+    await db.collection('devAccounts').insertMany(seed);
+    return seed;
   }
 
   if (!fs.existsSync(DEV_ACCOUNTS_PATH)) return [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }];

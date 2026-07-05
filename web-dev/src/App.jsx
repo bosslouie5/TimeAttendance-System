@@ -144,7 +144,7 @@ function App() {
   useEffect(() => {
     const discoverSaaS = async () => {
       const host = window.location.hostname;
-      if (host === 'localhost' || host === '127.0.0.1' || host.includes('trycloudflare.com')) {
+      if (host === 'localhost' || host === '127.0.0.1' || host.includes('trycloudflare.com') || host.includes('onrender.com')) {
          setSaasStatus('Direct Connection Active');
          setActiveApiBase('/api');
          return;
