@@ -87,7 +87,7 @@ function App() {
 
   useEffect(() => {
     const checkConnection = async () => {
-      if (window.location.hostname.includes('trycloudflare.com') || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      if (window.location.hostname.includes('trycloudflare.com') || window.location.hostname.includes('onrender.com') || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         setActiveApiBase('/api');
       } else {
         try {

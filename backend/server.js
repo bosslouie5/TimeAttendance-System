@@ -12,7 +12,7 @@ const app = express();
 // --- BRANDING & ENVIRONMENT ---
 const brand = JSON.parse(fs.readFileSync(path.join(__dirname, 'brand_config.json'), 'utf8'));
 const isTestMode = process.env.SYSTEM_MODE === 'test';
-const PORT = isTestMode ? 4002 : 4001;
+const PORT = process.env.PORT || (isTestMode ? 4002 : 4001);
 const HOST = '0.0.0.0';
 
 const distFolder = isTestMode ? 'dist-test' : 'dist';
