@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "buildDate": "2024-05-20T00:00:00.000Z",
+  "changelog": "Initial Pro Release with Auto-Update System",
+  "apkUrl": "/api/master/download-apk/TimeKey_Master.apk",
+  "forceUpdate": false
+}

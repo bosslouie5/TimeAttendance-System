@@ -453,6 +453,61 @@ app.delete('/api/master/dev-accounts/:username', async (req, res) => {
   res.json({ success: true });
 });
 
+// --- AUTO-UPDATE SYSTEM (PRO OTA) ---
+const VERSION_FILE = path.join(__dirname, 'version.json');
+
+app.get('/api/app-version', (req, res) => {
+  if (fs.existsSync(VERSION_FILE)) {
+    const versionData = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
+    res.json(versionData);
+  } else {
+    res.status(404).json({ error: 'Version info not found' });
+  }
+});
+
+app.post('/api/master/update-version', async (req, res) => {
+  const { changelog, forceUpdate, version } = req.body;
+  let current = { version: '1.0.0', buildDate: new Date().toISOString(), changelog: '', apkUrl: '/api/master/download-apk/TimeKey_Master.apk', forceUpdate: false };
+
+  if (fs.existsSync(VERSION_FILE)) {
+    current = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
+  }
+
+  // Increment logic if version not provided
+  if (!version) {
+    const parts = current.version.split('.').map(Number);
+    parts[2] += 1; // Increment patch
+    if (parts[2] > 9) { parts[2] = 0; parts[1] += 1; }
+    if (parts[1] > 9) { parts[1] = 0; parts[0] += 1; }
+    current.version = parts.join('.');
+  } else {
+    current.version = version;
+  }
+
+  current.buildDate = new Date().toISOString();
+  current.changelog = changelog || 'Minor bug fixes and performance improvements.';
+  current.forceUpdate = !!forceUpdate;
+
+  fs.writeFileSync(VERSION_FILE, JSON.stringify(current, null, 2), 'utf8');
+
+  // Sync with mobile app config if possible
+  const mobileConfigPath = path.join(__dirname, '../mobile-app/src/app_config.json');
+  if (fs.existsSync(mobileConfigPath)) {
+    try {
+      const mobileConfig = JSON.parse(fs.readFileSync(mobileConfigPath, 'utf8'));
+      mobileConfig.version = current.version;
+      mobileConfig.buildDate = current.buildDate;
+      fs.writeFileSync(mobileConfigPath, JSON.stringify(mobileConfig, null, 2), 'utf8');
+      console.log(`[OTA] Synced version ${current.version} to mobile app source.`);
+    } catch (e) {
+      console.error(`[OTA] Failed to sync mobile config: ${e.message}`);
+    }
+  }
+
+  console.log(`[OTA] System Updated to Version ${current.version}`);
+  res.json({ success: true, newVersion: current.version });
+});
+
 app.post('/api/master/broadcast-link', async (req, res) => {
   const tunnelLogPath = path.join(__dirname, 'tunnel.log');
   const REGISTRY_URL = 'https://ntfy.sh/attendance_hub_60003078_active_link';

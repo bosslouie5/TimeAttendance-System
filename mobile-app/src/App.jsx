@@ -387,32 +387,45 @@ function App() {
 
   useEffect(() => {
     const checkUpdate = async () => {
-      if (!appConfig.version) return;
+      if (!apiUrl.startsWith('http')) return;
 
       try {
-        const isTest = apiUrl.includes('4002');
-        const versionFile = isTest ? 'latest-version-test.json' : 'latest-version.json';
+        const res = await getJson(`${apiUrl}/app-version`);
+        if (res.ok && res.data) {
+          const latest = res.data;
+          // Version comparison logic
+          const currentParts = appConfig.version.split('.').map(Number);
+          const latestParts = latest.version.split('.').map(Number);
 
-        // GITHUB Hub Logic
-        const GITHUB_PAGES_URL = "https://bosslouie5.github.io/TimeAttendance-System";
-        const updateUrl = isTest
-          ? `${apiUrl.replace('/api', '')}/apks/${versionFile}`
-          : `${GITHUB_PAGES_URL}/apks/${versionFile}`;
+          let isNewer = false;
+          for (let i = 0; i < 3; i++) {
+            if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
+            if (latestParts[i] < currentParts[i]) break;
+          }
 
-        const res = await fetch(`${updateUrl}?t=${Date.now()}`);
-        if (res.ok) {
-          const latest = await res.json();
-          if (latest.version !== appConfig.version) {
+          if (isNewer) {
+            console.log(`[OTA] New version detected: ${latest.version}`);
             setUpdateAvailable(latest);
           }
         }
       } catch (err) {
-        console.log('Update check skipped');
+        console.warn('[OTA] Update check failed:', err.message);
       }
     };
 
     checkUpdate();
-  }, [apiUrl]);
+    const updateInterval = setInterval(checkUpdate, 300000); // Check every 5 mins
+    return () => clearInterval(updateInterval);
+  }, [apiUrl, isServerDown]);
+
+  const handleDownloadUpdate = () => {
+    if (!updateAvailable) return;
+    const downloadUrl = updateAvailable.apkUrl.startsWith('http')
+      ? updateAvailable.apkUrl
+      : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
+
+    window.open(downloadUrl, '_blank');
+  };
 
   return (
     <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 60px 15px', fontFamily: 'system-ui, sans-serif'}}>
@@ -455,14 +468,22 @@ function App() {
               <div className="version-text">V{updateAvailable.version}</div>
               <div className="update-notes">
                  <div style={{fontWeight:'800', color:'#fff', marginBottom:'5px'}}>What's New:</div>
-                 {updateAvailable.notes || 'Performance enhancements and critical stability updates for your enterprise attendance system.'}
+                 {updateAvailable.changelog || 'Performance enhancements and critical stability updates for your enterprise attendance system.'}
               </div>
               <button
                 className="update-btn"
-                onClick={() => window.open(updateAvailable.downloadUrl, '_blank')}
+                onClick={handleDownloadUpdate}
               >
                 INSTALL UPDATE
               </button>
+              {!updateAvailable.forceUpdate && (
+                <button
+                  onClick={() => setUpdateAvailable(null)}
+                  style={{background: 'transparent', border: 'none', color: '#64748b', marginTop: '20px', fontWeight: '800', cursor: 'pointer'}}
+                >
+                  MAYBE LATER
+                </button>
+              )}
            </div>
         </div>
       )}

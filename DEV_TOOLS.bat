@@ -39,6 +39,7 @@ echo   [1] DEPLOY ALL TO WEB (Sync 4001 to GitHub/Render)
 echo   [2] RUN TEST LAB (Port 4002 - Local/Online)
 echo   [3] REBUILD ALL LAB UI (Build 4002 Code)
 echo   [4] SYNC LAB TO PRODUCTION (Move 4002 to 4001)
+echo   [5] BUMP MOBILE APP VERSION (Trigger OTA)
 echo.
 echo   [B] CREATE SAFETY BACKUP (Checkpoint)
 echo   [R] REVERT SOURCE CODE (Restore from Checkpoint)
@@ -54,6 +55,7 @@ if /i "%choice%"=="1" goto BUILD_DEPLOY_ALL
 if /i "%choice%"=="2" goto RUN_LAB
 if /i "%choice%"=="3" goto REBUILD_LAB_ALL
 if /i "%choice%"=="4" goto SYNC_DATA
+if /i "%choice%"=="5" goto BUMP_VERSION
 if /i "%choice%"=="B" goto BACKUP_CODE
 if /i "%choice%"=="R" goto REVERT_CODE
 if /i "%choice%"=="S" goto SAAS_START
@@ -222,6 +224,12 @@ cls
 echo.
 echo !!! Step 1: INITIATING GLOBAL PRODUCTION DEPLOYMENT !!!
 echo.
+set /p bump="Bump version before deploy? (Y/N): "
+if /i "%bump%"=="Y" (
+    echo [*] Bumping version...
+    powershell -Command "Invoke-RestMethod -Uri 'http://localhost:4002/api/master/update-version' -Method Post -Body (@{changelog='Production Release %date%'; forceUpdate=$false} | ConvertTo-Json) -ContentType 'application/json'"
+)
+
 echo [*] Building Production Assets...
 pushd web-admin
 call npm run build
@@ -275,6 +283,18 @@ echo.
 echo [SUCCESS] PRODUCTION DEPLOYED!
 echo Web: https://timeattendance-system.onrender.com/dev
 rd /s /q "web_deploy"
+pause
+goto MENU
+
+:BUMP_VERSION
+cls
+echo.
+echo [*] Triggering OTA Mobile Version Bump...
+set /p msg="Enter Changelog: "
+if "!msg!"=="" set msg="Performance enhancements and security updates."
+powershell -Command "Invoke-RestMethod -Uri 'http://localhost:4002/api/master/update-version' -Method Post -Body (@{changelog='!msg!'; forceUpdate=$false} | ConvertTo-Json) -ContentType 'application/json'"
+echo.
+echo [OTA] Version successfully bumped in Lab (4002).
 pause
 goto MENU
 
