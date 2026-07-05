@@ -6,6 +6,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const os = require('os');
 const { execSync, execFileSync } = require('child_process');
+const { MongoClient } = require('mongodb');
 
 const app = express();
 // --- BRANDING & ENVIRONMENT ---
@@ -17,11 +18,34 @@ const HOST = '0.0.0.0';
 const distFolder = isTestMode ? 'dist-test' : 'dist';
 const dbFile = isTestMode ? 'data-test.json' : 'data.json';
 
+const DB_PATH = path.join(__dirname, dbFile);
+const MONGODB_URI = process.env.MONGODB_URI;
+let dbClient = null;
+
 console.log(`\n\x1b[36m[${brand.brandName.toUpperCase()}] System Starting...\x1b[0m`);
 console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + brand.devHostname + ')' : 'PRODUCTION (' + brand.prodHostname + ')'}\x1b[0m`);
-console.log(`\x1b[35m[ENV] Database: ${dbFile}\x1b[0m\n`);
+console.log(`\x1b[35m[ENV] Database: ${MONGODB_URI ? 'MONGODB ATLAS (Cloud)' : dbFile + ' (Local JSON)'}\x1b[0m\n`);
 
-const DB_PATH = path.join(__dirname, dbFile);
+async function getDb() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri || uri.includes('PASTE_YOUR_MONGODB')) {
+    return null;
+  }
+
+  if (dbClient) return dbClient.db();
+
+  try {
+    dbClient = new MongoClient(uri);
+    await dbClient.connect();
+    const dbName = dbClient.db().databaseName;
+    console.log(`\x1b[32m[DB] Connected to MongoDB Atlas ✓ (DB: ${dbName})\x1b[0m`);
+    return dbClient.db();
+  } catch (e) {
+    console.error(`\x1b[31m[DB] Connection Failed: ${e.message}\x1b[0m`);
+    dbClient = null; // Reset client on failure
+    return null;
+  }
+}
 
 app.use(cors({
   origin: '*',
@@ -57,7 +81,17 @@ app.get('/api/master/download-apk/:filename', (req, res) => {
 });
 
 // --- DATABASE UTILS ---
-function loadData() {
+async function loadData() {
+  const db = await getDb();
+  if (db) {
+    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules'];
+    const data = { settings: {} };
+    for (const col of collections) {
+      data[col] = await db.collection(col).find({}).toArray();
+    }
+    return data;
+  }
+
   if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] };
   try {
     const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
@@ -73,7 +107,18 @@ function loadData() {
   } catch (e) { return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] }; }
 }
 
-function saveData(data) {
+async function saveData(data) {
+  const db = await getDb();
+  if (db) {
+    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules'];
+    for (const col of collections) {
+      if (data[col]) {
+        await db.collection(col).deleteMany({}); // Wipe and replace for "JSON-like" behavior for now
+        if (data[col].length > 0) await db.collection(col).insertMany(data[col]);
+      }
+    }
+    return;
+  }
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf8');
 }
 
@@ -105,30 +150,27 @@ const isSameSubnet = (ip, gateway) => {
   return ip.startsWith(gatewaySubnet);
 };
 
-const tenantGuard = (req, res, next) => {
-  const tenantId = req.headers['x-tenant-id'] || req.query.tenantId;
+// Global IP Matcher (with Wildcard Support)
+const matchIp = (clientIp, allowedIp) => {
+  if (!allowedIp || allowedIp === '*' || allowedIp === '0.0.0.0') return true;
 
-  // RELAXED LICENSE CHECK FOR NOW
-  /*
-  if (tenantId && tenantId !== 'master') {
-    const data = loadData();
-    const user = data.users.find(u => u.username.toLowerCase() === tenantId.toLowerCase());
-    if (user && user.endDate) {
-      if (new Date() > new Date(user.endDate)) {
-        return res.status(403).json({ error: 'License Expired' });
-      }
-    }
-  }
-  */
+  // Support wildcards like 112.198.*.*
+  const pattern = allowedIp.replace(/\*/g, '.*');
+  const regex = new RegExp(`^${pattern}$`);
+  return regex.test(clientIp) || clientIp === allowedIp;
+};
+
+const tenantGuard = async (req, res, next) => {
+  const tenantId = req.headers['x-tenant-id'] || req.query.tenantId;
 
   req.tenantId = tenantId;
   next();
 };
 
 // --- PORTAL SECURITY ---
-app.use('/portal/:tenantId', (req, res, next) => {
+app.use('/portal/:tenantId', async (req, res, next) => {
   const { tenantId } = req.params;
-  const data = loadData();
+  const data = await loadData();
 
   // Find user by tenantId instead of username
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
@@ -150,19 +192,21 @@ app.use('/portal/:tenantId', (req, res, next) => {
     }
   }
 
-  const clientIp = req.ip.replace('::ffff:', '');
+  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   // Master/Developer Bypass: allow access if local or in test mode
   if (isLocal || isTestMode) return next();
 
-  // STRICT NETWORK LOCK: Check against registered Public IP
-  if (user.publicIp && clientIp !== user.publicIp) {
+  // WORLDWIDE IP GATEKEEPER WITH WILDCARD SUPPORT
+  const allowedIp = user.publicIp || user.adminIp;
+  if (allowedIp && !matchIp(clientIp, allowedIp)) {
     return res.status(403).send(`
       <div style="font-family:sans-serif; text-align:center; padding-top:100px; background:#0f172a; color:white; min-height:100vh;">
         <h1 style="color:#f59e0b;">🚫 ACCESS RESTRICTED</h1>
         <p>This portal is locked to the official office network.</p>
-        <p>Your current IP: <b>${clientIp}</b> does not match the registered office IP.</p>
+        <p>Your current IP: <b>${clientIp}</b> does not match the registered office IP (<b>${allowedIp}</b>).</p>
+        <div style="margin-top:20px; font-size:0.8rem; color:#64748b;">Global Security Gatekeeper v6.5</div>
       </div>
     `);
   }
@@ -174,15 +218,14 @@ app.use('/portal/:tenantId', express.static(webAdminDist));
 
 // --- API ENDPOINTS ---
 
-app.post('/api/auth/web-login', (req, res) => {
+app.post('/api/auth/web-login', async (req, res) => {
   const { tenantId, username, password } = req.body;
-  const data = loadData();
+  const data = await loadData();
   const devAccounts = loadDevAccounts();
 
   console.log(`[AUTH] Login attempt: Tenant=${tenantId || 'ANY'}, User=${username}`);
 
   // 1. MASTER DEVELOPER BYPASS (Consultant Access)
-  // If a developer from dev_accounts.json logs in, allow entry to ANY tenant portal.
   const devAccount = devAccounts.find(a => a.username.toLowerCase() === username.toLowerCase() && a.password === password);
 
   if (devAccount && tenantId) {
@@ -198,7 +241,7 @@ app.post('/api/auth/web-login', (req, res) => {
           tenantId: tenantId,
           companyName: targetTenant.companyName,
           isConsultant: true,
-          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'assign-branch', 'reports', 'setup', 'devices', 'position-titles'] // Restored Position Access
+          permissions: ['dashboard', 'employees', 'org-units', 'branches', 'assign-branch', 'reports', 'setup', 'devices', 'position-titles', 'schedules', 'assign-schedule']
         }
       });
     }
@@ -213,6 +256,16 @@ app.post('/api/auth/web-login', (req, res) => {
   });
 
   if (user) {
+    // IP GATEKEEPER CHECK FOR REGULAR USERS
+    const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+    const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
+    const allowedIp = user.publicIp || user.adminIp;
+
+    if (!isLocal && !isTestMode && allowedIp && !matchIp(clientIp, allowedIp)) {
+       console.warn(`[AUTH] Login Blocked: Unauthorized IP ${clientIp} for Tenant ${tenantId}`);
+       return res.status(403).json({ error: 'Access Denied: Please login from the office network.' });
+    }
+
     const finalTenantId = user.tenantId || user.username;
     console.log(`[AUTH] Login success: ${username} (Tenant: ${finalTenantId})`);
     res.json({ success: true, user: { ...user, tenantId: finalTenantId } });
@@ -304,110 +357,116 @@ app.post('/api/master/broadcast-link', async (req, res) => {
   }
 });
 
-app.get('/api/master/logs', (req, res) => res.json(loadData().logs));
-app.get('/api/position-titles', tenantGuard, (req, res) => {
-  const data = loadData();
+app.get('/api/master/logs', async (req, res) => {
+  const data = await loadData();
+  res.json(data.logs);
+});
+app.get('/api/position-titles', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
   const filtered = (data.positionTitles || []).filter(p => p.tenantId === tenantId);
   res.json(filtered);
 });
 
-app.post('/api/position-titles', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/position-titles', tenantGuard, async (req, res) => {
+  const data = await loadData();
   if (!data.positionTitles) data.positionTitles = [];
   const newTitle = { ...req.body, id: Date.now().toString(), tenantId: req.tenantId || 'master' };
   data.positionTitles.push(newTitle);
-  saveData(data);
+  await saveData(data);
   res.json(newTitle);
 });
 
-app.delete('/api/position-titles/:id', tenantGuard, (req, res) => {
+app.delete('/api/position-titles/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const initialCount = (data.positionTitles || []).length;
   data.positionTitles = (data.positionTitles || []).filter(p => !(p.id === id && p.tenantId === (req.tenantId || 'master')));
   if (data.positionTitles.length < initialCount) {
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Position Title not found' });
   }
 });
 
-app.get('/api/master/position-titles', (req, res) => {
-  const data = loadData();
+app.get('/api/master/position-titles', async (req, res) => {
+  const data = await loadData();
   res.json(data.positionTitles || []);
 });
 
 // Schedule Management Endpoints
-app.get('/api/schedules', tenantGuard, (req, res) => {
-  const data = loadData();
+app.get('/api/schedules', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
   const filtered = (data.schedules || []).filter(s => s.tenantId === tenantId);
   res.json(filtered);
 });
 
-app.post('/api/schedules', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/schedules', tenantGuard, async (req, res) => {
+  const data = await loadData();
   if (!data.schedules) data.schedules = [];
   const newSchedule = { ...req.body, id: Date.now().toString(), tenantId: req.tenantId || 'master' };
   data.schedules.push(newSchedule);
-  saveData(data);
+  await saveData(data);
   res.json(newSchedule);
 });
 
-app.put('/api/schedules/:id', tenantGuard, (req, res) => {
+app.put('/api/schedules/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const index = (data.schedules || []).findIndex(s => s.id === id && s.tenantId === tenantId);
   if (index !== -1) {
     data.schedules[index] = { ...data.schedules[index], ...req.body, tenantId };
-    saveData(data);
+    await saveData(data);
     res.json(data.schedules[index]);
   } else {
     res.status(404).json({ error: 'Schedule not found' });
   }
 });
 
-app.delete('/api/schedules/:id', tenantGuard, (req, res) => {
+app.delete('/api/schedules/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const initialCount = (data.schedules || []).length;
   data.schedules = (data.schedules || []).filter(s => !(s.id === id && s.tenantId === tenantId));
   if (data.schedules.length < initialCount) {
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Schedule not found' });
   }
 });
 
-app.get('/api/master/schedules', (req, res) => {
-  const data = loadData();
+app.get('/api/master/schedules', async (req, res) => {
+  const data = await loadData();
   res.json(data.schedules || []);
 });
 
-app.post('/api/schedule-assign', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/schedule-assign', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const { employeeId, shift } = req.body;
   const tenantId = req.tenantId || 'master';
   const index = data.employees.findIndex(e => e.employeeId === employeeId && e.tenantId === tenantId);
   if (index !== -1) {
     data.employees[index].schedule = shift;
-    saveData(data);
+    await saveData(data);
     res.json({ success: true, employee: data.employees[index] });
   } else {
     res.status(404).json({ error: 'Employee not found' });
   }
 });
 
-app.get('/api/master/users', (req, res) => res.json(loadData().users));
-app.get('/api/master/employees', (req, res) => {
-  const data = loadData();
+app.get('/api/master/users', async (req, res) => {
+  const data = await loadData();
+  res.json(data.users);
+});
+app.get('/api/master/employees', async (req, res) => {
+  const data = await loadData();
   const assignments = data.assignments || [];
   const depts = data.departments || [];
 
@@ -422,38 +481,44 @@ app.get('/api/master/employees', (req, res) => {
 
   res.json(emps);
 });
-app.get('/api/master/departments', (req, res) => res.json(loadData().departments));
-app.get('/api/master/org-units', (req, res) => res.json(loadData().orgUnits));
+app.get('/api/master/departments', async (req, res) => {
+  const data = await loadData();
+  res.json(data.departments);
+});
+app.get('/api/master/org-units', async (req, res) => {
+  const data = await loadData();
+  res.json(data.orgUnits);
+});
 
 // Org Units (Departments)
-app.get('/api/org-units', tenantGuard, (req, res) => {
-  const data = loadData();
+app.get('/api/org-units', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(400).json({ error: 'Tenant ID required' });
   res.json((data.orgUnits || []).filter(o => o.tenantId === tenantId));
 });
 
-app.post('/api/org-units', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/org-units', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const newOrg = { ...req.body, tenantId: req.tenantId || 'master', id: Date.now().toString() };
   if (!data.orgUnits) data.orgUnits = [];
   data.orgUnits.push(newOrg);
-  saveData(data);
+  await saveData(data);
   res.json(newOrg);
 });
 
-app.delete('/api/org-units/:id', tenantGuard, (req, res) => {
+app.delete('/api/org-units/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   data.orgUnits = (data.orgUnits || []).filter(o => !(o.id === id && o.tenantId === tenantId));
-  saveData(data);
+  await saveData(data);
   res.json({ success: true });
 });
 
 // Tenant-specific Data
-app.get('/api/employees', tenantGuard, (req, res) => {
-  const data = loadData();
+app.get('/api/employees', tenantGuard, async (req, res) => {
+  const data = await loadData();
   if (!req.tenantId) return res.status(400).json({ error: 'Tenant ID required' });
 
   let emps = data.employees.filter(e => e.tenantId === req.tenantId);
@@ -474,8 +539,8 @@ app.get('/api/employees', tenantGuard, (req, res) => {
   res.json(emps);
 });
 
-app.get('/api/departments', tenantGuard, (req, res) => {
-  const data = loadData();
+app.get('/api/departments', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const { employeeId } = req.query;
   const tenantId = String(req.tenantId || '').trim().toLowerCase();
 
@@ -508,71 +573,71 @@ app.get('/api/departments', tenantGuard, (req, res) => {
   res.json(tenantBranches);
 });
 
-app.get('/api/logs', tenantGuard, (req, res) => {
-  const data = loadData();
+app.get('/api/logs', tenantGuard, async (req, res) => {
+  const data = await loadData();
   if (!req.tenantId) return res.status(400).json({ error: 'Tenant ID required' });
   const filtered = data.logs.filter(l => l.tenantId === req.tenantId);
   res.json(filtered);
 });
 
-app.post('/api/employees', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/employees', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const newEmp = { ...req.body, tenantId: req.tenantId || 'master' };
   data.employees.push(newEmp);
-  saveData(data);
+  await saveData(data);
   res.json(newEmp);
 });
 
-app.put('/api/employees/:id', tenantGuard, (req, res) => {
+app.put('/api/employees/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const index = data.employees.findIndex(e => e.employeeId === id && e.tenantId === tenantId);
   if (index !== -1) {
     data.employees[index] = { ...data.employees[index], ...req.body, tenantId };
-    saveData(data);
+    await saveData(data);
     res.json(data.employees[index]);
   } else {
     res.status(404).json({ error: 'Employee not found' });
   }
 });
 
-app.post('/api/departments', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/departments', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const newDept = { ...req.body, tenantId: req.tenantId || 'master' };
   data.departments.push(newDept);
-  saveData(data);
+  await saveData(data);
   res.json(newDept);
 });
 
-app.put('/api/departments/:id', tenantGuard, (req, res) => {
+app.put('/api/departments/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const index = data.departments.findIndex(d => d.departmentId === id && d.tenantId === (req.tenantId || 'master'));
   if (index !== -1) {
     data.departments[index] = { ...data.departments[index], ...req.body };
-    saveData(data);
+    await saveData(data);
     res.json(data.departments[index]);
   } else {
     res.status(404).json({ error: 'Department not found' });
   }
 });
 
-app.delete('/api/departments/:id', tenantGuard, (req, res) => {
+app.delete('/api/departments/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const initialCount = data.departments.length;
   data.departments = data.departments.filter(d => !(d.departmentId === id && d.tenantId === (req.tenantId || 'master')));
   if (data.departments.length < initialCount) {
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Department not found' });
   }
 });
 
-app.post('/api/assignments', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/assignments', tenantGuard, async (req, res) => {
+  const data = await loadData();
   if (!data.assignments) data.assignments = [];
   const tenantId = req.tenantId || 'master';
   const { employeeId, departmentId } = req.body;
@@ -592,12 +657,12 @@ app.post('/api/assignments', tenantGuard, (req, res) => {
     data.employees[empIndex].branchName = dept ? dept.name : '';
   }
 
-  saveData(data);
+  await saveData(data);
   res.json({ success: true });
 });
 
-app.post('/api/timein', tenantGuard, (req, res) => {
-  const data = loadData();
+app.post('/api/timein', tenantGuard, async (req, res) => {
+  const data = await loadData();
   const { employeeId, type, timestamp, tenantId: logTenant } = req.body;
   const tenantId = logTenant || req.tenantId || 'master';
 
@@ -660,13 +725,13 @@ app.post('/api/timein', tenantGuard, (req, res) => {
     }
   }
 
-  saveData(data);
+  await saveData(data);
   res.json({ success: true, message: 'Log updated' });
 });
 
-app.post('/api/device/register', tenantGuard, (req, res) => {
+app.post('/api/device/register', tenantGuard, async (req, res) => {
   const { employeeId, deviceId, deviceName } = req.body;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const employee = data.employees.find(e => e.employeeId === employeeId && (e.tenantId === tenantId || !e.tenantId));
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
@@ -677,7 +742,7 @@ app.post('/api/device/register', tenantGuard, (req, res) => {
     employee.registeredDeviceId = deviceId;
     employee.registeredDeviceName = deviceName || 'Unknown Device';
     employee.registrationDate = new Date().toISOString();
-    saveData(data);
+    await saveData(data);
     return res.json({
       success: true,
       message: 'Registered',
@@ -696,29 +761,29 @@ app.post('/api/device/register', tenantGuard, (req, res) => {
   }
 });
 
-app.post('/api/device/reset', tenantGuard, (req, res) => {
+app.post('/api/device/reset', tenantGuard, async (req, res) => {
   const { employeeId } = req.body;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const employee = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
   if (employee) {
     delete employee.registeredDeviceId;
     delete employee.registeredDeviceName;
     delete employee.registrationDate;
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
   }
   else res.status(404).json({ error: 'Not found' });
 });
 
-app.delete('/api/employees/:id', tenantGuard, (req, res) => {
+app.delete('/api/employees/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const tenantId = req.tenantId || 'master';
   const initialCount = data.employees.length;
   data.employees = data.employees.filter(e => !(e.employeeId === id && e.tenantId === tenantId));
   if (data.employees.length < initialCount) {
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Employee not found' });
@@ -726,9 +791,9 @@ app.delete('/api/employees/:id', tenantGuard, (req, res) => {
 });
 
 // --- RESET UTILS FOR DEV ---
-app.post('/api/master/clear-data', (req, res) => {
+app.post('/api/master/clear-data', async (req, res) => {
   const { tenantId, target } = req.body; // target: 'logs', 'employees', 'departments'
-  const data = loadData();
+  const data = await loadData();
 
   const isGlobal = tenantId === 'MASTER_GLOBAL';
 
@@ -777,13 +842,13 @@ app.post('/api/master/clear-data', (req, res) => {
     }
   }
 
-  saveData(data);
+  await saveData(data);
   res.json({ success: true, message: `${target} cleared ${isGlobal ? 'globally' : 'for ' + tenantId}` });
 });
 
 
-app.post('/api/users', (req, res) => {
-  const data = loadData();
+app.post('/api/users', async (req, res) => {
+  const data = await loadData();
   const ip = getNetworkIP();
 
   // Generate a unique tenantId from companyName if not provided
@@ -800,13 +865,13 @@ app.post('/api/users', (req, res) => {
     portalUrl: req.body.adminIp ? `http://${req.body.adminIp}:${PORT}/portal/${tenantId}` : `http://${ip}:${PORT}/portal/${tenantId}`
   };
   data.users.push(newUser);
-  saveData(data);
+  await saveData(data);
   res.json(newUser);
 });
 
-app.delete('/api/users/:tenantId', (req, res) => {
+app.delete('/api/users/:tenantId', async (req, res) => {
   const { tenantId } = req.params;
-  const data = loadData();
+  const data = await loadData();
 
   // Strict matching to prevent accidental multiple deletions
   const originalCount = data.users.length;
@@ -825,7 +890,7 @@ app.delete('/api/users/:tenantId', (req, res) => {
       data.assignments = data.assignments.filter(a => (a.tenantId || '').toLowerCase() !== lowerTenantId);
     }
 
-    saveData(data);
+    await saveData(data);
     console.log(`[MASTER] Global Cleanup: Deleted all records for tenant ${tenantId}`);
     res.json({ success: true, message: `Tenant ${tenantId} and all associated data deleted.` });
   } else {
@@ -833,35 +898,49 @@ app.delete('/api/users/:tenantId', (req, res) => {
   }
 });
 
-app.put('/api/users/:tenantId/permissions', (req, res) => {
+app.put('/api/users/:tenantId/permissions', async (req, res) => {
   const { tenantId } = req.params;
-  const data = loadData();
+  const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
     user.permissions = req.body.permissions;
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
   }
   else res.status(404).json({ error: 'Not found' });
 });
 
-app.put('/api/users/:tenantId/enddate', (req, res) => {
+app.put('/api/users/:tenantId/enddate', async (req, res) => {
   const { tenantId } = req.params;
   const { endDate } = req.body;
-  const data = loadData();
+  const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
     user.endDate = endDate;
-    saveData(data);
+    await saveData(data);
     res.json({ success: true, endDate });
   } else {
     res.status(404).json({ error: 'Not found' });
   }
 });
 
-app.get('/api/tenant-info/:tenantId', (req, res) => {
+app.put('/api/users/:tenantId/network-lock', async (req, res) => {
   const { tenantId } = req.params;
-  const data = loadData();
+  const { publicIp } = req.body;
+  const data = await loadData();
+  const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
+  if (user) {
+    user.publicIp = publicIp;
+    await saveData(data);
+    res.json({ success: true, publicIp });
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+app.get('/api/tenant-info/:tenantId', async (req, res) => {
+  const { tenantId } = req.params;
+  const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
     // Only return non-sensitive public info
@@ -877,8 +956,8 @@ app.get('/api/tenant-info/:tenantId', (req, res) => {
   }
 });
 
-app.post('/api/master/build-apk', (req, res) => {
-  const clientIp = req.ip.replace('::ffff:', '');
+app.post('/api/master/build-apk', async (req, res) => {
+  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
   const { tenantId, companyName, publicUrl } = req.body;
   const ip = getNetworkIP();
   const apiUrl = publicUrl || `http://${ip}:${PORT}/api`;
@@ -892,9 +971,27 @@ app.post('/api/master/build-apk', (req, res) => {
     // 0. Cleanup old build to ensure fresh APK
     if (fs.existsSync(sourceApk)) fs.unlinkSync(sourceApk);
 
+    // 0.1 Versioning Logic (Pro Update System)
+    const pkgPath = path.join(mobileAppPath, 'package.json');
+    let currentVersion = '0.1.0';
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const vParts = pkg.version.split('.').map(Number);
+      vParts[2]++; // Increment patch version (e.g., 0.1.0 -> 0.1.1)
+      pkg.version = vParts.join('.');
+      currentVersion = pkg.version;
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+      console.log(`[BUILD] Auto-incremented version to: ${currentVersion}`);
+    }
+
     // 1. Update app_config.json
     const configPath = path.join(mobileAppPath, 'src/app_config.json');
-    fs.writeFileSync(configPath, JSON.stringify({ defaultApiUrl: apiUrl, defaultTenantId: tenantId }, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify({
+      defaultApiUrl: apiUrl,
+      defaultTenantId: tenantId,
+      version: currentVersion,
+      buildDate: new Date().toISOString()
+    }, null, 2));
 
     // 2. Update app name in strings.xml
     const stringsPath = path.join(mobileAppPath, 'android/app/src/main/res/values/strings.xml');
@@ -936,7 +1033,22 @@ app.post('/api/master/build-apk', (req, res) => {
       // Point to the force download endpoint instead of static file
       const finalDownloadUrl = `${protocol}://${host}/api/master/download-apk/${destName}`;
 
-      res.json({ success: true, downloadUrl: finalDownloadUrl, file: destName });
+      // Update version info based on mode (Isolated Lab vs Production)
+      const versionFileName = isTestMode ? 'latest-version-test.json' : 'latest-version.json';
+      const latestVersionPath = path.join(apksDir, versionFileName);
+
+      const updateInfo = {
+        version: currentVersion,
+        downloadUrl: finalDownloadUrl,
+        tenantId: tenantId,
+        companyName: companyName,
+        releaseDate: new Date().toISOString(),
+        notes: isTestMode ? `LAB TEST: ${companyName}` : `System update for ${companyName}`
+      };
+      fs.writeFileSync(latestVersionPath, JSON.stringify(updateInfo, null, 2));
+      console.log(`[BUILD] Updated ${versionFileName} for broadcasting.`);
+
+      res.json({ success: true, downloadUrl: finalDownloadUrl, file: destName, version: currentVersion });
     } else {
       throw new Error("Build finished but app-debug.apk was not found.");
     }
@@ -951,8 +1063,8 @@ app.post('/api/master/build-apk', (req, res) => {
 });
 
 // Build, install and launch on first connected device via ADB
-app.post('/api/master/build-and-run-apk', (req, res) => {
-  const clientIp = req.ip.replace('::ffff:', '');
+app.post('/api/master/build-and-run-apk', async (req, res) => {
+  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   if (!isTestMode && !isLocal) {
@@ -1060,8 +1172,8 @@ app.post('/api/master/build-and-run-apk', (req, res) => {
 });
 
 // List available APKs
-app.get('/api/master/apks', (req, res) => {
-  const clientIp = req.ip.replace('::ffff:', '');
+app.get('/api/master/apks', async (req, res) => {
+  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   if (!isTestMode && !isLocal) return res.status(403).json({ success: false, error: 'Not allowed' });
@@ -1077,7 +1189,7 @@ app.get('/api/master/apks', (req, res) => {
   } catch (e) { res.status(500).json({ success: false, apks: [] }); }
 });
 
-app.get('/api/settings', (req, res) => res.json({ currentSystemIp: getNetworkIP(), currentSystemGateway: '10.222.166.1' }));
+app.get('/api/settings', async (req, res) => res.json({ currentSystemIp: getNetworkIP(), currentSystemGateway: '10.222.166.1' }));
 
 app.use('/dev', express.static(webDevDist));
 app.get('/dev/*', (req, res) => res.sendFile(path.join(webDevDist, 'index.html')));
@@ -1089,7 +1201,21 @@ app.get('/app/*', (req, res) => res.sendFile(path.join(mobileDist, 'index.html')
 app.use('/', express.static(webAdminDist));
 app.get('/*', (req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/apks')) return;
-  res.sendFile(path.join(webAdminDist, 'index.html'));
+
+  // FAILSAFE: Check if file exists before sending, otherwise send simple landing page or 404
+  const targetFile = path.join(webAdminDist, 'index.html');
+  if (fs.existsSync(targetFile)) {
+    res.sendFile(targetFile);
+  } else {
+    res.status(404).send(`
+      <div style="font-family:sans-serif; text-align:center; padding-top:100px; background:#0f172a; color:white; min-height:100vh;">
+        <h1 style="color:#3b82f6;">TIMEKEY SaaS HUB</h1>
+        <p>System is online, but static UI builds are not yet deployed to this server.</p>
+        <p>Please use the local Dev Control Center to sync UI files.</p>
+        <div style="margin-top:20px; font-size:0.8rem; color:#64748b;">Cloud Node Version: ${process.version}</div>
+      </div>
+    `);
+  }
 });
 
 app.listen(PORT, HOST, () => {
@@ -1155,10 +1281,10 @@ function startTunnelMonitor() {
             contentString += `------------------------------------------\n`;
             contentString += `🏢 TENANT VIRTUAL HOSTS (LOCAL TESTING):\n`;
 
-            const data = loadData();
+            const data = await loadData();
             data.users.forEach(u => {
-              if (u.adminIp) {
-                contentString += `- ${u.companyName}: http://${u.adminIp}:${PORT}/portal/${u.tenantId || u.username}\n`;
+              if (u.adminIp || u.publicIp) {
+                contentString += `- ${u.companyName}: http://${u.adminIp || u.publicIp}:${PORT}/portal/${u.tenantId || u.username}\n`;
               }
             });
             contentString += `==========================================\n`;

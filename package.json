@@ -4,10 +4,13 @@
   "workspaces": [
     "backend",
     "web-admin",
+    "web-dev",
     "mobile-app"
   ],
   "scripts": {
     "install-all": "npm install",
+    "build": "npm run build --workspaces --if-present",
+    "start": "node backend/server.js",
     "start-backend": "npm --workspace backend run dev",
     "start-web": "npm --workspace web-admin run dev",
     "start-mobile": "npm --workspace mobile-app run dev",

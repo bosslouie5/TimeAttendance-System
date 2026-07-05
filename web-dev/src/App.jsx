@@ -59,6 +59,7 @@ function App() {
   const [newPassword, setNewPassword] = useState('12345');
   const [newAssignedGateway, setNewAssignedGateway] = useState('');
   const [newAdminIp, setNewAdminIp] = useState('');
+  const [newPublicIp, setNewPublicIp] = useState('');
   const [newTenantId, setNewTenantId] = useState('');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [newEndDate, setNewEndDate] = useState('');
@@ -122,6 +123,8 @@ function App() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isEditingExpiry, setIsEditingExpiry] = useState(false);
   const [tempEndDate, setTempEndDate] = useState('');
+  const [isEditingIp, setIsEditingIp] = useState(false);
+  const [tempPublicIp, setTempPublicIp] = useState('');
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
   const [activeApiBase, setActiveApiBase] = useState(null);
@@ -269,6 +272,7 @@ function App() {
           password: newPassword,
           permissions: allPerms,
           adminIp: autoIp,
+          publicIp: newPublicIp,
           startDate: newStartDate,
           endDate: newEndDate
         })
@@ -281,9 +285,24 @@ function App() {
         setNewUsername('admin');
         setNewPassword('12345');
         setNewAdminIp('');
+        setNewPublicIp('');
         setNewTenantId('');
       }
     } catch (e) { setStatus('Provisioning Failed'); }
+  };
+
+  const captureCurrentIp = async () => {
+    setStatus('Capturing Network IP...');
+    try {
+      const res = await fetch('https://api.ipify.org?format=json');
+      const data = await res.json();
+      if (data.ip) {
+        const parts = data.ip.split('.');
+        const wildcardIp = parts.length === 4 ? `${parts[0]}.${parts[1]}.*.*` : data.ip;
+        setNewPublicIp(wildcardIp);
+        setStatus(`Captured: ${data.ip}`);
+      }
+    } catch (e) { setStatus('IP Capture Failed'); }
   };
 
   const createSchedule = async () => {
@@ -572,6 +591,27 @@ function App() {
     finally { setProcessing(false); }
   };
 
+  const updateNetworkLock = async () => {
+    if (!selectedTenant) return;
+    const tId = selectedTenant.tenantId || selectedTenant.username;
+    setProcessingMsg(`Updating Network Lock for ${selectedTenant.companyName}...`);
+    setProcessing(true);
+    try {
+      const res = await fetch(`${activeApiBase}/users/${tId}/network-lock`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicIp: tempPublicIp })
+      });
+      if (res.ok) {
+        await loadInitialData();
+        setIsEditingIp(false);
+        setStatus('Network Lock Updated ✓');
+        setSelectedTenant(prev => ({ ...prev, publicIp: tempPublicIp }));
+      }
+    } catch (e) { setStatus('Update failed'); }
+    finally { setProcessing(false); }
+  };
+
   const broadcastLink = async () => {
     setIsBroadcasting(true);
     try {
@@ -645,27 +685,41 @@ function App() {
         statusText = 'NO TIME IN';
       } else if (!l.timeOut) {
         statusText = 'NO TIME OUT';
-      } else if (sched) {
-        const logIn = new Date(l.timeIn);
-        const logOut = new Date(l.timeOut);
-        const d = new Date(l.timestamp);
-        const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const sStart = new Date(`${datePart}T${sched.startTime}:00`);
-        const sEnd = new Date(`${datePart}T${sched.endTime}:00`);
+      } else {
+        let currentSchedStart = sched?.startTime;
+        let currentSchedEnd = sched?.endTime;
+        let currentGrace = parseInt(sched?.gracePeriod || 15);
 
-        const grace = parseInt(sched.gracePeriod || 15);
-        const lateThreshold = new Date(sStart.getTime() + grace * 60000);
-        if (logIn > lateThreshold) statusText = 'LATE';
-        else statusText = 'COMPLETED';
+        if (!sched && emp?.schedule) {
+          const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/g);
+          if (timeMatch && timeMatch.length >= 2) {
+            currentSchedStart = timeMatch[0];
+            currentSchedEnd = timeMatch[1];
+          }
+        }
 
-        let otMin = 0;
-        if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
-        if (logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+        if (currentSchedStart) {
+          const logIn = new Date(l.timeIn);
+          const logOut = new Date(l.timeOut);
+          const d = new Date(l.timestamp);
+          const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-        if (otMin > 0) {
-          const h = Math.floor(otMin / 60);
-          const m = Math.round(otMin % 60);
-          otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          const sStart = new Date(`${datePart}T${currentSchedStart.padStart(5, '0')}:00`);
+          const sEnd = new Date(`${datePart}T${currentSchedEnd.padStart(5, '0')}:00`);
+
+          const lateThreshold = new Date(sStart.getTime() + currentGrace * 60000);
+          if (logIn > lateThreshold) statusText = 'LATE';
+          else statusText = 'COMPLETED';
+
+          let otMin = 0;
+          if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
+          if (logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+
+          if (otMin > 0) {
+            const h = Math.floor(otMin / 60);
+            const m = Math.round(otMin % 60);
+            otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          }
         }
       }
 
@@ -747,27 +801,41 @@ function App() {
         statusText = 'NO TIME IN';
       } else if (!l.timeOut) {
         statusText = 'NO TIME OUT';
-      } else if (sched) {
-        const logIn = new Date(l.timeIn);
-        const logOut = new Date(l.timeOut);
-        const d = new Date(l.timestamp);
-        const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const sStart = new Date(`${datePart}T${sched.startTime}:00`);
-        const sEnd = new Date(`${datePart}T${sched.endTime}:00`);
+      } else {
+        let currentSchedStart = sched?.startTime;
+        let currentSchedEnd = sched?.endTime;
+        let currentGrace = parseInt(sched?.gracePeriod || 15);
 
-        const grace = parseInt(sched.gracePeriod || 15);
-        const lateThreshold = new Date(sStart.getTime() + grace * 60000);
-        if (logIn > lateThreshold) statusText = 'LATE';
-        else statusText = 'COMPLETED';
+        if (!sched && emp?.schedule) {
+          const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/g);
+          if (timeMatch && timeMatch.length >= 2) {
+            currentSchedStart = timeMatch[0];
+            currentSchedEnd = timeMatch[1];
+          }
+        }
 
-        let otMin = 0;
-        if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
-        if (logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+        if (currentSchedStart) {
+          const logIn = new Date(l.timeIn);
+          const logOut = new Date(l.timeOut);
+          const d = new Date(l.timestamp);
+          const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-        if (otMin > 0) {
-          const h = Math.floor(otMin / 60);
-          const m = Math.round(otMin % 60);
-          otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          const sStart = new Date(`${datePart}T${currentSchedStart.padStart(5, '0')}:00`);
+          const sEnd = new Date(`${datePart}T${currentSchedEnd.padStart(5, '0')}:00`);
+
+          const lateThreshold = new Date(sStart.getTime() + currentGrace * 60000);
+          if (logIn > lateThreshold) statusText = 'LATE';
+          else statusText = 'COMPLETED';
+
+          let otMin = 0;
+          if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
+          if (logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+
+          if (otMin > 0) {
+            const h = Math.floor(otMin / 60);
+            const m = Math.round(otMin % 60);
+            otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          }
         }
       }
 
@@ -835,9 +903,9 @@ function App() {
         .module-card:hover::after { transform: translateX(100%); }
         .btn-hover:hover { filter: brightness(1.2); transform: scale(1.02); }
         .btn-hover:active { transform: scale(0.98); }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th { text-align: left; padding: 12px; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
-        td { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 0.9rem; }
+        table { width: max-content; min-width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { text-align: left; padding: 12px; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+        td { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 0.9rem; white-space: nowrap; }
         tr:hover { background: #33415533; }
 
         /* SIDEBAR STYLES */
@@ -1093,11 +1161,19 @@ function App() {
                    </div>
 
                    <div style={{marginTop:'10px', padding:'20px', background:'#0f172a', borderRadius:'15px', border:'1px solid #334155'}}>
-                      <label style={{fontSize:'0.75rem', color:'#3b82f6', marginBottom:'10px', display:'block', fontWeight:'bold'}}>INFRASTRUCTURE SETTINGS</label>
+                      <label style={{fontSize:'0.75rem', color:'#3b82f6', marginBottom:'10px', display:'block', fontWeight:'bold'}}>GATEKEEPER SECURITY (NETWORK LOCK)</label>
+                      <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'15px'}}>
+                         <div style={{flex:1}}>
+                            <div style={{fontSize:'0.7rem', color:'#64748b', marginBottom:'5px'}}>Allowed Office Public IP (Wildcards allowed)</div>
+                            <input style={{...inputStyle, marginBottom:0, color:'#f59e0b', fontWeight:'bold'}} placeholder="e.g. 112.198.*.*" value={newPublicIp} onChange={e => setNewPublicIp(e.target.value)} />
+                         </div>
+                         <button onClick={captureCurrentIp} className="btn-hover" style={{...smallBtn, background:'#3b82f6', marginTop:'20px', padding:'12px'}}>Capture My IP</button>
+                      </div>
+
                       <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
                          <div style={{flex:1}}>
-                            <div style={{fontSize:'0.7rem', color:'#64748b', marginBottom:'5px'}}>Assigned Host IP (Auto-Generated)</div>
-                            <input style={{...inputStyle, marginBottom:0, color:'#10b981', fontWeight:'bold', letterSpacing:'1px'}} placeholder="Generated IP" value={newAdminIp} onChange={e => setNewAdminIp(e.target.value)} />
+                            <div style={{fontSize:'0.7rem', color:'#64748b', marginBottom:'5px'}}>Virtual Host IP (Local Testing)</div>
+                            <input style={{...inputStyle, marginBottom:0, color:'#10b981', fontWeight:'bold'}} placeholder="Generated IP" value={newAdminIp} onChange={e => setNewAdminIp(e.target.value)} />
                          </div>
                          <button onClick={() => setNewAdminIp(generateHostIp())} style={{...smallBtn, background:'#334155', marginTop:'20px'}}>Regenerate</button>
                       </div>
@@ -1156,7 +1232,35 @@ function App() {
                           setIsActionMenuOpen(false);
                         }} className="btn-hover" style={{...addBtn, background:'#06b6d4'}}>🗓️ Edit Expiry</button>
 
+                        <button onClick={() => {
+                          setTempPublicIp(selectedTenant.publicIp || '');
+                          setIsEditingIp(true);
+                          setIsActionMenuOpen(false);
+                        }} className="btn-hover" style={{...addBtn, background:'#f59e0b'}}>🛡️ Edit Network Lock</button>
+
                         <button onClick={() => setIsActionMenuOpen(false)} className="btn-hover" style={{...addBtn, background:'#334155', gridColumn: 'span 2'}}>❌ Close Menu</button>
+                     </div>
+                   )}
+
+                   {isEditingIp && (
+                     <div className="fade-in" style={{
+                       background:'#0f172a', padding:'30px', borderRadius:'20px',
+                       marginBottom:'30px', border:'1px solid #f59e0b44',
+                       boxShadow: '0 10px 30px rgba(245, 158, 11, 0.1)',
+                       position: 'relative', zIndex: 10
+                     }}>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+                           <h3 style={{margin:0, color:'#f59e0b', display:'flex', alignItems:'center', gap:'10px'}}>
+                              <span style={{fontSize:'1.5rem'}}>🛡️</span> Update Network Lock (IP)
+                           </h3>
+                           <button onClick={() => setIsEditingIp(false)} className="btn-hover" style={{background:'rgba(255,255,255,0.05)', border:'none', color:'#64748b', cursor:'pointer', width:'30px', height:'30px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center'}}>✕</button>
+                        </div>
+                        <p style={{color:'#64748b', fontSize:'0.85rem', marginBottom:'20px'}}>Set the allowed Public IP range for <b>{selectedTenant.companyName}</b>. Use * as wildcard (e.g., 112.198.*.*).</p>
+                        <div style={{display:'flex', gap:'15px', alignItems:'center'}}>
+                           <input style={{...inputStyle, marginBottom:0, flex:1, border:'1px solid #334155'}} placeholder="e.g. 112.198.*.*" value={tempPublicIp} onChange={e => setTempPublicIp(e.target.value)} />
+                           <button onClick={updateNetworkLock} className="btn-hover" style={{...smallBtn, background:'#10b981', padding:'15px 30px', borderRadius:'12px', whiteSpace:'nowrap'}}>Save IP Lock</button>
+                           <button onClick={() => setIsEditingIp(false)} className="btn-hover" style={{...smallBtn, background:'#334155', padding:'15px 30px', borderRadius:'12px'}}>Cancel</button>
+                        </div>
                      </div>
                    )}
 
@@ -1186,6 +1290,14 @@ function App() {
                       <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
                          <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Portal ID</div>
                          <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.tenantId || selectedTenant.username}</div>
+                      </div>
+                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
+                         <div style={{color:'#f59e0b', fontSize:'0.75rem', marginBottom:'5px'}}>Gatekeeper Network Lock</div>
+                         <div style={{fontWeight:'bold', color:'#f1f5f9'}}>{selectedTenant.publicIp || 'NO RESTRICTION (OPEN)'}</div>
+                      </div>
+                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
+                         <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Virtual Host IP</div>
+                         <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.adminIp || '127.0.0.1'}</div>
                       </div>
                       <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155', position:'relative', overflow:'hidden'}}>
                          <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Contract Period</div>
@@ -1253,7 +1365,7 @@ function App() {
                        {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                     </select>
                  </div>
-                 <div style={{maxHeight:'60vh', overflowY:'auto'}}>
+                 <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
                     <table>
                        <thead>
                           <tr>
@@ -1349,7 +1461,7 @@ function App() {
             </div>
           </div>
           <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
-            <table style={{minWidth:'2000px'}}>
+            <table>
               <thead>
                 <tr>
                   <th>Tenant</th>
@@ -1576,7 +1688,7 @@ function App() {
                        {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                     </select>
                  </div>
-                 <div style={{maxHeight:'60vh', overflowY:'auto'}}>
+                 <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
                     <table>
                        <thead>
                           <tr>
@@ -1640,7 +1752,7 @@ function App() {
                        {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                     </select>
                  </div>
-                 <div style={{maxHeight:'60vh', overflowY:'auto'}}>
+                 <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
                     <table>
                        <thead>
                           <tr><th>Tenant</th><th>Department Name</th><th>Action</th></tr>
@@ -1696,7 +1808,7 @@ function App() {
                        {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                     </select>
                  </div>
-                 <div style={{maxHeight:'60vh', overflowY:'auto'}}>
+                 <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
                     <table>
                        <thead>
                           <tr><th>Tenant</th><th>Position Title</th><th>Action</th></tr>
@@ -1809,28 +1921,45 @@ function App() {
                       let otText = '-';
                       let schedText = sched ? `${sched.startTime} - ${sched.endTime}` : (emp?.schedule || 'No Sched');
 
-                      if (!l.timeIn && !l.timeOut) {
-                        statusText = 'ABSENT';
-                      } else if (!l.timeIn) {
-                        statusText = 'NO TIME IN';
-                      } else if (!l.timeOut) {
-                        statusText = 'NO TIME OUT';
-                      } else if (sched) {
-                        const logIn = new Date(l.timeIn);
-                        const logOut = new Date(l.timeOut);
+                    if (!l.timeIn && !l.timeOut) {
+                      statusText = 'ABSENT';
+                    } else if (!l.timeIn) {
+                      statusText = 'NO TIME IN';
+                    } else if (!l.timeOut) {
+                      statusText = 'NO TIME OUT';
+                    } else {
+                      let currentSchedStart = sched?.startTime;
+                      let currentSchedEnd = sched?.endTime;
+                      let currentGrace = parseInt(sched?.gracePeriod || 15);
+
+                      if (!currentSchedStart && emp?.schedule) {
+                        const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/g);
+                        if (timeMatch && timeMatch.length >= 2) {
+                          currentSchedStart = timeMatch[0];
+                          currentSchedEnd = timeMatch[1];
+                        }
+                      }
+
+                      if (currentSchedStart) {
                         const d = new Date(l.timestamp);
                         const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                        const sStart = new Date(`${datePart}T${sched.startTime}:00`);
-                        const sEnd = new Date(`${datePart}T${sched.endTime}:00`);
 
-                        const grace = parseInt(sched.gracePeriod || 15);
-                        const lateThreshold = new Date(sStart.getTime() + grace * 60000);
+                        const logInOrig = new Date(l.timeIn);
+                        const logIn = new Date(`${datePart}T${String(logInOrig.getHours()).padStart(2,'0')}:${String(logInOrig.getMinutes()).padStart(2,'0')}:00`);
+
+                        const logOutOrig = l.timeOut ? new Date(l.timeOut) : null;
+                        const logOut = logOutOrig ? new Date(`${datePart}T${String(logOutOrig.getHours()).padStart(2,'0')}:${String(logOutOrig.getMinutes()).padStart(2,'0')}:00`) : null;
+
+                        const sStart = new Date(`${datePart}T${currentSchedStart.padStart(5, '0')}:00`);
+                        const sEnd = new Date(`${datePart}T${currentSchedEnd.padStart(5, '0')}:00`);
+
+                        const lateThreshold = new Date(sStart.getTime() + currentGrace * 60000);
                         if (logIn > lateThreshold) statusText = 'LATE';
                         else statusText = 'COMPLETED';
 
                         let otMin = 0;
                         if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
-                        if (logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+                        if (logOut && logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
 
                         if (otMin > 0) {
                           const h = Math.floor(otMin / 60);
@@ -1838,6 +1967,7 @@ function App() {
                           otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
                         }
                       }
+                    }
 
                       return (
                         <tr key={idx}>
@@ -2089,7 +2219,7 @@ function App() {
              </div>
              <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
                 <h2 style={{marginTop:0}}>Active Dev Accounts</h2>
-                <div style={{maxHeight:'60vh', overflowY:'auto'}}>
+                <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
                    <table>
                       <thead>
                          <tr><th>Display Name</th><th>Username</th><th>Action</th></tr>

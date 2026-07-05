@@ -100,6 +100,8 @@ function App() {
       return JSON.parse(localStorage.getItem('pending_logs')) || [];
     } catch (e) { return []; }
   });
+
+  const [updateAvailable, setUpdateAvailable] = useState(null);
   const [personalLogs, setPersonalLogs] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('personal_logs')) || [];
@@ -383,6 +385,30 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    const checkUpdate = async () => {
+      // Don't check update if we are just debugging or no version is set
+      if (!appConfig.version) return;
+
+      try {
+        const isTest = apiUrl.includes('4002');
+        const versionFile = isTest ? 'latest-version-test.json' : 'latest-version.json';
+        const res = await fetch(`${apiUrl.replace('/api', '')}/apks/${versionFile}`);
+        if (res.ok) {
+          const latest = await res.json();
+          // Version comparison
+          if (latest.version !== appConfig.version) {
+            setUpdateAvailable(latest);
+          }
+        }
+      } catch (err) {
+        console.log('Update check skipped (Server unreachable)');
+      }
+    };
+
+    checkUpdate();
+  }, [apiUrl]);
+
   return (
     <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 60px 15px', fontFamily: 'system-ui, sans-serif'}}>
       <style>{`
@@ -404,9 +430,37 @@ function App() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .pulse { animation: pulseAnim 2s infinite; }
         @keyframes pulseAnim { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } 100% { transform: scale(1); opacity: 1; } }
+
+        /* Pro Update Modal Styles */
+        .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
+        .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; box-shadow: 0 40px 100px rgba(0,0,0,0.8); }
+        .update-icon { fontSize: 5rem; marginBottom: 25px; display: block; filter: drop-shadow(0 0 20px #3b82f6); }
+        .version-text { color: #3b82f6; font-weight: 900; fontSize: 0.8rem; letterSpacing: 2px; background: rgba(59, 130, 246, 0.1); padding: 8px 15px; border-radius: 12px; display: inline-block; marginBottom: 20px; }
+        .update-notes { color: #94a3b8; fontSize: 0.9rem; lineHeight: 1.6; marginBottom: 35px; background: rgba(255,255,255,0.03); padding: 20px; border-radius: 20px; text-align: left; }
+        .update-btn { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border: none; padding: 22px; border-radius: 25px; font-weight: 900; width: 100%; fontSize: 1.1rem; letterSpacing: 1px; cursor: pointer; box-shadow: 0 15px 35px rgba(59, 130, 246, 0.4); transition: 0.3s; }
+        .update-btn:active { transform: scale(0.95); }
       `}</style>
 
       {/* TOP HEADER */}
+      {updateAvailable && (
+        <div className="update-overlay fade-in">
+           <div className="update-card slide-up">
+              <span className="update-icon">🚀</span>
+              <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Upgrade Available</h2>
+              <div className="version-text">V{updateAvailable.version}</div>
+              <div className="update-notes">
+                 <div style={{fontWeight:'800', color:'#fff', marginBottom:'5px'}}>What's New:</div>
+                 {updateAvailable.notes || 'Performance enhancements and critical stability updates for your enterprise attendance system.'}
+              </div>
+              <button
+                className="update-btn"
+                onClick={() => window.open(updateAvailable.downloadUrl, '_blank')}
+              >
+                INSTALL UPDATE
+              </button>
+           </div>
+        </div>
+      )}
       <div style={{textAlign: 'center', padding: '20px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '25px'}}>
           <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Official Attendance Hub</div>
           <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff', letterSpacing: '1px'}}>

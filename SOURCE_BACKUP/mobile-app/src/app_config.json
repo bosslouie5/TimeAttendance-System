@@ -1,4 +1,6 @@
 {
   "defaultApiUrl": "/api",
-  "defaultTenantId": "949230"
+  "defaultTenantId": "949230",
+  "version": "0.1.1",
+  "buildDate": "2026-07-04T19:37:22.512Z"
 }

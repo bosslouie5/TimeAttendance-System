@@ -503,15 +503,73 @@ function App() {
 
     const companyName = user?.companyName || 'Report';
 
-    const exportData = data.map(l => ({
-      'Employee ID': l.employeeId,
-      'Name': l.employeeName,
-      'Work Branch': l.departmentName,
-      'Date': new Date(l.timestamp).toLocaleDateString(),
-      'Time In': l.timeIn ? new Date(l.timeIn).toLocaleTimeString() : '-',
-      'Time Out': l.timeOut ? new Date(l.timeOut).toLocaleTimeString() : '-',
-      'Status': l.status
-    }));
+    const exportData = data.map(l => {
+      const emp = employees.find(e => e.employeeId === l.employeeId);
+      const sched = schedules.find(s => (s.name === emp?.schedule || (emp?.schedule && emp.schedule.startsWith(s.name))));
+      let statusText = (l.status || 'Pending').toUpperCase();
+      let otText = '-';
+      let schedText = sched ? `${sched.startTime} - ${sched.endTime}` : (emp?.schedule || 'No Sched');
+
+      if (!l.timeIn && !l.timeOut) {
+        statusText = 'ABSENT';
+      } else if (!l.timeIn) {
+        statusText = 'NO TIME IN';
+      } else if (!l.timeOut) {
+        statusText = 'NO TIME OUT';
+      } else {
+        let currentSchedStart = sched?.startTime;
+        let currentSchedEnd = sched?.endTime;
+        let currentGrace = parseInt(sched?.gracePeriod || 15);
+
+        if (!currentSchedStart && emp?.schedule) {
+          const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/g);
+          if (timeMatch && timeMatch.length >= 2) {
+            currentSchedStart = timeMatch[0];
+            currentSchedEnd = timeMatch[1];
+          }
+        }
+
+        if (currentSchedStart) {
+          const d = new Date(l.timestamp);
+          const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+          const logInOrig = new Date(l.timeIn);
+          const logIn = new Date(`${datePart}T${String(logInOrig.getHours()).padStart(2,'0')}:${String(logInOrig.getMinutes()).padStart(2,'0')}:00`);
+
+          const logOutOrig = l.timeOut ? new Date(l.timeOut) : null;
+          const logOut = logOutOrig ? new Date(`${datePart}T${String(logOutOrig.getHours()).padStart(2,'0')}:${String(logOutOrig.getMinutes()).padStart(2,'0')}:00`) : null;
+
+          const sStart = new Date(`${datePart}T${currentSchedStart.padStart(5, '0')}:00`);
+          const sEnd = new Date(`${datePart}T${currentSchedEnd.padStart(5, '0')}:00`);
+
+          const lateThreshold = new Date(sStart.getTime() + currentGrace * 60000);
+          if (logIn > lateThreshold) statusText = 'LATE';
+          else statusText = 'COMPLETED';
+
+          let otMin = 0;
+          if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
+          if (logOut && logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+
+          if (otMin > 0) {
+            const h = Math.floor(otMin / 60);
+            const m = Math.round(otMin % 60);
+            otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          }
+        }
+      }
+
+      return {
+        'Employee ID': l.employeeId,
+        'Name': l.employeeName,
+        'Work Branch': l.departmentName,
+        'Date': new Date(l.timestamp).toLocaleDateString(),
+        'Schedule': schedText,
+        'Time In': l.timeIn ? new Date(l.timeIn).toLocaleTimeString() : '-',
+        'Time Out': l.timeOut ? new Date(l.timeOut).toLocaleTimeString() : '-',
+        'Overtime': otText,
+        'Status': statusText
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -531,19 +589,77 @@ function App() {
     doc.setFontSize(10);
     doc.text(`Filtered by: ${reportBy} | Range: ${reportStartDate || 'Start'} to ${reportEndDate || 'End'}`, 14, 28);
 
-    const tableData = data.map(l => [
-      l.employeeId,
-      l.employeeName,
-      l.departmentName,
-      new Date(l.timestamp).toLocaleDateString(),
-      l.timeIn ? new Date(l.timeIn).toLocaleTimeString() : '-',
-      l.timeOut ? new Date(l.timeOut).toLocaleTimeString() : '-',
-      l.status
-    ]);
+    const tableData = data.map(l => {
+      const emp = employees.find(e => e.employeeId === l.employeeId);
+      const sched = schedules.find(s => (s.name === emp?.schedule || (emp?.schedule && emp.schedule.startsWith(s.name))));
+      let statusText = (l.status || 'Pending').toUpperCase();
+      let otText = '-';
+      let schedText = sched ? `${sched.startTime} - ${sched.endTime}` : (emp?.schedule || 'No Sched');
+
+      if (!l.timeIn && !l.timeOut) {
+        statusText = 'ABSENT';
+      } else if (!l.timeIn) {
+        statusText = 'NO TIME IN';
+      } else if (!l.timeOut) {
+        statusText = 'NO TIME OUT';
+      } else {
+        let currentSchedStart = sched?.startTime;
+        let currentSchedEnd = sched?.endTime;
+        let currentGrace = parseInt(sched?.gracePeriod || 15);
+
+        if (!currentSchedStart && emp?.schedule) {
+          const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/g);
+          if (timeMatch && timeMatch.length >= 2) {
+            currentSchedStart = timeMatch[0];
+            currentSchedEnd = timeMatch[1];
+          }
+        }
+
+        if (currentSchedStart) {
+          const d = new Date(l.timestamp);
+          const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+          const logInOrig = new Date(l.timeIn);
+          const logIn = new Date(`${datePart}T${String(logInOrig.getHours()).padStart(2,'0')}:${String(logInOrig.getMinutes()).padStart(2,'0')}:00`);
+
+          const logOutOrig = l.timeOut ? new Date(l.timeOut) : null;
+          const logOut = logOutOrig ? new Date(`${datePart}T${String(logOutOrig.getHours()).padStart(2,'0')}:${String(logOutOrig.getMinutes()).padStart(2,'0')}:00`) : null;
+
+          const sStart = new Date(`${datePart}T${currentSchedStart.padStart(5, '0')}:00`);
+          const sEnd = new Date(`${datePart}T${currentSchedEnd.padStart(5, '0')}:00`);
+
+          const lateThreshold = new Date(sStart.getTime() + currentGrace * 60000);
+          if (logIn > lateThreshold) statusText = 'LATE';
+          else statusText = 'COMPLETED';
+
+          let otMin = 0;
+          if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
+          if (logOut && logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+
+          if (otMin > 0) {
+            const h = Math.floor(otMin / 60);
+            const m = Math.round(otMin % 60);
+            otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          }
+        }
+      }
+
+      return [
+        l.employeeId,
+        l.employeeName,
+        l.departmentName,
+        new Date(l.timestamp).toLocaleDateString(),
+        schedText,
+        l.timeIn ? new Date(l.timeIn).toLocaleTimeString() : '-',
+        l.timeOut ? new Date(l.timeOut).toLocaleTimeString() : '-',
+        otText,
+        statusText
+      ];
+    });
 
     autoTable(doc, {
       startY: 35,
-      head: [['ID', 'Name', 'Branch Name', 'Date', 'Time In', 'Time Out', 'Status']],
+      head: [['ID', 'Name', 'Branch Name', 'Date', 'Schedule', 'Time In', 'Time Out', 'Overtime', 'Status']],
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [59, 130, 246] }
@@ -604,32 +720,30 @@ function App() {
 
   if (!user) {
     return (
-      <div className="login-screen">
-        <style>{`
-          .login-screen { background: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: sans-serif; }
-          .login-box { background: #1e293b; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 100%; maxWidth: 400px; text-align: center; border: 1px solid #334155; color: white; }
-          input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #334155; border-radius: 8px; box-sizing: border-box; outline: none; background: #0f172a; color: white; }
-          button { width: 100%; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-          button:hover { background: #2563eb; }
-        `}</style>
-        <div className="login-box">
-          <h1>Admin Login</h1>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a', fontFamily:'sans-serif'}}>
+        <div style={{background:'#1e293b', padding:'40px', borderRadius:'15px', border:'1px solid #334155', width:'100%', maxWidth:'400px', textAlign:'center'}}>
+          <h1 style={{color:'#3b82f6', marginBottom:'10px', fontWeight: '900'}}>TIMEKEY SYSTEM</h1>
+          <p style={{color:'#64748b', marginBottom:'30px', fontWeight: 'bold', letterSpacing: '1px'}}>ADMIN MANAGEMENT PORTAL</p>
           {tenantDetails && <h2 style={{color:'#60a5fa', fontSize:'1.2rem', marginBottom:'25px'}}>{tenantDetails.companyName}</h2>}
-          <input
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="Username"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="Password"
-          />
-          <button onClick={handleLogin}>{status || 'Sign In'}</button>
-          <p style={{marginTop:'15px', fontSize:'0.8rem', color:'#64748b'}}>Portal ID: {detectedTenantId}</p>
+          <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+            <input
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              placeholder="Username"
+              style={inputStyle}
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              placeholder="Password"
+              style={inputStyle}
+            />
+            <button onClick={handleLogin} className="btn-hover" style={{...addBtn, marginTop:'10px'}}>{status || 'Access Portal'}</button>
+          </div>
+          <p style={{marginTop:'25px', fontSize:'0.8rem', color:'#64748b'}}>Portal ID: {detectedTenantId}</p>
         </div>
       </div>
     );
@@ -639,17 +753,19 @@ function App() {
     <div className="app-container">
       <style>{`
         body { background: #0f172a; color: #f8fafc; font-family: sans-serif; margin: 0; padding: 0; }
-        .app-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .app-container { width: 100%; max-width: 100%; padding: 20px; box-sizing: border-box; margin: 0; }
         .card { background: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid #334155; }
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: #1e293b; padding: 20px; border-radius: 16px; border: 1px solid #334155; }
         .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155; transition: 0.2s; font-weight: bold; color: #94a3b8; }
         .menu-item:hover { background: #334155; color: #3b82f6; }
         .module-card { background: #1e293b; padding: 30px; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); cursor: pointer; transition: 0.3s; text-align: center; border: 1px solid #334155; }
         .module-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 10px 25px rgba(59, 130, 246, 0.2); }
+        .btn-hover:hover { filter: brightness(1.2); transform: scale(1.02); }
+        .btn-hover:active { transform: scale(0.98); }
         .page-label { background: #1e293b; padding: 12px 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #334155; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
-        table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 15px; border-bottom: 2px solid #334155; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
-        td { padding: 15px; border-bottom: 1px solid #334155; color: #cbd5e1; }
+        table { width: max-content; min-width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 15px; border-bottom: 2px solid #334155; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+        td { padding: 15px; border-bottom: 1px solid #334155; color: #cbd5e1; white-space: nowrap; }
         tr:hover td { background: rgba(59, 130, 246, 0.05); }
         input, select { padding: 12px; border: 1px solid #334155; border-radius: 8px; outline: none; background: #0f172a; color: white; }
         input:focus, select:focus { border-color: #3b82f6; }
@@ -734,7 +850,7 @@ function App() {
       {activeTab === 'dashboard' && (
         <div className="fade-in">
           {/* Quick Stats */}
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:'20px', marginBottom:'40px'}}>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(450px, 1fr))', gap:'25px', marginBottom:'40px'}}>
              <div style={{padding:'30px', background:'#1e293b', borderRadius:'20px', border:'1px solid #334155', display: 'flex', alignItems: 'center', gap: '20px'}}>
                 <div style={{fontSize: '3rem', background: 'rgba(59, 130, 246, 0.1)', padding: '15px', borderRadius: '15px'}}>👥</div>
                 <div>
@@ -752,7 +868,7 @@ function App() {
           </div>
 
           <h2 style={{marginBottom:'25px', color:'#94a3b8', fontSize: '1rem', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase'}}>Management Modules</h2>
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'20px'}}>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(340px, 1fr))', gap:'25px'}}>
              {hasPerm('employees') && (
                <div className="module-card" onClick={() => setActiveTab('employees')}>
                  <div style={{fontSize:'3.5rem', marginBottom:'15px'}}>👥</div>
@@ -877,8 +993,8 @@ function App() {
               <button onClick={prepareNewEmployee} className="btn-green">+ ADD NEW EMPLOYEE</button>
             </div>
           </div>
-          <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
-            <table style={{minWidth:'1800px'}}>
+          <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
+            <table>
               <thead>
                 <tr>
                   <th>Employee ID</th>
@@ -972,7 +1088,7 @@ function App() {
             {/* LIST TABLE */}
             <div>
               <h2 style={{marginTop:0, fontSize: '1.2rem', color: 'white'}}>📋 Registered Departments</h2>
-              <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
+              <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
                 <table>
                   <thead>
                     <tr>
@@ -1025,7 +1141,7 @@ function App() {
             {/* LIST TABLE */}
             <div>
               <h2 style={{marginTop:0, fontSize: '1.2rem', color: 'white'}}>📋 Job Positions</h2>
-              <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
+              <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
                 <table>
                   <thead>
                     <tr>
@@ -1095,7 +1211,7 @@ function App() {
             {/* LIST TABLE */}
             <div>
               <h2 style={{marginTop:0, fontSize: '1.2rem', color: 'white'}}>📋 Registered Shifts</h2>
-              <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
+              <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
                 <table>
                   <thead>
                     <tr>
@@ -1141,7 +1257,7 @@ function App() {
               onChange={e => setEmpSearch(e.target.value)}
             />
           </div>
-          <div style={{maxHeight:'60vh', overflowY:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
+          <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
             <table>
               <thead>
                 <tr>
@@ -1229,7 +1345,7 @@ function App() {
             {/* LIST TABLE */}
             <div>
               <h2 style={{marginTop:0, fontSize: '1.2rem', color: 'white'}}>📍 Registered Branches</h2>
-              <div style={{maxHeight:'60vh', overflowY:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
+              <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border:'1px solid #334155', borderRadius:'12px', background: '#0f172a'}}>
                 <table>
                   <thead>
                     <tr>
@@ -1319,41 +1435,107 @@ function App() {
                   <th>Full Name</th>
                   <th>Branch</th>
                   <th>Date</th>
+                  <th>Schedule</th>
                   <th>Time In</th>
                   <th>Time Out</th>
+                  <th>Overtime</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {getFilteredLogs().length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{textAlign:'center', padding:'60px', color:'#64748b', fontWeight: 'bold'}}>
+                    <td colSpan="9" style={{textAlign:'center', padding:'60px', color:'#64748b', fontWeight: 'bold'}}>
                       <div style={{fontSize: '3rem', marginBottom: '15px'}}>📈</div>
                       No analytics records found for the current criteria.
                     </td>
                   </tr>
                 ) : (
-                  getFilteredLogs().slice().reverse().map((l, idx) => (
-                    <tr key={idx}>
-                      <td style={{color:'#3b82f6', fontWeight:'900'}}>{l.employeeId}</td>
-                      <td style={{fontWeight: '700', color: 'white'}}>{l.employeeName}</td>
-                      <td>{l.departmentName}</td>
-                      <td>{new Date(l.timestamp).toLocaleDateString()}</td>
-                      <td style={{fontWeight: '800', color: '#10b981'}}>{l.timeIn ? new Date(l.timeIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'}</td>
-                      <td style={{fontWeight: '800', color: '#f59e0b'}}>{l.timeOut ? new Date(l.timeOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'}</td>
-                      <td>
-                        <span style={{
-                          padding:'5px 12px', borderRadius:'12px', fontSize:'0.7rem',
-                          background: l.status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                          color: l.status === 'Completed' ? '#34d399' : '#60a5fa',
-                          border: `1px solid currentColor`,
-                          fontWeight: '900'
-                        }}>
-                          {l.status.toUpperCase()}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                  getFilteredLogs().slice().reverse().map((l, idx) => {
+                    const emp = employees.find(e => e.employeeId === l.employeeId);
+                    const sched = schedules.find(s => (s.name === emp?.schedule || (emp?.schedule && emp.schedule.startsWith(s.name))));
+                    let statusText = (l.status || 'Pending').toUpperCase();
+                    let otText = '-';
+                    let schedText = sched ? `${sched.startTime} - ${sched.endTime}` : (emp?.schedule || 'No Sched');
+
+                    if (!l.timeIn && !l.timeOut) {
+                      statusText = 'ABSENT';
+                    } else if (!l.timeIn) {
+                      statusText = 'NO TIME IN';
+                    } else if (!l.timeOut) {
+                      statusText = 'NO TIME OUT';
+                    } else {
+                      let currentSchedStart = sched?.startTime;
+                      let currentSchedEnd = sched?.endTime;
+                      let currentGrace = parseInt(sched?.gracePeriod || 15);
+
+                      if (!currentSchedStart && emp?.schedule) {
+                        const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/g);
+                        if (timeMatch && timeMatch.length >= 2) {
+                          currentSchedStart = timeMatch[0];
+                          currentSchedEnd = timeMatch[1];
+                        }
+                      }
+
+                      if (currentSchedStart) {
+                        const d = new Date(l.timestamp);
+                        const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+                        const logInOrig = new Date(l.timeIn);
+                        const logIn = new Date(`${datePart}T${String(logInOrig.getHours()).padStart(2,'0')}:${String(logInOrig.getMinutes()).padStart(2,'0')}:00`);
+
+                        const logOutOrig = l.timeOut ? new Date(l.timeOut) : null;
+                        const logOut = logOutOrig ? new Date(`${datePart}T${String(logOutOrig.getHours()).padStart(2,'0')}:${String(logOutOrig.getMinutes()).padStart(2,'0')}:00`) : null;
+
+                        const sStart = new Date(`${datePart}T${currentSchedStart.padStart(5, '0')}:00`);
+                        const sEnd = new Date(`${datePart}T${currentSchedEnd.padStart(5, '0')}:00`);
+
+                        const lateThreshold = new Date(sStart.getTime() + currentGrace * 60000);
+                        if (logIn > lateThreshold) statusText = 'LATE';
+                        else statusText = 'COMPLETED';
+
+                        let otMin = 0;
+                        if (logIn < sStart) otMin += (sStart.getTime() - logIn.getTime()) / 60000;
+                        if (logOut && logOut > sEnd) otMin += (logOut.getTime() - sEnd.getTime()) / 60000;
+
+                        if (otMin > 0) {
+                          const h = Math.floor(otMin / 60);
+                          const m = Math.round(otMin % 60);
+                          otText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+                        }
+                      }
+                    }
+
+                    return (
+                      <tr key={idx}>
+                        <td style={{color:'#3b82f6', fontWeight:'900'}}>{l.employeeId}</td>
+                        <td style={{fontWeight: '700', color: 'white'}}>{l.employeeName}</td>
+                        <td>{l.departmentName}</td>
+                        <td>{new Date(l.timestamp).toLocaleDateString()}</td>
+                        <td style={{fontSize:'0.8rem', color:'#94a3b8'}}>{schedText}</td>
+                        <td style={{fontWeight: '800', color: '#10b981'}}>{l.timeIn ? new Date(l.timeIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'}</td>
+                        <td style={{fontWeight: '800', color: '#f59e0b'}}>{l.timeOut ? new Date(l.timeOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'}</td>
+                        <td style={{fontWeight: '800', color: '#8b5cf6'}}>{otText}</td>
+                        <td>
+                          <span style={{
+                            padding:'5px 12px', borderRadius:'12px', fontSize:'0.7rem',
+                            background: statusText === 'COMPLETED' ? 'rgba(16, 185, 129, 0.15)' :
+                                        statusText === 'LATE' ? 'rgba(245, 158, 11, 0.15)' :
+                                        statusText === 'ABSENT' ? 'rgba(239, 68, 68, 0.15)' :
+                                        'rgba(59, 130, 246, 0.15)',
+                            color: statusText === 'COMPLETED' ? '#34d399' :
+                                   statusText === 'LATE' ? '#fbbf24' :
+                                   statusText === 'ABSENT' ? '#f87171' :
+                                   '#60a5fa',
+                            border: `1px solid currentColor`,
+                            fontWeight: '900'
+                          }}>
+                            {statusText}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1375,7 +1557,7 @@ function App() {
               onChange={e => setEmpSearch(e.target.value)}
             />
           </div>
-          <div style={{maxHeight:'60vh', overflowY:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
+          <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
             <table>
               <thead>
                 <tr>
@@ -1433,7 +1615,7 @@ function App() {
               onChange={e => setEmpSearch(e.target.value)}
             />
           </div>
-          <div style={{maxHeight:'60vh', overflowY:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
+          <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', border: '1px solid #334155', borderRadius: '12px', background: '#0f172a'}}>
             <table>
               <thead>
                 <tr>
@@ -1743,6 +1925,9 @@ function App() {
 }
 
 export default App;
+
+const inputStyle = { display:'block', width:'100%', padding:'15px', borderRadius:'10px', border:'1px solid #334155', background:'#0f172a', color:'white', marginBottom:'15px', outline:'none', boxSizing:'border-box' };
+const addBtn = { background:'#3b82f6', color:'white', border:'none', padding:'15px', borderRadius:'10px', fontWeight:'bold', cursor:'pointer' };
 
 const BackToDashboard = ({ onClick }) => (
   <button onClick={onClick} style={{
