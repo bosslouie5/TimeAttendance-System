@@ -1271,7 +1271,7 @@ function App() {
                           setProcessingMsg(`Launching Admin Portal for ${selectedTenant.companyName}...`);
                           setProcessing(true);
                           setTimeout(() => {
-                            window.open(`${activeApiBase?.replace('/api','')}/portal/${selectedTenant.tenantId || selectedTenant.username}`, '_blank');
+                            window.open(`${activeApiBase?.replace('/api','')}/portal/${selectedTenant.tenantId || selectedTenant.username}?devMode=true`, '_blank');
                             setProcessing(false);
                           }, 1500);
                         }} className="btn-hover" style={{...addBtn, background:'#3b82f6'}}>🚀 Launch Admin Portal</button>

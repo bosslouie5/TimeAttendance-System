@@ -283,8 +283,9 @@ app.use('/portal/:tenantId', async (req, res, next) => {
 
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
-  // Master/Developer Bypass: allow access if local or in test mode
-  if (isLocal || isTestMode) return next();
+  // Master/Developer Bypass: allow access if local, in test mode, or via devMode bypass
+  const isDevBypass = req.query.devMode === 'true' || req.headers.referer?.includes('devMode=true');
+  if (isLocal || isTestMode || isDevBypass) return next();
 
   // WORLDWIDE IP GATEKEEPER WITH WILDCARD SUPPORT
   const allowedIp = user.publicIp || user.adminIp;
@@ -350,8 +351,9 @@ app.post('/api/auth/web-login', async (req, res) => {
 
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
     const allowedIp = user.publicIp || user.adminIp;
+    const isDevBypass = req.body.devMode === true || req.query.devMode === 'true';
 
-    if (!isLocal && !isTestMode && allowedIp && !matchIp(clientIp, allowedIp)) {
+    if (!isLocal && !isTestMode && !isDevBypass && allowedIp && !matchIp(clientIp, allowedIp)) {
        console.warn(`[AUTH] Login Blocked: Unauthorized IP ${clientIp} for Tenant ${tenantId}`);
        return res.status(403).json({ error: 'Access Denied: Please login from the office network.' });
     }

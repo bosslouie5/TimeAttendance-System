@@ -14,6 +14,9 @@ function App() {
   const portalIndex = pathParts.indexOf('portal');
   const detectedTenantId = portalIndex !== -1 ? pathParts[portalIndex + 1] : '';
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const isDevMode = searchParams.get('devMode') === 'true';
+
   const sessionKey = `admin_user_${detectedTenantId || 'default'}`;
 
   const [user, setUser] = useState(() => {
@@ -165,7 +168,7 @@ function App() {
       const res = await fetch(`${activeApiBase}/auth/web-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: detectedTenantId, username, password })
+        body: JSON.stringify({ tenantId: detectedTenantId, username, password, devMode: isDevMode })
       });
       const data = await res.json();
       if (data.success) {
