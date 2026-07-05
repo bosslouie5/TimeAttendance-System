@@ -142,6 +142,12 @@ function App() {
   const [selectedEmpForSchedule, setSelectedEmpForSchedule] = useState(null);
   const [newScheduleForEmp, setNewScheduleForEmp] = useState('');
 
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text);
+    setStatus(`${label} Copied ✓`);
+    setTimeout(() => setStatus('System Online'), 2000);
+  };
+
   useEffect(() => {
     const discoverSaaS = async () => {
       const host = window.location.hostname;
@@ -975,18 +981,22 @@ function App() {
       <style>{`
         .fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .stat-card { background: #1e293b; padding: 25px; border-radius: 20px; border: 1px solid #334155; text-align: center; transition: 0.3s; }
-        .stat-card:hover { transform: translateY(-5px); border-color: #3b82f6; background: #1e293b; }
-        .module-card { background: #1e293b; padding: 30px; border-radius: 20px; border: 1px solid #334155; cursor: pointer; transition: 0.3s; text-align: center; position: relative; overflow: hidden; }
-        .module-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 10px 25px rgba(59, 130, 246, 0.2); }
-        .module-card::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(45deg, transparent, rgba(59, 130, 246, 0.05), transparent); transform: translateX(-100%); transition: 0.5s; }
+        .stat-card { background: #1e293b; padding: 25px; border-radius: 20px; border: 1px solid #334155; text-align: center; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .stat-card:hover { transform: translateY(-8px) scale(1.02); border-color: #3b82f6; background: linear-gradient(145deg, #1e293b, #24344d); box-shadow: 0 15px 35px rgba(0,0,0,0.5), 0 0 20px rgba(59, 130, 246, 0.3); }
+        .module-card { background: #1e293b; padding: 30px; border-radius: 24px; border: 1px solid #334155; cursor: pointer; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); text-align: center; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+        .module-card:hover { transform: translateY(-10px) scale(1.03); border-color: #3b82f6; background: linear-gradient(145deg, #1e293b, #24344d); box-shadow: 0 20px 40px rgba(0,0,0,0.6), 0 0 25px rgba(59, 130, 246, 0.4); }
+        .module-card::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(45deg, transparent, rgba(59, 130, 246, 0.1), transparent); transform: translateX(-100%); transition: 0.6s; }
         .module-card:hover::after { transform: translateX(100%); }
-        .btn-hover:hover { filter: brightness(1.2); transform: scale(1.02); }
-        .btn-hover:active { transform: scale(0.98); }
-        table { width: max-content; min-width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th { text-align: left; padding: 12px; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
-        td { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 0.9rem; white-space: nowrap; }
-        tr:hover { background: #33415533; }
+        .module-card div:first-child { transition: transform 0.4s ease; text-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
+        .module-card:hover div:first-child { transform: scale(1.2) rotate(5deg); text-shadow: 0 0 25px rgba(59, 130, 246, 0.6); }
+        .btn-hover:hover { filter: brightness(1.2); transform: scale(1.05); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .btn-hover:active { transform: scale(0.95); }
+        table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-top: 15px; }
+        th { text-align: left; padding: 15px; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+        td { padding: 15px; border-top: 1px solid #334155; border-bottom: 1px solid #334155; font-size: 0.9rem; white-space: nowrap; background: rgba(30, 41, 59, 0.3); }
+        td:first-child { border-left: 1px solid #334155; border-radius: 12px 0 0 12px; }
+        td:last-child { border-right: 1px solid #334155; border-radius: 0 12px 12px 0; }
+        tr:hover td { background: rgba(59, 130, 246, 0.1); }
 
         /* SIDEBAR STYLES */
         .sidebar-overlay {
@@ -1005,13 +1015,13 @@ function App() {
         .sidebar.open { left: 0; box-shadow: 20px 0 50px rgba(0,0,0,0.5); }
 
         .menu-item {
-          padding: 16px 25px; cursor: pointer; transition: 0.2s;
+          padding: 16px 25px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           display: flex; align-items: center; gap: 15px;
           border-left: 4px solid transparent; color: #94a3b8;
           font-weight: 500;
         }
-        .menu-item:hover { background: #334155; color: white; border-left-color: #3b82f6; }
-        .menu-item.active { background: #0f172a; color: #3b82f6; border-left-color: #3b82f6; }
+        .menu-item:hover { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-left-color: #3b82f6; padding-left: 30px; }
+        .menu-item.active { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border-left-color: #3b82f6; font-weight: 700; }
 
         .dot {
           width: 8px; height: 8px; border-radius: 50%;
@@ -1194,12 +1204,17 @@ function App() {
                     background: selectedTenant?.tenantId === (u.tenantId || u.username) ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#0f172a',
                     border: '1px solid',
                     borderColor: selectedTenant?.tenantId === (u.tenantId || u.username) ? '#60a5fa' : '#334155',
-                    cursor:'pointer', transition:'0.3s',
-                    boxShadow: selectedTenant?.tenantId === (u.tenantId || u.username) ? '0 10px 20px rgba(59, 130, 246, 0.3)' : 'none'
+                    cursor:'pointer', transition:'all 0.3s ease',
+                    boxShadow: selectedTenant?.tenantId === (u.tenantId || u.username) ? '0 10px 20px rgba(59, 130, 246, 0.3)' : 'none',
+                    position: 'relative',
+                    overflow: 'hidden'
                   }}>
                      <div style={{fontWeight:'800', fontSize:'1.1rem', marginBottom:'5px'}}>{u.companyName}</div>
-                     <div style={{fontSize:'0.75rem', opacity:0.7, display:'flex', justifyContent:'space-between'}}>
-                        <span>ID: {u.tenantId || u.username}</span>
+                     <div style={{fontSize:'0.75rem', opacity:0.7, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                        <span style={{display:'flex', alignItems:'center', gap:'5px'}}>
+                          ID: {u.tenantId || u.username}
+                          <button onClick={(e) => { e.stopPropagation(); copyToClipboard(u.tenantId || u.username, 'Tenant ID'); }} style={{background:'transparent', border:'none', color:'inherit', cursor:'pointer', padding:0, fontSize:'0.8rem', display:'flex', alignItems:'center'}} title="Copy ID">📋</button>
+                        </span>
                         <span>{u.adminIp || 'No IP'}</span>
                      </div>
                   </div>
@@ -1365,9 +1380,12 @@ function App() {
                    )}
 
                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}}>
-                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
-                         <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Portal ID</div>
-                         <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.tenantId || selectedTenant.username}</div>
+                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                         <div>
+                            <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Portal ID (Tenant ID)</div>
+                            <div style={{fontWeight:'bold', color:'#cbd5e1', fontSize:'1.1rem'}}>{selectedTenant.tenantId || selectedTenant.username}</div>
+                         </div>
+                         <button onClick={() => copyToClipboard(selectedTenant.tenantId || selectedTenant.username, 'Tenant ID')} className="btn-hover" style={{...smallBtn, background:'#334155', padding:'10px'}}>📋 Copy ID</button>
                       </div>
                       <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
                          <div style={{color:'#f59e0b', fontSize:'0.75rem', marginBottom:'5px'}}>Office Network Lock</div>
@@ -2412,8 +2430,8 @@ function App() {
       )}
 
       {/* FOOTER */}
-      <footer style={{position:'fixed', bottom:20, right:20, fontSize:'0.7rem', color:'#475569'}} onDoubleClick={() => setActiveTab('dashboard')}>
-        Port 4002 - Restoration Build V6.1
+      <footer style={{position:'fixed', bottom:20, right:20, fontSize:'0.7rem', color:'#475569', fontWeight:'bold', letterSpacing:'1px'}} onDoubleClick={() => setActiveTab('dashboard')}>
+        V1.0.1 - PRO EDITION (Port 4002 Restoration)
       </footer>
     </div>
   );
