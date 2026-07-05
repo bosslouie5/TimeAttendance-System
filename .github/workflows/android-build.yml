@@ -13,6 +13,9 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout Code
@@ -38,26 +41,22 @@ jobs:
 
       - name: Build Web Admin
         run: |
-          cd web-admin
-          npm run build
+          cd web-admin && npm run build
 
       - name: Build Web Dev
         run: |
-          cd web-dev
-          npm run build
+          cd web-dev && npm run build
 
       - name: Build Mobile APK (Universal)
         run: |
           cd mobile-app
-          # Inject production URLs but keep the version pushed from laptop
+          # Ensure config is production-ready
           node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('src/app_config.json')); c.defaultApiUrl='https://timeattendance-system.onrender.com/api'; c.defaultTenantId='MASTER_UNIVERSAL'; fs.writeFileSync('src/app_config.json', JSON.stringify(c, null, 2));"
           npm run build
           npx cap sync android
-          cd android
-          chmod +x gradlew
-          ./gradlew clean assembleDebug
+          cd android && chmod +x gradlew && ./gradlew clean assembleDebug
 
-      - name: Prepare Final Package
+      - name: Prepare Package
         run: |
           mkdir -p final-deploy/dev
           mkdir -p final-deploy/app
@@ -67,9 +66,11 @@ jobs:
           cp -r mobile-app/dist/* final-deploy/app/
           cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-deploy/apks/TimeKey_Master.apk
 
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./final-deploy
-          force_orphan: true
+          path: final-deploy/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

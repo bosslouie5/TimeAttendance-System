@@ -90,6 +90,12 @@ function App() {
   const [newShiftValue, setNewShiftValue] = useState('');
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text);
+    setStatus(`${label} Copied ✓`);
+    setTimeout(() => setStatus(''), 2000);
+  };
+
   useEffect(() => {
     const checkConnection = async () => {
       if (window.location.hostname.includes('trycloudflare.com') || window.location.hostname.includes('onrender.com') || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
@@ -754,7 +760,10 @@ function App() {
             />
             <button onClick={handleLogin} className="btn-hover" style={{...addBtn, marginTop:'10px'}}>{status || 'Access Portal'}</button>
           </div>
-          <p style={{marginTop:'25px', fontSize:'0.8rem', color:'#64748b'}}>Portal ID: {detectedTenantId}</p>
+          <p style={{marginTop:'25px', fontSize:'0.8rem', color:'#64748b', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px'}}>
+            Portal ID: <span style={{color:'#3b82f6', fontWeight:'bold'}}>{detectedTenantId}</span>
+            <button onClick={() => copyToClipboard(detectedTenantId, 'Portal ID')} style={{background:'transparent', border:'none', color:'#3b82f6', cursor:'pointer', padding:0, fontSize:'0.9rem'}}>📋</button>
+          </p>
         </div>
       </div>
     );
@@ -767,17 +776,22 @@ function App() {
         .app-container { width: 100%; max-width: 100%; padding: 20px; box-sizing: border-box; margin: 0; }
         .card { background: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid #334155; }
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: #1e293b; padding: 20px; border-radius: 16px; border: 1px solid #334155; }
-        .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155; transition: 0.2s; font-weight: bold; color: #94a3b8; }
-        .menu-item:hover { background: #334155; color: #3b82f6; }
-        .module-card { background: #1e293b; padding: 30px; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); cursor: pointer; transition: 0.3s; text-align: center; border: 1px solid #334155; }
-        .module-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 10px 25px rgba(59, 130, 246, 0.2); }
-        .btn-hover:hover { filter: brightness(1.2); transform: scale(1.02); }
-        .btn-hover:active { transform: scale(0.98); }
-        .page-label { background: #1e293b; padding: 12px 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #334155; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
-        table { width: max-content; min-width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 15px; border-bottom: 2px solid #334155; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
-        td { padding: 15px; border-bottom: 1px solid #334155; color: #cbd5e1; white-space: nowrap; }
-        tr:hover td { background: rgba(59, 130, 246, 0.05); }
+        .menu-item { padding: 16px 20px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-weight: bold; color: #94a3b8; display: flex; align-items: center; gap: 12px; }
+        .menu-item:hover { background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding-left: 28px; }
+        .menu-item.active { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border-left: 4px solid #3b82f6; }
+        .module-card { background: #1e293b; padding: 30px; border-radius: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); text-align: center; border: 1px solid #334155; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+        .module-card:hover { transform: translateY(-10px) scale(1.03); border-color: #3b82f6; background: linear-gradient(145deg, #1e293b, #24344d); box-shadow: 0 20px 40px rgba(0,0,0,0.6), 0 0 25px rgba(59, 130, 246, 0.4); }
+        .module-card div:first-child { transition: transform 0.4s ease; }
+        .module-card:hover div:first-child { transform: scale(1.2) rotate(5deg); }
+        .btn-hover:hover { filter: brightness(1.2); transform: scale(1.05); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .btn-hover:active { transform: scale(0.95); }
+        .page-label { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); padding: 12px 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #334155; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
+        table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+        th { text-align: left; padding: 15px; border-bottom: none; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+        td { padding: 15px; border-top: 1px solid #334155; border-bottom: 1px solid #334155; color: #cbd5e1; white-space: nowrap; background: rgba(30, 41, 59, 0.3); }
+        td:first-child { border-left: 1px solid #334155; border-radius: 12px 0 0 12px; }
+        td:last-child { border-right: 1px solid #334155; border-radius: 0 12px 12px 0; }
+        tr:hover td { background: rgba(59, 130, 246, 0.1); }
         input, select { padding: 12px; border: 1px solid #334155; border-radius: 8px; outline: none; background: #0f172a; color: white; }
         input:focus, select:focus { border-color: #3b82f6; }
         .btn-blue { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
@@ -808,7 +822,14 @@ function App() {
           </div>
           <div>
             <h1 style={{margin: 0, color: '#3b82f6', fontSize: '1.5rem', fontWeight: '900'}}>🛡️ {user.companyName} ADMIN PORTAL</h1>
-            <p style={{margin: 0, color: '#64748b', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px'}}>MANAGEMENT CONSOLE | ID: {detectedTenantId}</p>
+            <div style={{display:'flex', alignItems:'center', gap:'10px', marginTop:'5px'}}>
+               <p style={{margin: 0, color: '#64748b', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px'}}>MANAGEMENT CONSOLE | ID:</p>
+               <span style={{color:'#f8fafc', fontWeight:'900', fontSize:'0.8rem', background:'#0f172a', padding:'2px 8px', borderRadius:'6px', border:'1px solid #334155', display:'flex', alignItems:'center', gap:'5px'}}>
+                  {detectedTenantId}
+                  <button onClick={() => copyToClipboard(detectedTenantId, 'Tenant ID')} style={{background:'transparent', border:'none', color:'#3b82f6', cursor:'pointer', padding:0, fontSize:'0.8rem'}}>📋</button>
+               </span>
+            </div>
+            {status && <div className="fade-in" style={{position:'absolute', bottom:'-25px', color:'#10b981', fontSize:'0.7rem', fontWeight:'900'}}>{status}</div>}
           </div>
         </div>
 
@@ -854,8 +875,8 @@ function App() {
           {appVersionInfo && (
             <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
               <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-              APP VERSION: <span style={{color: '#10b981'}}>V{appVersionInfo.version}</span>
-              <span style={{color: '#64748b', marginLeft:'5px'}}>(LATEST SYSTEM)</span>
+              APP VERSION: <span style={{color: '#10b981'}}>V1.0.1</span>
+              <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
             </div>
           )}
         </div>
