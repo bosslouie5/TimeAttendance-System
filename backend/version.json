@@ -1,7 +1,7 @@
 {
     "apkUrl":  "/api/master/download-apk/TimeKey_Master.apk",
-    "buildDate":  "2026-07-05T22:35:14.273Z",
-    "version":  "1.0.1",
+    "buildDate":  "2026-07-05T22:48:37.016Z",
+    "version":  "1.0.2",
     "forceUpdate":  false,
-    "changelog":  "Performance enhancements and security updates."
+    "changelog":  "Production Release 05/07/2026"
 }
