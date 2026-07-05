@@ -227,6 +227,15 @@ app.use('/portal/:tenantId', async (req, res, next) => {
 
   if (!user) return res.status(404).send('<h1>Portal Not Found</h1>');
 
+  // --- UNIQUE IP HOST BINDING ---
+  // If the tenant has a Virtual Host IP (adminIp) assigned, we verify it here
+  // Note: This is a "Soft Lock" to ensure they use their designated portal address
+  const host = req.headers.host || '';
+  if (user.adminIp && user.adminIp !== '127.0.0.1' && !host.includes(user.adminIp) && !isTestMode && !host.includes('localhost')) {
+     console.log(`[SECURITY] Tenant ${tenantId} accessed via wrong host: ${host}. Expected: ${user.adminIp}`);
+     // We allow it for now but log it, or we could redirect them to the correct IP
+  }
+
   // LICENSE CHECK
   if (user.endDate) {
     const now = new Date();
@@ -1076,7 +1085,10 @@ app.post('/api/master/build-apk', async (req, res) => {
 
     if (fs.existsSync(sourceApk)) {
       fs.copyFileSync(sourceApk, destPath);
-      console.log(`[BUILD] SUCCESS: Generated ${destName}`);
+      // Create a Master copy for GitHub Distribution
+      fs.copyFileSync(sourceApk, path.join(apksDir, 'TimeKey_Master.apk'));
+
+      console.log(`[BUILD] SUCCESS: Generated ${destName} and updated TimeKey_Master.apk`);
 
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const host = req.headers['host'];

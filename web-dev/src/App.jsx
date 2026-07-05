@@ -672,19 +672,21 @@ function App() {
   const updateNetworkLock = async () => {
     if (!selectedTenant) return;
     const tId = selectedTenant.tenantId || selectedTenant.username;
-    setProcessingMsg(`Updating Network Lock for ${selectedTenant.companyName}...`);
+    setProcessingMsg(`Updating Infrastructure for ${selectedTenant.companyName}...`);
     setProcessing(true);
     try {
       const res = await fetch(`${activeApiBase}/users/${tId}/network-lock`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ publicIp: tempPublicIp })
+        body: JSON.stringify({
+           publicIp: tempPublicIp,
+           adminIp: tempPublicIp // Automatically sync Virtual Host IP for Pro experience
+        })
       });
       if (res.ok) {
         await loadInitialData();
         setIsEditingIp(false);
-        setStatus('Network Lock Updated ✓');
-        setSelectedTenant(prev => ({ ...prev, publicIp: tempPublicIp }));
+        setStatus('Infrastructure Updated ✓');
       }
     } catch (e) { setStatus('Update failed'); }
     finally { setProcessing(false); }
@@ -1316,6 +1318,13 @@ function App() {
                           setIsActionMenuOpen(false);
                         }} className="btn-hover" style={{...addBtn, background:'#f59e0b'}}>🛡️ Edit Network Lock</button>
 
+                        <button onClick={() => {
+                           const activateUrl = `${window.location.origin}/activate/${selectedTenant.tenantId || selectedTenant.username}`;
+                           navigator.clipboard.writeText(activateUrl);
+                           alert('Activation Link Copied!\n\nSend this to the tenant to capture their Office IP automatically.');
+                           setIsActionMenuOpen(false);
+                        }} className="btn-hover" style={{...addBtn, background:'#10b981'}}>🚀 Issue & Activate Portal</button>
+
                         <button onClick={() => setIsActionMenuOpen(false)} className="btn-hover" style={{...addBtn, background:'#334155', gridColumn: 'span 2'}}>❌ Close Menu</button>
                      </div>
                    )}
@@ -1373,9 +1382,23 @@ function App() {
                          <div style={{color:'#f59e0b', fontSize:'0.75rem', marginBottom:'5px'}}>Gatekeeper Network Lock</div>
                          <div style={{fontWeight:'bold', color:'#f1f5f9'}}>{selectedTenant.publicIp || 'NO RESTRICTION (OPEN)'}</div>
                       </div>
-                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
-                         <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Virtual Host IP</div>
-                         <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.adminIp || '127.0.0.1'}</div>
+                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155', position: 'relative'}}>
+                         <div style={{color:'#06b6d4', fontSize:'0.75rem', marginBottom:'5px'}}>Virtual Host IP (Unique)</div>
+                         <div style={{fontWeight:'bold', color:'#cbd5e1', display:'flex', alignItems:'center', gap:'10px'}}>
+                            {selectedTenant.adminIp || 'NOT ISSUED'}
+                            {selectedTenant.adminIp && (
+                               <button
+                                 onClick={() => {
+                                    const portalLink = `http://${selectedTenant.adminIp}/portal/${selectedTenant.tenantId || selectedTenant.username}`;
+                                    navigator.clipboard.writeText(portalLink);
+                                    alert('Unique Portal Link Copied:\n' + portalLink);
+                                 }}
+                                 style={{background:'rgba(6, 182, 212, 0.1)', border:'none', color:'#06b6d4', cursor:'pointer', padding:'2px 8px', borderRadius:'5px', fontSize:'0.6rem', fontWeight:'bold'}}
+                               >
+                                  COPY LINK
+                               </button>
+                            )}
+                         </div>
                       </div>
                       <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155', position:'relative', overflow:'hidden'}}>
                          <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Contract Period</div>

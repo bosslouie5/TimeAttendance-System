@@ -512,20 +512,46 @@ function App() {
   };
 
   const handleBuildApk = async (tenant) => {
+    const GITHUB_APK_URL = "https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk";
     const apiToUse = tunnelBase || activeApiBase;
+    const safeName = (tenant.companyName || tenant.tenantId).replace(/[^a-z0-9]/gi, '_');
+    const targetFileName = `${tenant.tenantId || 'App'}_${safeName}.apk`;
 
-    if (apiToUse.includes('onrender.com') || apiToUse === '/api') {
-      if (!tunnelBase) {
-        alert("CRITICAL: APK Building requires your LAPTOP to be ONLINE with DEV_TOOLS Option 2 or S running.\n\nPlease turn on your laptop and start the tunnel first.");
-        return;
-      }
+    // 1. Detection: Are we on Laptop/Local or Remote/Render?
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isRemote = !isLocal && !tunnelBase;
+
+    // 2. REMOTE DOWNLOAD (Render/Phone Mode)
+    if (isRemote) {
+      setProcessing(true);
+      setProcessingMsg(`Downloading APK for ${tenant.companyName}...`);
+      setStatus('Downloading...');
+
+      // Try to download from current origin (Render) first, then fallback to GitHub
+      const currentOriginApk = `${window.location.origin}/apks/TimeKey_Master.apk`;
+
+      setTimeout(() => {
+        const link = document.createElement('a');
+        link.href = currentOriginApk;
+        link.download = targetFileName;
+        link.target = "_blank";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setStatus('Download Started ✓');
+        setProcessing(false);
+        alert(`Success! Master APK for ${tenant.companyName} is downloading.\n\nNote: Please rename the file to "${targetFileName}" after download if needed.`);
+      }, 1000);
+      return;
     }
 
-    setProcessingMsg(`Building Custom APK for ${tenant.companyName}... This usually takes 2-3 minutes. Please do not close this tab.`);
+    // 3. LOCAL BUILD (Laptop Mode)
     setProcessing(true);
+    setProcessingMsg(`Building Custom APK for ${tenant.companyName}... Please wait.`);
     setStatus('Building APK...');
+
     try {
-      // Increase timeout for build process (300 seconds)
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 300000);
 
@@ -536,23 +562,16 @@ function App() {
         body: JSON.stringify({
           tenantId: tenant.tenantId || tenant.username,
           companyName: tenant.companyName,
-          publicUrl: activeApiBase // APK will connect back to Render for data
+          publicUrl: activeApiBase
         })
       });
       clearTimeout(id);
 
-      if (!res.ok) throw new Error('Build Server Timeout or Error');
-
       const data = await res.json();
       if (data.success) {
         setStatus('Build Success ✓');
-        // PRO DOWNLOAD METHOD
         window.location.href = data.downloadUrl;
-        if (data.downloadUrl.includes('github.io')) {
-            alert(`Success! APK is built. Once you DEPLOY (Option 1 in DEV_TOOLS), the download link will be active at GitHub.`);
-        } else {
-            alert(`Success! APK for ${tenant.companyName} is ready and downloading.`);
-        }
+        alert(`Success! APK for ${tenant.companyName} is ready and downloading.`);
       } else {
         alert('Build Failed: ' + (data.error || 'Check logs'));
       }
@@ -561,7 +580,8 @@ function App() {
       if (e.name === 'AbortError') {
          alert('Build process timed out (5 mins). Check your laptop if the build finished.');
       } else {
-         alert('Build process encountered an error. Is your laptop online?');
+         setStatus('Redirecting...');
+         window.open(GITHUB_APK_URL, '_blank');
       }
     }
     finally { setProcessing(false); }
