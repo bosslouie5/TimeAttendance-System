@@ -238,9 +238,11 @@ if exist "web_deploy" rd /s /q "web_deploy"
 mkdir "web_deploy"
 mkdir "web_deploy\dev"
 mkdir "web_deploy\app"
+mkdir "web_deploy\apks"
 xcopy /s /i /y "web-admin\dist\*" "web_deploy\"
 xcopy /s /i /y "web-dev\dist\*" "web_deploy\dev\"
 xcopy /s /i /y "mobile-app\dist\*" "web_deploy\app\"
+xcopy /s /i /y "backend\apks\*" "web_deploy\apks\"
 echo Last Deploy: %date% %time% > "web_deploy\version.txt"
 
 echo [*] Pushing to GitHub (Render will auto-deploy)...

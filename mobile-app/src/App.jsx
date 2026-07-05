@@ -387,22 +387,27 @@ function App() {
 
   useEffect(() => {
     const checkUpdate = async () => {
-      // Don't check update if we are just debugging or no version is set
       if (!appConfig.version) return;
 
       try {
         const isTest = apiUrl.includes('4002');
         const versionFile = isTest ? 'latest-version-test.json' : 'latest-version.json';
-        const res = await fetch(`${apiUrl.replace('/api', '')}/apks/${versionFile}`);
+
+        // GITHUB Hub Logic
+        const GITHUB_PAGES_URL = "https://bosslouie5.github.io/TimeAttendance-System";
+        const updateUrl = isTest
+          ? `${apiUrl.replace('/api', '')}/apks/${versionFile}`
+          : `${GITHUB_PAGES_URL}/apks/${versionFile}`;
+
+        const res = await fetch(`${updateUrl}?t=${Date.now()}`);
         if (res.ok) {
           const latest = await res.json();
-          // Version comparison
           if (latest.version !== appConfig.version) {
             setUpdateAvailable(latest);
           }
         }
       } catch (err) {
-        console.log('Update check skipped (Server unreachable)');
+        console.log('Update check skipped');
       }
     };
 

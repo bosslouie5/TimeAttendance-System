@@ -523,7 +523,11 @@ function App() {
         setStatus('Build Success ✓');
         // PRO DOWNLOAD METHOD
         window.location.href = data.downloadUrl;
-        alert(`Success! APK for ${tenant.companyName} is ready and downloading.`);
+        if (data.downloadUrl.includes('github.io')) {
+            alert(`Success! APK is built. Once you DEPLOY (Option 1 in DEV_TOOLS), the download link will be active at GitHub.`);
+        } else {
+            alert(`Success! APK for ${tenant.companyName} is ready and downloading.`);
+        }
       } else {
         alert('Build Failed: ' + (data.error || 'Check logs'));
       }

@@ -1080,8 +1080,15 @@ app.post('/api/master/build-apk', async (req, res) => {
 
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const host = req.headers['host'];
-      // Point to the force download endpoint instead of static file
-      const finalDownloadUrl = `${protocol}://${host}/api/master/download-apk/${destName}`;
+
+      // GITHUB DISTRIBUTION LOGIC
+      const GITHUB_PAGES_URL = "https://bosslouie5.github.io/TimeAttendance-System";
+
+      // If in production mode, point download URL to GitHub
+      let finalDownloadUrl = `${protocol}://${host}/api/master/download-apk/${destName}`;
+      if (!isTestMode) {
+          finalDownloadUrl = `${GITHUB_PAGES_URL}/apks/${destName}`;
+      }
 
       // Update version info based on mode (Isolated Lab vs Production)
       const versionFileName = isTestMode ? 'latest-version-test.json' : 'latest-version.json';
