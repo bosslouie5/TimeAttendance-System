@@ -280,13 +280,15 @@ echo.
 echo [*] Fetching current system version...
 set "VER_FILE=backend\version.json"
 set "CONFIG_FILE=mobile-app\src\app_config.json"
+set "ADMIN_CONFIG=web-admin\src\app_config.json"
 set "CURRENT_VER=1.0.0"
 
+:: Get current version from backend/version.json if it exists
 if exist "%VER_FILE%" (
-    for /f "delims=" %%v in ('powershell -Command "(Get-Content %VER_FILE% | ConvertFrom-Json).version"') do set CURRENT_VER=%%v
+    for /f "delims=" %%v in ('powershell -Command "(Get-Content %VER_FILE% | ConvertFrom-Json).version"') do set "CURRENT_VER=%%v"
 )
 
-:: PRO GUI FOR VERSION BUMP
+:: PRO GUI FOR VERSION BUMP (Pre-filled with CURRENT_VER)
 set "psCommand=Add-Type -AssemblyName System.Windows.Forms; $form = New-Object Windows.Forms.Form; $form.Text = 'TIMEKEY - VERSION BUMP'; $form.Size = New-Object Drawing.Size(400,250); $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'; $form.MaximizeBox = $false; $lbl = New-Object Windows.Forms.Label; $lbl.Text = 'Enter New Version (Current: %CURRENT_VER%):'; $lbl.Location = '20,20'; $lbl.Size = '300,20'; $txt = New-Object Windows.Forms.TextBox; $txt.Text = '%CURRENT_VER%'; $txt.Location = '20,45'; $txt.Size = '340,30'; $lbl2 = New-Object Windows.Forms.Label; $lbl2.Text = 'Changelog:'; $lbl2.Location = '20,80'; $lbl2.Size = '300,20'; $txt2 = New-Object Windows.Forms.TextBox; $txt2.Text = 'Performance enhancements and security updates.'; $txt2.Location = '20,105'; $txt2.Size = '340,30'; $btn = New-Object Windows.Forms.Button; $btn.Text = 'BUMP VERSION NOW'; $btn.Location = '20,150'; $btn.Size = '340,40'; $btn.DialogResult = [Windows.Forms.DialogResult]::OK; $form.AcceptButton = $btn; $form.Controls.AddRange(@($lbl,$txt,$lbl2,$txt2,$btn)); $form.Add_Shown({$txt.Focus()}); if($form.ShowDialog() -eq 'OK'){$txt.Text + '|' + $txt2.Text}"
 
 for /f "tokens=1,2 delims=|" %%a in ('powershell -Command "%psCommand%"') do (
@@ -297,16 +299,19 @@ for /f "tokens=1,2 delims=|" %%a in ('powershell -Command "%psCommand%"') do (
 if "!NEW_VER!"=="" goto MENU
 
 echo.
-echo [*] Updating Version Files (Direct Disk Write)...
+echo [*] Updating All Version Files (Backend, Mobile, Admin)...
 powershell -Command "$v = @{ version='!NEW_VER!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); changelog='!msg!'; apkUrl='/api/master/download-apk/TimeKey_Master.apk'; forceUpdate=$false }; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
 
 if exist "%CONFIG_FILE%" (
-    echo [*] Syncing to Mobile App Configuration...
     powershell -Command "$c = Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version = '!NEW_VER!'; $c.buildDate = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%CONFIG_FILE%'"
 )
 
+if exist "%ADMIN_CONFIG%" (
+    powershell -Command "$c = Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version = '!NEW_VER!'; $c.buildDate = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%ADMIN_CONFIG%'"
+)
+
 echo.
-echo [SUCCESS] Version bumped to !NEW_VER! and synced.
+echo [SUCCESS] Version bumped to !NEW_VER! across all modules.
 pause
 goto MENU
 
