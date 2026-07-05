@@ -834,37 +834,15 @@ function App() {
         <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'8px'}}>
           <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
             <button
-              onClick={async () => {
-                if (!confirm('Rebuild APK with latest logic and Render Link?')) return;
-                setLoading(true);
-                try {
-                  const res = await fetch(`${activeApiBase}/master/build-apk`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-tenant-id': detectedTenantId },
-                    body: JSON.stringify({
-                      tenantId: user.tenantId,
-                      companyName: user.companyName,
-                      publicUrl: 'https://timeattendance-system.onrender.com/api'
-                    })
-                  });
-                  const data = await res.json();
-                  if (data.success) {
-                    alert(`BUILD SUCCESS!\nVersion: ${data.version}\n\nDownloading ${data.file}...`);
-                    window.open(data.downloadUrl, '_blank');
-                  } else {
-                    alert('BUILD FAILED: ' + (data.error || 'Server Error'));
-                  }
-                } catch (e) {
-                  alert('Request Failed. Is the local server running?');
-                } finally {
-                  setLoading(false);
-                }
+              onClick={() => {
+                const masterApkUrl = "https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk";
+                alert("📥 REDIRECTING TO CLOUD STORAGE\n\nThe Master APK is being downloaded from our GitHub Secure Cloud.\n\nNote: If you just deployed, wait 5 minutes for the cloud build to finish.");
+                window.open(masterApkUrl, '_blank');
               }}
               className="btn-hover"
-              disabled={loading}
-              style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', padding: '10px 25px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '900', fontSize: '0.8rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)', opacity: loading ? 0.5 : 1}}
+              style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', padding: '10px 25px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '900', fontSize: '0.8rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)'}}
             >
-              {loading ? '🏗️ BUILDING...' : '🚀 BUILD APK'}
+              🚀 BUILD APK
             </button>
             <button
               onClick={() => { sessionStorage.removeItem(sessionKey); window.location.reload(); }}

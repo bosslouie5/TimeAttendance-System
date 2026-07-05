@@ -1,0 +1,71 @@
+name: Build Universal Master APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'mobile-app/package-lock.json'
+
+      - name: Install Dependencies (Mobile App)
+        run: |
+          cd mobile-app
+          npm install
+
+      - name: Build Web Assets (Universal SaaS Mode)
+        run: |
+          cd mobile-app
+          # Ensure config is Universal
+          echo '{"defaultApiUrl":"https://timeattendance-system.onrender.com/api","defaultTenantId":"MASTER_UNIVERSAL","version":"1.0.5","buildDate":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > src/app_config.json
+          npm run build
+
+      - name: Sync Capacitor
+        run: |
+          cd mobile-app
+          npx cap sync android
+
+      - name: Build Android APK (Debug)
+        run: |
+          cd mobile-app/android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK to GitHub Pages Branch
+        run: |
+          mkdir -p deploy-apk
+          cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk deploy-apk/TimeKey_Master.apk
+          
+          # Push the APK to gh-pages so it's downloadable via URL
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Clone only the gh-pages branch
+          git clone --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git gh-pages-dir
+          
+          mkdir -p gh-pages-dir/apks
+          cp deploy-apk/TimeKey_Master.apk gh-pages-dir/apks/TimeKey_Master.apk
+          
+          cd gh-pages-dir
+          git add apks/TimeKey_Master.apk
+          git commit -m "Cloud Build: Updated Master APK (V1.0.5)"
+          git push origin gh-pages
