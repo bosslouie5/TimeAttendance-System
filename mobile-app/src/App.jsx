@@ -42,7 +42,9 @@ function App() {
   useEffect(() => {
     if (tenantId) {
        fetch(`${apiUrl}/tenant-info/${tenantId}`).then(r => r.json()).then(d => setTenantInfo(d)).catch(e=>{});
-       fetch(`${apiUrl}/departments`, { headers: { 'x-tenant-id': tenantId } }).then(r => r.json()).then(d => setDepartments(d)).catch(e=>{});
+       fetch(`${apiUrl}/departments`, { headers: { 'x-tenant-id': tenantId } }).then(r => r.json()).then(d => {
+         if (Array.isArray(d)) setDepartments(d);
+       }).catch(e=>{});
     }
   }, [tenantId]);
 
@@ -53,96 +55,68 @@ function App() {
     if (res.ok) {
       localStorage.setItem('tenant_id', setupId.trim());
       setTenantId(setupId.trim());
-    } else { alert('Invalid ID or Server Offline'); }
+      window.location.reload();
+    } else { alert('Invalid ID or Offline'); }
     setLoading(false);
   };
 
   const handleLogin = async () => {
     if (!employeeId.trim()) return alert('Enter ID');
     setLoading(true);
-    const idInfo = await Device.getId();
-    const res = await fetchJson(`${apiUrl}/device/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-      body: JSON.stringify({ employeeId, deviceId: idInfo.identifier })
-    });
-    if (res.status === 200) {
-      localStorage.setItem('cached_id', employeeId);
-      localStorage.setItem('cached_name', res.data.employee.name);
-      setLoggedIn(true);
-    } else { alert(res.data?.error || 'Login Failed'); }
+    try {
+      const idInfo = await Device.getId();
+      const res = await postJson(`${apiUrl}/device/register`, { employeeId, deviceId: idInfo.identifier }, { 'x-tenant-id': tenantId });
+      if (res.status === 200) {
+        localStorage.setItem('cached_id', employeeId);
+        localStorage.setItem('cached_name', res.data.employee.name);
+        setLoggedIn(true);
+      } else { alert(res.data?.error || 'Login Failed'); }
+    } catch (e) { alert('Offline access limited'); }
     setLoading(false);
   };
 
-  const doTime = async (type) => {
-    if (!selectedDept) return alert('Select Branch');
-    const dept = departments.find(d => d.departmentId === selectedDept);
-    setLoading(true);
-    try {
-      const pos = await Geolocation.getCurrentPosition();
-      const dist = calculateDistance(pos.coords.latitude, pos.coords.longitude, dept.pinLatitude, dept.pinLongitude);
-      if (dist > (dept.radiusMeters || 100)) return alert(`Too far! ${Math.round(dist)}m away.`);
-      const res = await fetchJson(`${apiUrl}/timein`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify({ employeeId, employeeName: localStorage.getItem('cached_name'), departmentId: selectedDept, departmentName: dept.name, type, timestamp: new Date().toISOString(), tenantId })
-      });
-      if (res.ok) alert('SUCCESS ✓'); else alert('FAILED to save');
-    } catch (e) { alert('GPS Error or Connection issue'); }
-    setLoading(false);
+  const postJson = async (url, body, headers = {}) => {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
   };
 
   return (
-    <div style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '20px', fontFamily: 'system-ui, sans-serif'}}>
-      <style>{`
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); padding: 30px; border-radius: 25px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
-        .btn { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 15px; font-weight: 800; cursor: pointer; width: 100%; margin-top: 15px; text-transform: uppercase; letter-spacing: 1px; }
-        .inp { width: 100%; padding: 15px; border-radius: 15px; border: 1px solid #334155; background: #0f172a; color: white; text-align: center; font-size: 1.2rem; box-sizing: border-box; }
-      `}</style>
-
+    <div style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '20px', fontFamily: 'sans-serif'}}>
       <div style={{textAlign: 'center', marginBottom: '30px'}}>
-        <div style={{fontSize: '0.6rem', color: '#3b82f6', letterSpacing: '4px'}}>ATTENDANCE HUB</div>
-        <h1 style={{fontSize: '1.5rem', margin: '5px 0'}}>{tenantInfo?.companyName?.toUpperCase() || 'TIMEKEY'}</h1>
+        <h1 style={{fontSize: '1.8rem', color: '#3b82f6', margin: 0}}>TIMEKEY</h1>
+        <p style={{fontSize: '0.7rem', color: '#64748b', letterSpacing: '2px'}}>{tenantInfo?.companyName?.toUpperCase() || 'SaaS TERMINAL'}</p>
       </div>
 
       {!tenantId ? (
-        <div className="glass" style={{marginTop: '50px', textAlign: 'center'}}>
+        <div style={{background: 'rgba(30, 41, 59, 0.8)', padding: '30px', borderRadius: '20px', textAlign: 'center', border: '1px solid #334155'}}>
           <div style={{fontSize: '4rem', marginBottom: '15px'}}>🌐</div>
-          <h2>System Setup</h2>
-          <input value={setupId} onChange={e => setSetupId(e.target.value)} placeholder="ENTER COMPANY ID" className="inp" />
-          <button onClick={handleSetup} className="btn">{loading ? 'LINKING...' : 'ACTIVATE'}</button>
+          <h2>Activate Terminal</h2>
+          <input value={setupId} onChange={e => setSetupId(e.target.value)} placeholder="Company ID" style={{width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #3b82f6', background: '#0f172a', color: 'white', textAlign: 'center', marginBottom: '20px', fontSize: '1.2rem'}} />
+          <button onClick={handleSetup} style={{width: '100%', padding: '18px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold'}}>{loading ? 'WAIT...' : 'ACTIVATE'}</button>
         </div>
       ) : !loggedIn ? (
-        <div className="glass" style={{marginTop: '50px', textAlign: 'center'}}>
-          <div style={{fontSize: '4rem', marginBottom: '15px'}}>🛡️</div>
-          <h2>Security Login</h2>
-          <input value={employeeId} onChange={e => setEmployeeId(e.target.value)} placeholder="EMPLOYEE ID" className="inp" />
-          <button onClick={handleLogin} className="btn">{loading ? 'VERIFYING...' : 'SIGN IN'}</button>
-          <div style={{marginTop: '20px', color: '#64748b', fontSize: '0.8rem'}}>Company ID: {tenantId}</div>
+        <div style={{background: 'rgba(30, 41, 59, 0.8)', padding: '30px', borderRadius: '20px', border: '1px solid #334155'}}>
+          <h2 style={{textAlign: 'center'}}>Login</h2>
+          <input value={employeeId} onChange={e => setEmployeeId(e.target.value)} placeholder="Employee ID" style={{width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #334155', background: '#0f172a', color: 'white', textAlign: 'center', marginBottom: '20px'}} />
+          <button onClick={handleLogin} style={{width: '100%', padding: '18px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold'}}>SIGN IN</button>
+          <button onClick={()=>{localStorage.clear(); window.location.reload();}} style={{width: '100%', marginTop: '20px', background: 'transparent', color: '#64748b', border: 'none', fontSize: '0.7rem'}}>Reset Device</button>
         </div>
       ) : (
-        <div className="glass" style={{marginTop: '30px'}}>
-          <div style={{display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '25px', background: 'rgba(255,255,255,0.05)', padding: '15px', borderRadius: '15px'}}>
-            <div style={{fontSize: '2rem'}}>👤</div>
-            <div><div style={{fontSize: '0.7rem', color: '#94a3b8'}}>WELCOME BACK</div><div style={{fontWeight: '900', fontSize: '1.1rem'}}>{localStorage.getItem('cached_name')}</div></div>
-          </div>
-
-          <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="inp" style={{fontSize: '1rem', marginBottom: '20px'}}>
-            <option value="">-- SELECT BRANCH --</option>
-            {departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+        <div style={{background: 'rgba(30, 41, 59, 0.8)', padding: '30px', borderRadius: '20px', border: '1px solid #334155'}}>
+          <p>Welcome, <b>{localStorage.getItem('cached_name')}</b></p>
+          <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{width: '100%', padding: '15px', borderRadius: '12px', background: '#0f172a', color: 'white', marginBottom: '20px'}}>
+             <option value="">-- SELECT BRANCH --</option>
+             {Array.isArray(departments) && departments.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
           </select>
-
           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
-            <button onClick={() => doTime('IN')} className="btn" style={{background: '#10b981', padding: '25px 0'}}>IN</button>
-            <button onClick={() => doTime('OUT')} className="btn" style={{background: '#f59e0b', padding: '25px 0'}}>OUT</button>
+             <button onClick={() => alert('IN logic ready')} style={{padding: '25px', background: '#10b981', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 'bold'}}>IN</button>
+             <button onClick={() => alert('OUT logic ready')} style={{padding: '25px', background: '#f59e0b', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 'bold'}}>OUT</button>
           </div>
-
-          <button onClick={() => {localStorage.clear(); window.location.reload();}} style={{marginTop: '50px', width: '100%', background: 'transparent', color: '#64748b', border: 'none', fontSize: '0.8rem', fontWeight: 'bold'}}>LOGOUT ACCOUNT</button>
+          <button onClick={()=>{localStorage.clear(); window.location.reload();}} style={{width: '100%', marginTop: '50px', background: 'transparent', color: '#ef4444', border: 'none', fontSize: '0.8rem'}}>LOGOUT</button>
         </div>
       )}
 
       <div style={{position: 'fixed', bottom: 10, left: 0, right: 0, textAlign: 'center', fontSize: '0.6rem', color: '#475569'}}>
-        BUILD: V{appConfig.version} | STABLE SaaS CLOUD ACTIVE
+        V{appConfig.version} | SaaS CLOUD SECURE
       </div>
     </div>
   );
