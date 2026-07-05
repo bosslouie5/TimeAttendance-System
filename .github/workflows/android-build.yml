@@ -7,15 +7,10 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout Code
@@ -41,11 +36,13 @@ jobs:
 
       - name: Build Web Admin
         run: |
-          cd web-admin && npm run build
+          cd web-admin
+          npm run build
 
       - name: Build Web Dev
         run: |
-          cd web-dev && npm run build
+          cd web-dev
+          npm run build
 
       - name: Build Mobile APK (Universal)
         run: |
@@ -56,7 +53,7 @@ jobs:
           npx cap sync android
           cd android && chmod +x gradlew && ./gradlew clean assembleDebug
 
-      - name: Prepare Package
+      - name: Prepare Final Package
         run: |
           mkdir -p final-deploy/dev
           mkdir -p final-deploy/app
@@ -65,12 +62,13 @@ jobs:
           cp -r web-dev/dist/* final-deploy/dev/
           cp -r mobile-app/dist/* final-deploy/app/
           cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-deploy/apks/TimeKey_Master.apk
+          echo "Last Deploy: $(date)" > final-deploy/version.txt
 
-      - name: Upload Artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: final-deploy/
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./final-deploy
+          force_orphan: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
