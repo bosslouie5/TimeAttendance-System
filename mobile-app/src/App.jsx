@@ -56,26 +56,25 @@ function App() {
   const [apiUrl, setApiUrl] = useState(() => {
     const saved = localStorage.getItem('server_url');
     const isNative = Capacitor.getPlatform() !== 'web';
+    const isLocalHost = !isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-    // Resolve relative API URLs to full URLs for native builds
-    let base = appConfig.defaultApiUrl || 'http://127.0.0.1:4002/api';
-    if (isNative && base.startsWith('/')) {
-       // Fallback to a common local IP if it's just a path
-       base = `http://127.0.0.1:4002${base}`;
+    let base = appConfig.defaultApiUrl || 'https://timeattendance-system.onrender.com/api';
+
+    // Auto-switch to local API if we are developing locally in browser
+    if (isLocalHost && base.includes('onrender.com')) {
+       base = 'http://127.0.0.1:4002/api';
     }
 
     if (saved) {
-      if (isNative) {
-        if (saved.startsWith('http://localhost')) return saved.replace('localhost', '127.0.0.1');
-        return saved;
-      }
+      if (isNative && saved.startsWith('http://localhost')) return saved.replace('localhost', '127.0.0.1');
       return saved;
     }
 
-    if (isNative) {
-      return base.replace('localhost', '127.0.0.1');
+    if (isNative && base.startsWith('/')) {
+       base = `http://127.0.0.1:4002${base}`;
     }
-    return base.startsWith('http') ? base : `${window.location.origin}${base}`;
+
+    return isNative ? base.replace('localhost', '127.0.0.1') : (base.startsWith('http') ? base : `${window.location.origin}${base}`);
   });
 
   const [tenantId, setTenantId] = useState(() => {
@@ -404,24 +403,28 @@ function App() {
 
   useEffect(() => {
     const checkUpdate = async () => {
-      if (!apiUrl.startsWith('http')) return;
+      if (!apiUrl.startsWith('http') || isServerDown) return;
 
+      console.log(`[OTA] Checking for updates at ${apiUrl}/app-version...`);
       try {
         const res = await getJson(`${apiUrl}/app-version`);
         if (res.ok && res.data) {
           const latest = res.data;
-          // Version comparison logic
-          const currentParts = appConfig.version.split('.').map(Number);
+          const currentVer = appConfig.version;
+
+          console.log(`[OTA] Current: ${currentVer}, Latest: ${latest.version}`);
+
+          const currentParts = currentVer.split('.').map(Number);
           const latestParts = latest.version.split('.').map(Number);
 
           let isNewer = false;
           for (let i = 0; i < 3; i++) {
             if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
-            if (latestParts[i] < currentParts[i]) break;
+            if (latestParts[i] < currentParts[i]) { isNewer = false; break; }
           }
 
           if (isNewer) {
-            console.log(`[OTA] New version detected: ${latest.version}`);
+            console.log(`[OTA] NEW VERSION FOUND: ${latest.version}`);
             setUpdateAvailable(latest);
           }
         }
@@ -430,9 +433,13 @@ function App() {
       }
     };
 
-    checkUpdate();
-    const updateInterval = setInterval(checkUpdate, 300000); // Check every 5 mins
-    return () => clearInterval(updateInterval);
+    // Initial check with small delay to ensure network is ready
+    const timer = setTimeout(checkUpdate, 5000);
+    const updateInterval = setInterval(checkUpdate, 60000); // Check every 1 minute for faster testing
+    return () => {
+        clearTimeout(timer);
+        clearInterval(updateInterval);
+    };
   }, [apiUrl, isServerDown]);
 
   const handleDownloadUpdate = () => {
