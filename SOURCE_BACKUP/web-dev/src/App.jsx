@@ -672,19 +672,21 @@ function App() {
   const updateNetworkLock = async () => {
     if (!selectedTenant) return;
     const tId = selectedTenant.tenantId || selectedTenant.username;
-    setProcessingMsg(`Updating Network Lock for ${selectedTenant.companyName}...`);
+    setProcessingMsg(`Updating Infrastructure for ${selectedTenant.companyName}...`);
     setProcessing(true);
     try {
       const res = await fetch(`${activeApiBase}/users/${tId}/network-lock`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ publicIp: tempPublicIp })
+        body: JSON.stringify({
+           publicIp: tempPublicIp,
+           adminIp: tempPublicIp // Automatically sync Virtual Host IP for Pro experience
+        })
       });
       if (res.ok) {
         await loadInitialData();
         setIsEditingIp(false);
-        setStatus('Network Lock Updated ✓');
-        setSelectedTenant(prev => ({ ...prev, publicIp: tempPublicIp }));
+        setStatus('Infrastructure Updated ✓');
       }
     } catch (e) { setStatus('Update failed'); }
     finally { setProcessing(false); }
@@ -1240,20 +1242,12 @@ function App() {
 
                    <div style={{marginTop:'10px', padding:'20px', background:'#0f172a', borderRadius:'15px', border:'1px solid #334155'}}>
                       <label style={{fontSize:'0.75rem', color:'#3b82f6', marginBottom:'10px', display:'block', fontWeight:'bold'}}>GATEKEEPER SECURITY (NETWORK LOCK)</label>
-                      <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'15px'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
                          <div style={{flex:1}}>
                             <div style={{fontSize:'0.7rem', color:'#64748b', marginBottom:'5px'}}>Allowed Office Public IP (Wildcards allowed)</div>
                             <input style={{...inputStyle, marginBottom:0, color:'#f59e0b', fontWeight:'bold'}} placeholder="e.g. 112.198.*.*" value={newPublicIp} onChange={e => setNewPublicIp(e.target.value)} />
                          </div>
                          <button onClick={captureCurrentIp} className="btn-hover" style={{...smallBtn, background:'#3b82f6', marginTop:'20px', padding:'12px'}}>Capture My IP</button>
-                      </div>
-
-                      <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
-                         <div style={{flex:1}}>
-                            <div style={{fontSize:'0.7rem', color:'#64748b', marginBottom:'5px'}}>Virtual Host IP (Local Testing)</div>
-                            <input style={{...inputStyle, marginBottom:0, color:'#10b981', fontWeight:'bold'}} placeholder="Generated IP" value={newAdminIp} onChange={e => setNewAdminIp(e.target.value)} />
-                         </div>
-                         <button onClick={() => setNewAdminIp(generateHostIp())} style={{...smallBtn, background:'#334155', marginTop:'20px'}}>Regenerate</button>
                       </div>
                    </div>
 
@@ -1266,7 +1260,6 @@ function App() {
                         <h1 style={{margin:0, fontSize:'2.5rem', fontWeight:'900', color:'#f8fafc'}}>{selectedTenant.companyName}</h1>
                         <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
                            <span style={{padding:'5px 12px', background:'#3b82f622', color:'#3b82f6', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'bold', border:'1px solid #3b82f644'}}>ACTIVE TENANT</span>
-                           <span style={{padding:'5px 12px', background:'#10b98122', color:'#10b981', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'bold', border:'1px solid #10b98144'}}>{selectedTenant.adminIp || '127.0.0.1'}</span>
                         </div>
                       </div>
                       <button onClick={() => setIsActionMenuOpen(!isActionMenuOpen)} className="btn-hover" style={{...smallBtn, background:'#334155', padding:'12px 25px'}}>Control Center</button>
@@ -1315,6 +1308,13 @@ function App() {
                           setIsEditingIp(true);
                           setIsActionMenuOpen(false);
                         }} className="btn-hover" style={{...addBtn, background:'#f59e0b'}}>🛡️ Edit Network Lock</button>
+
+                        <button onClick={() => {
+                           const activateUrl = `${window.location.origin}/activate/${selectedTenant.tenantId || selectedTenant.username}`;
+                           navigator.clipboard.writeText(activateUrl);
+                           alert('Activation Link Copied!\n\nSend this to the tenant to capture their Office IP automatically.');
+                           setIsActionMenuOpen(false);
+                        }} className="btn-hover" style={{...addBtn, background:'#10b981'}}>🚀 Issue & Activate Portal</button>
 
                         <button onClick={() => setIsActionMenuOpen(false)} className="btn-hover" style={{...addBtn, background:'#334155', gridColumn: 'span 2'}}>❌ Close Menu</button>
                      </div>
@@ -1370,14 +1370,10 @@ function App() {
                          <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.tenantId || selectedTenant.username}</div>
                       </div>
                       <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
-                         <div style={{color:'#f59e0b', fontSize:'0.75rem', marginBottom:'5px'}}>Gatekeeper Network Lock</div>
+                         <div style={{color:'#f59e0b', fontSize:'0.75rem', marginBottom:'5px'}}>Office Network Lock</div>
                          <div style={{fontWeight:'bold', color:'#f1f5f9'}}>{selectedTenant.publicIp || 'NO RESTRICTION (OPEN)'}</div>
                       </div>
-                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
-                         <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Virtual Host IP</div>
-                         <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.adminIp || '127.0.0.1'}</div>
-                      </div>
-                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155', position:'relative', overflow:'hidden'}}>
+                      <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155', position:'relative', overflow:'hidden', gridColumn: 'span 2'}}>
                          <div style={{color:'#64748b', fontSize:'0.75rem', marginBottom:'5px'}}>Contract Period</div>
                          <div style={{fontWeight:'bold', color:'#cbd5e1'}}>{selectedTenant.endDate || 'Lifetime / Enterprise'}</div>
                          {selectedTenant.endDate && (

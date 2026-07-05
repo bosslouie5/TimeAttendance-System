@@ -59,6 +59,27 @@ const webAdminDist = path.join(__dirname, `../web-admin/${distFolder}`);
 const mobileDist = path.join(__dirname, `../mobile-app/${distFolder}`);
 const apksDir = path.join(__dirname, 'apks');
 
+// --- SMART IP REDIRECT (PRO FEATURE) ---
+app.get('/', async (req, res, next) => {
+  try {
+    let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+    if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
+    const data = await loadData();
+
+    // Find a tenant that matches this IP (Public IP Lock)
+    const matchingTenant = data.users.find(u =>
+      u.publicIp && u.publicIp === clientIp
+    );
+
+    if (matchingTenant && !isTestMode) {
+      console.log(`[SMART-REDIRECT] IP ${clientIp} recognized as Tenant: ${matchingTenant.companyName}`);
+      return res.redirect(`/portal/${matchingTenant.tenantId || matchingTenant.username}`);
+    }
+  } catch (e) { console.error('[SMART-REDIRECT] Error:', e.message); }
+  next();
+});
+
 // --- PRO DIAGNOSTICS (Render Debugging) ---
 console.log(`\n\x1b[33m[DIAGNOSTICS] Checking UI Folders...\x1b[0m`);
 [
@@ -251,7 +272,9 @@ app.use('/portal/:tenantId', async (req, res, next) => {
     }
   }
 
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   // Master/Developer Bypass: allow access if local or in test mode
@@ -316,8 +339,10 @@ app.post('/api/auth/web-login', async (req, res) => {
 
   if (user) {
     // IP GATEKEEPER CHECK FOR REGULAR USERS
-    const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
-    const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
+  const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
     const allowedIp = user.publicIp || user.adminIp;
 
     if (!isLocal && !isTestMode && allowedIp && !matchIp(clientIp, allowedIp)) {
@@ -346,6 +371,52 @@ app.post('/api/auth/dev-login', async (req, res) => {
     console.warn(`[DEV-AUTH] Login failed: ${username}`);
     res.status(401).json({ error: 'Invalid Developer Credentials' });
   }
+});
+
+// --- TENANT ACTIVATION & IP CAPTURE (PRO FEATURE) ---
+app.get('/activate/:tenantId', async (req, res) => {
+  const { tenantId } = req.params;
+  const data = await loadData();
+  const userIndex = data.users.findIndex(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
+
+  if (userIndex === -1) return res.status(404).send('<h1>Invalid Activation Link</h1>');
+
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
+  // Update Tenant Data in Atlas/Local JSON
+  data.users[userIndex].publicIp = clientIp;
+  data.users[userIndex].adminIp = '';
+
+  await saveData(data);
+
+  res.send(`
+    <div style="font-family:sans-serif; text-align:center; padding-top:100px; background:#0f172a; color:white; min-height:100vh; padding-left:20px; padding-right:20px;">
+      <div style="font-size:4rem; margin-bottom:20px; animation: bounce 2s infinite;">✅</div>
+      <h1 style="color:#10b981; font-size:2rem; margin-bottom:10px;">SYSTEM ACTIVATED</h1>
+      <p style="color:#94a3b8; font-size:1.1rem; margin-bottom:30px;">Company: <b style="color:white;">${data.users[userIndex].companyName}</b></p>
+
+      <div style="background:rgba(255,255,255,0.05); padding:30px; border-radius:20px; border:1px solid #334155; display:inline-block; max-width:400px; width:100%;">
+         <div style="color:#f59e0b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">Registered Office Network</div>
+         <div style="font-size:1.8rem; font-weight:bold; color:#06b6d4; margin-bottom:20px; font-family:monospace;">${clientIp}</div>
+         <div style="height:1px; background:#334155; margin-bottom:20px;"></div>
+         <p style="margin:0; font-size:0.85rem; color:#64748b; line-height:1.5;">
+           This portal is now locked to this IP. You can access your web portal using the unique host link below.
+         </p>
+      </div>
+
+      <div style="margin-top:40px;">
+        <a href="/portal/${tenantId}" style="text-decoration:none; background:#8b5cf6; color:white; padding:15px 40px; border-radius:12px; font-weight:bold; display:inline-block; transition:0.3s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+          Launch Admin Portal
+        </a>
+      </div>
+
+      <style>
+        @keyframes bounce { 0%, 20%, 50%, 80%, 100% {transform: translateY(0);} 40% {transform: translateY(-20px);} 60% {transform: translateY(-10px);} }
+        body { margin: 0; }
+      </style>
+    </div>
+  `);
 });
 
 app.get('/api/master/dev-accounts', async (req, res) => res.json(await loadDevAccounts()));
@@ -985,13 +1056,14 @@ app.put('/api/users/:tenantId/enddate', async (req, res) => {
 
 app.put('/api/users/:tenantId/network-lock', async (req, res) => {
   const { tenantId } = req.params;
-  const { publicIp } = req.body;
+  const { publicIp, adminIp } = req.body;
   const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
-    user.publicIp = publicIp;
+    if (publicIp !== undefined) user.publicIp = publicIp;
+    if (adminIp !== undefined) user.adminIp = adminIp;
     await saveData(data);
-    res.json({ success: true, publicIp });
+    res.json({ success: true, publicIp: user.publicIp, adminIp: user.adminIp });
   } else {
     res.status(404).json({ error: 'Not found' });
   }
@@ -1133,7 +1205,9 @@ app.post('/api/master/build-apk', async (req, res) => {
 
 // Build, install and launch on first connected device via ADB
 app.post('/api/master/build-and-run-apk', async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   if (!isTestMode && !isLocal) {
@@ -1242,7 +1316,9 @@ app.post('/api/master/build-and-run-apk', async (req, res) => {
 
 // List available APKs
 app.get('/api/master/apks', async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
 
   if (!isTestMode && !isLocal) return res.status(403).json({ success: false, error: 'Not allowed' });
