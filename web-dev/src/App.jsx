@@ -129,6 +129,7 @@ function App() {
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
   const [activeApiBase, setActiveApiBase] = useState(null);
+  const [tunnelBase, setTunnelBase] = useState(null);
   const [saasStatus, setSaasStatus] = useState('Connecting...');
   const [processing, setProcessing] = useState(false);
   const [processingMsg, setProcessingMsg] = useState('');
@@ -144,22 +145,31 @@ function App() {
   useEffect(() => {
     const discoverSaaS = async () => {
       const host = window.location.hostname;
-      if (host === 'localhost' || host === '127.0.0.1' || host.includes('trycloudflare.com') || host.includes('onrender.com')) {
-         setSaasStatus('Direct Connection Active');
-         setActiveApiBase('/api');
-         return;
-      }
+
+      let discoveredUrl = null;
       try {
         const res = await fetch(`https://raw.githubusercontent.com/bosslouie5/TimeAttendance-System/main/backend/active_link.txt?t=${Date.now()}`);
         if (res.ok) {
           const url = (await res.text()).trim();
           if (url && url.startsWith('http')) {
-            setActiveApiBase(`${url}/api`);
-            setSaasStatus(`Connected: ${url}`);
-            return;
+            discoveredUrl = `${url}/api`;
+            setTunnelBase(discoveredUrl);
           }
         }
-      } catch (e) { setSaasStatus('Waiting for Backend...'); }
+      } catch (e) { }
+
+      if (host === 'localhost' || host === '127.0.0.1' || host.includes('trycloudflare.com') || host.includes('onrender.com')) {
+         setSaasStatus(discoveredUrl ? `Hybrid Active (Laptop Online)` : `Direct Connection Active`);
+         setActiveApiBase('/api');
+         return;
+      }
+
+      if (discoveredUrl) {
+          setActiveApiBase(discoveredUrl);
+          setSaasStatus(`Connected: ${discoveredUrl}`);
+      } else {
+          setSaasStatus('Waiting for Backend...');
+      }
     };
     discoverSaaS();
     const interval = setInterval(discoverSaaS, 30000);
@@ -502,19 +512,34 @@ function App() {
   };
 
   const handleBuildApk = async (tenant) => {
+    const apiToUse = tunnelBase || activeApiBase;
+
+    if (apiToUse.includes('onrender.com') || apiToUse === '/api') {
+      if (!tunnelBase) {
+        alert("CRITICAL: APK Building requires your LAPTOP to be ONLINE with DEV_TOOLS Option 2 or S running.\n\nPlease turn on your laptop and start the tunnel first.");
+        return;
+      }
+    }
+
     setProcessingMsg(`Building Custom APK for ${tenant.companyName}... This usually takes 2-3 minutes. Please do not close this tab.`);
     setProcessing(true);
     setStatus('Building APK...');
     try {
-      const res = await fetch(`${activeApiBase}/master/build-apk`, {
+      // Increase timeout for build process (300 seconds)
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 300000);
+
+      const res = await fetch(`${apiToUse}/master/build-apk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           tenantId: tenant.tenantId || tenant.username,
           companyName: tenant.companyName,
-          publicUrl: activeApiBase
+          publicUrl: activeApiBase // APK will connect back to Render for data
         })
       });
+      clearTimeout(id);
 
       if (!res.ok) throw new Error('Build Server Timeout or Error');
 
@@ -533,17 +558,27 @@ function App() {
       }
     } catch (e) {
       setStatus('Build Error');
-      alert('Build process took too long or encountered an error.');
+      if (e.name === 'AbortError') {
+         alert('Build process timed out (5 mins). Check your laptop if the build finished.');
+      } else {
+         alert('Build process encountered an error. Is your laptop online?');
+      }
     }
     finally { setProcessing(false); }
   };
 
   const handleInstallLaunchApk = async (tenant) => {
+    const apiToUse = tunnelBase || activeApiBase;
+    if (apiToUse.includes('onrender.com') || apiToUse === '/api') {
+       alert("USB Install requires direct laptop connection. Please use your Laptop for this action.");
+       return;
+    }
+
     setProcessingMsg(`Establishing USB Bridge... Installing App to Device. Please don't unplug.`);
     setProcessing(true);
     setStatus('Installing to USB Device...');
     try {
-      const res = await fetch(`${activeApiBase}/master/build-and-run-apk`, {
+      const res = await fetch(`${apiToUse}/master/build-and-run-apk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
