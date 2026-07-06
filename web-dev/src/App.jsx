@@ -34,6 +34,8 @@ function App() {
   const [editingDevUser, setEditingDevUser] = useState(null);
   const [systemIp, setSystemIp] = useState('127.0.0.1');
 
+  const [appVersion, setAppVersion] = useState('1.0.0');
+
   const AVAILABLE_PERMISSIONS = [
     { id: 'dashboard', name: 'Dashboard' },
     { id: 'employees', name: 'Staff Management' },
@@ -173,7 +175,7 @@ function App() {
   const loadInitialData = async () => {
     if (!activeApiBase) return;
     try {
-      const [u, l, e, d, da, o, pt, s] = await Promise.all([
+      const [u, l, e, d, da, o, pt, s, v] = await Promise.all([
         fetch(`${activeApiBase}/master/users`).then(r => r.json()),
         fetch(`${activeApiBase}/master/logs`).then(r => r.json()),
         fetch(`${activeApiBase}/master/employees`).then(r => r.json()),
@@ -181,9 +183,11 @@ function App() {
         fetch(`${activeApiBase}/master/dev-accounts`).then(r => r.json()),
         fetch(`${activeApiBase}/master/org-units`).then(r => r.json()),
         fetch(`${activeApiBase}/master/position-titles`).then(r => r.json()),
-        fetch(`${activeApiBase}/master/schedules`).then(r => r.json())
+        fetch(`${activeApiBase}/master/schedules`).then(r => r.json()),
+        fetch(`${activeApiBase}/app-version`).then(r => r.json())
       ]);
       setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []);
+      if (v && v.version) setAppVersion(v.version);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
     } catch (e) { setStatus('Sync Error'); }
@@ -2493,7 +2497,7 @@ function App() {
 
       {/* FOOTER */}
       <footer style={{position:'fixed', bottom:20, right:20, fontSize:'0.7rem', color:'#475569', fontWeight:'bold', letterSpacing:'1px'}} onDoubleClick={() => setActiveTab('dashboard')}>
-        V1.0.1 - PRO EDITION (Port 4002 Restoration)
+        V{appVersion} - PRO EDITION {window.location.hostname.includes('onrender.com') ? '(WEB PRODUCTION)' : '(LAB TEST)'}
       </footer>
     </div>
   );
