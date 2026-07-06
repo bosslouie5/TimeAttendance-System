@@ -354,15 +354,11 @@ function App() {
     };
   }, [tenantId, loggedIn, checkConnection, attemptSync, fetchTenantInfo]);
 
-  // OTA Update Logic & Fresh Start Check
+  // OTA Update Logic & Session Preservation
   useEffect(() => {
-    // FRESH START CHECK (Tropa Rule: Clear data after update request)
-    const needsPurge = localStorage.getItem('pending_update_purge');
-    if (needsPurge === 'true') {
-        console.log('[SYSTEM] Executing post-update data purge...');
-        localStorage.clear();
-        window.location.reload();
-        return;
+    // Clean up update flag if it exists (No more clearing of data)
+    if (localStorage.getItem('pending_update_purge') === 'true') {
+        localStorage.removeItem('pending_update_purge');
     }
 
     // WHAT'S NEW LOGIC (One-time prompt after update)
@@ -610,6 +606,7 @@ function App() {
 
     console.log(`[UPDATE] Opening download URL: ${downloadUrl}`);
 
+    // Flag that an update was initiated, but we don't clear data anymore
     localStorage.setItem('pending_update_purge', 'true');
     setStatus('📥 DOWNLOADING UPDATE...');
 
