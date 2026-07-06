@@ -149,9 +149,28 @@ function App() {
   };
 
   useEffect(() => {
-    // Strictly Local/Relative API Mode
-    setActiveApiBase('/api');
-    setSaasStatus('Local System Active');
+    // Pro-Bridge Logic: Detect if we are on Cloud (Render) and find the Local Laptop Tunnel
+    const detectBridge = async () => {
+      setActiveApiBase('/api');
+      if (window.location.hostname.includes('onrender.com')) {
+        try {
+          const res = await fetch('/api/master/active-link');
+          const tunnelUrl = await res.text();
+          if (tunnelUrl && tunnelUrl.includes('trycloudflare.com')) {
+            setTunnelBase(tunnelUrl);
+            setSaasStatus('Cloud-to-Local Bridge Active');
+            console.log(`[PRO-BRIDGE] Tunnel detected: ${tunnelUrl}`);
+          } else {
+            setSaasStatus('Cloud Portal (No Local Bridge)');
+          }
+        } catch (e) {
+          setSaasStatus('Cloud Portal');
+        }
+      } else {
+        setSaasStatus('Local System Active');
+      }
+    };
+    detectBridge();
   }, []);
 
   useEffect(() => { if (activeApiBase) loadInitialData(); }, [activeApiBase]);
@@ -594,13 +613,15 @@ function App() {
   };
 
   const handleInstallLaunchApk = async (tenant) => {
-    const apiToUse = tunnelBase || activeApiBase;
-    if (apiToUse.includes('onrender.com') || apiToUse === '/api') {
-       alert("USB Install requires direct laptop connection. Please use your Laptop for this action.");
+    let apiToUse = tunnelBase || activeApiBase;
+
+    // Pro-Bridge Activation: If on Render, we MUST use the Cloudflare Tunnel to reach the Laptop USB
+    if (window.location.hostname.includes('onrender.com') && !tunnelBase) {
+       alert("USB Install requires your Local Laptop Server to be running with Cloudflare Tunnel.\n\nPlease run [2] RUN TEST LAB -> [0] ONLINE in your DEV_TOOLS.bat.");
        return;
     }
 
-    setProcessingMsg(`Establishing USB Bridge... Installing App to Device. Please don't unplug.`);
+    setProcessingMsg(`Establishing USB Bridge... Installing App for ${tenant.companyName}.`);
     setProcessing(true);
     setStatus('Installing to USB Device...');
     try {
@@ -616,12 +637,16 @@ function App() {
       const data = await res.json();
       if (data.success) {
         setStatus('Installed & Launched ✓');
-        alert('Success: App installed and launched on device!');
+        alert('Success: App installed and launched on device via Bridge!');
       } else {
         alert('Error: ' + (data.error || 'Is device connected via USB?'));
         setStatus('Install Failed');
       }
-    } catch (e) { setStatus('USB Install Error'); }
+    } catch (e) {
+      console.error(e);
+      setStatus('USB Install Error');
+      alert("Bridge Connection Failed. Check if your Laptop is still online.");
+    }
     finally { setProcessing(false); }
   };
 
@@ -705,6 +730,43 @@ function App() {
       if (res.ok) setStatus('Broadcast Success ✓');
     } catch (e) { setStatus('Broadcast Failed'); }
     finally { setIsBroadcasting(false); }
+  };
+
+  const handleBumpSystemVersion = async () => {
+    try {
+      // 1. Fetch current version first (Rule: Dapat pre-filled)
+      const verRes = await fetch(`${activeApiBase}/app-version`);
+      const verData = await verRes.json();
+      const currentVer = verData.version || '1.0.0';
+
+      const newVer = prompt(`System Version Bump\n\nCurrent Version: ${currentVer}\n\nEnter New Version:`, currentVer);
+      if (!newVer) return;
+
+      const changelog = prompt(`Enter Changelog for ${newVer}:`, `Performance enhancements and security updates.`);
+      if (!changelog) return;
+
+      setProcessingMsg(`Updating Global System Version to ${newVer}...`);
+      setProcessing(true);
+
+      const res = await fetch(`${activeApiBase}/master/update-system`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: newVer,
+          changelog: changelog,
+          forceUpdate: false
+        })
+      });
+
+      if (res.ok) {
+        setStatus(`System Version Bumped to ${newVer} ✓`);
+        alert(`Success! Global system version is now ${newVer}.`);
+      }
+    } catch (e) {
+      alert('Failed to update system version.');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleSaveSchedule = async () => {
@@ -1330,6 +1392,8 @@ function App() {
                            alert('Activation Link Copied!\n\nSend this to the tenant to capture their Office IP automatically.');
                            setIsActionMenuOpen(false);
                         }} className="btn-hover" style={{...addBtn, background:'#10b981'}}>🚀 Issue & Activate Portal</button>
+
+                        <button onClick={handleBumpSystemVersion} className="btn-hover" style={{...addBtn, background:'#f59e0b'}}>🆙 Bump System Version</button>
 
                         <button onClick={() => setIsActionMenuOpen(false)} className="btn-hover" style={{...addBtn, background:'#334155', gridColumn: 'span 2'}}>❌ Close Menu</button>
                      </div>
