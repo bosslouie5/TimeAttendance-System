@@ -111,18 +111,18 @@ function App() {
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
 
-  // Auto-select branch if only one is available (Pro UX)
-  useEffect(() => {
-    if (departments.length === 1 && departments[0].departmentId !== selectedDepartment) {
-      setSelectedDepartment(departments[0].departmentId);
-    }
-  }, [departments, selectedDepartment]);
-
   const [departments, setDepartments] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('all_departments')) || initialData.departments;
     } catch (e) { return initialData.departments; }
   });
+
+  // Auto-select branch if only one is available (Pro UX)
+  useEffect(() => {
+    if (departments && departments.length === 1 && departments[0].departmentId !== selectedDepartment) {
+      setSelectedDepartment(departments[0].departmentId);
+    }
+  }, [departments, selectedDepartment]);
 
   const [tenantInfo, setTenantInfo] = useState(() => {
     try {
