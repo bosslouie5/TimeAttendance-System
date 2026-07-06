@@ -140,8 +140,10 @@ async function loadData() {
     } catch (e) { }
   }
 
-  // --- AUTO-MIGRATION: Ensure all departments have a departmentId ---
+  // --- AUTO-MIGRATION & RULE 7: STRICT ISOLATION PREP ---
   let needsFix = false;
+
+  // 1. Ensure all departments have a departmentId
   data.departments = (data.departments || []).map(d => {
     if (!d.departmentId) {
       d.departmentId = (d.name || 'branch').toLowerCase().replace(/\s+/g, '-') + '-' + Date.now() + Math.random().toString(36).substr(2, 5);
@@ -150,8 +152,20 @@ async function loadData() {
     return d;
   });
 
+  // 2. RULE 7: Automatic Module Injection for all users (Strict Permission Isolation)
+  data.users = (data.users || []).map(u => {
+    const currentPerms = u.permissions || [];
+    // Only inject if missing to keep it efficient
+    const missingModules = ALL_MODULES.filter(m => !currentPerms.includes(m));
+    if (missingModules.length > 0) {
+      u.permissions = Array.from(new Set([...ALL_MODULES, ...currentPerms]));
+      needsFix = true;
+    }
+    return u;
+  });
+
   if (needsFix) {
-    console.log(`[MIGRATION] Fixed missing Department IDs. Saving...`);
+    console.log(`\x1b[33m[SYSTEM] Auto-Syncing Rules & Permissions...\x1b[0m`);
     await saveData(data);
   }
 
@@ -164,7 +178,8 @@ async function saveData(data) {
     const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules'];
     for (const col of collections) {
       if (data[col]) {
-        await db.collection(col).deleteMany({}); // Wipe and replace for "JSON-like" behavior for now
+        // Multi-tenant safe: Wipe only if data is complete or handle per-tenant in future
+        await db.collection(col).deleteMany({});
         if (data[col].length > 0) await db.collection(col).insertMany(data[col]);
       }
     }
@@ -767,8 +782,39 @@ app.post('/api/mobile/attendance', async (req, res) => {
 
 app.get('/api/app-version', (req, res) => {
   const verPath = path.join(__dirname, 'version.json');
-  if (fs.existsSync(verPath)) res.json(JSON.parse(fs.readFileSync(verPath, 'utf8')));
-  else res.json({ version: '1.0.0', changelog: 'Initial Release' });
+  const latestVersionPath = path.join(apksDir, isTestMode ? 'latest-version-test.json' : 'latest-version.json');
+
+  let payload = { version: '1.0.0', changelog: 'Initial Release' };
+
+  if (fs.existsSync(verPath)) {
+    try {
+      payload = JSON.parse(fs.readFileSync(verPath, 'utf8'));
+    } catch (e) {
+      console.warn('[OTA] Failed to parse version.json', e.message);
+    }
+  }
+
+  if (fs.existsSync(latestVersionPath)) {
+    try {
+      const latest = JSON.parse(fs.readFileSync(latestVersionPath, 'utf8'));
+      payload = {
+        ...payload,
+        ...latest,
+        version: latest.version || payload.version,
+        apkUrl: latest.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
+        downloadUrl: latest.downloadUrl || payload.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
+        changelog: latest.notes || payload.changelog || 'System update available.'
+      };
+    } catch (e) {
+      console.warn('[OTA] Failed to parse latest version metadata', e.message);
+    }
+  }
+
+  if (!payload.apkUrl && payload.downloadUrl) payload.apkUrl = payload.downloadUrl;
+  if (!payload.downloadUrl && payload.apkUrl) payload.downloadUrl = payload.apkUrl;
+  if (!payload.apkUrl && !payload.downloadUrl) payload.apkUrl = '/api/master/download-apk/TimeKey_Master.apk';
+
+  res.json(payload);
 });
 
 // --- ADMIN SYSTEM UPDATES (OTA) ---

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { Device } from '@capacitor/device';
+import { Browser } from '@capacitor/browser';
 import initialData from './initial_data.json';
 import appConfig from './app_config.json';
 import './styles.css';
@@ -57,6 +58,19 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function resolveUpdateDownloadUrl(updatePayload, apiUrl) {
+  const rawUrl = updatePayload?.downloadUrl || updatePayload?.apkUrl || updatePayload?.url;
+  if (!rawUrl) return null;
+
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+  if (rawUrl.startsWith('/')) {
+    const base = apiUrl.replace(/\/api$/i, '');
+    return `${base}${rawUrl}`;
+  }
+
+  return rawUrl;
 }
 
 function App() {
@@ -281,8 +295,19 @@ function App() {
     };
   }, [tenantId, loggedIn, checkConnection, attemptSync, fetchTenantInfo]);
 
-  // OTA Update Logic
+  // OTA Update Logic & Fresh Start Check
   useEffect(() => {
+    // FRESH START CHECK (Tropa Rule: Clear data after update request)
+    const needsPurge = localStorage.getItem('pending_update_purge');
+    if (needsPurge === 'true') {
+        console.log('[SYSTEM] Executing post-update data purge...');
+        localStorage.clear();
+        // Keep the server URL so we don't have to setup again, or clear all?
+        // Master said "makapag log in ulit ng fresh", so we clear all.
+        window.location.reload();
+        return;
+    }
+
     const checkUpdate = async () => {
       if (!apiUrl.startsWith('http') || isServerDown) return;
       try {
@@ -495,34 +520,35 @@ function App() {
     }
   };
 
-  const handleDownloadUpdate = () => {
+  const handleDownloadUpdate = async () => {
     if (!updateAvailable) return;
 
-    // FORCE DELETE DATA (Tropa Rule: Refresh after update)
-    const currentUrl = apiUrl; // Keep API URL if we want to stay connected, or clear all?
-    // User said "force delete data... para makapag log in ulit ng fresh".
-    // So we clear EVERYTHING.
-    localStorage.clear();
+    const downloadUrl = resolveUpdateDownloadUrl(updateAvailable, apiUrl);
+    if (!downloadUrl) {
+      alert('No update download link is available right now.');
+      return;
+    }
 
-    const downloadUrl = updateAvailable.apkUrl.startsWith('http') ? updateAvailable.apkUrl : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
+    console.log(`[UPDATE] Opening download URL: ${downloadUrl}`);
 
-    console.log(`[UPDATE] Triggering download from: ${downloadUrl}`);
+    localStorage.setItem('pending_update_purge', 'true');
+    setStatus('📥 DOWNLOADING UPDATE...');
 
-    // Pro-level download trigger
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.target = '_blank';
-    link.download = downloadUrl.split('/').pop();
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      if (Capacitor.getPlatform() === 'web') {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        await Browser.open({ url: downloadUrl });
+      }
 
-    // Failsafe for some WebViews & Clear State
-    setTimeout(() => {
-        window.location.assign(downloadUrl);
-        // Optional: reload to force user to setup again
-        setTimeout(() => window.location.reload(), 1000);
-    }, 500);
+      setUpdateAvailable(null);
+      alert('DOWNLOAD STARTED: Pakicheck ang notification bar mo. Pagkatapos ma-install, buksan ulit ang app para sa fresh update.');
+    } catch (e) {
+      console.warn('[UPDATE] Browser open failed, trying fallback.', e);
+      if (typeof window !== 'undefined' && window.open) {
+        window.open(downloadUrl, '_system');
+      }
+    }
   };
 
   const getLogStatus = (l) => {
@@ -563,7 +589,7 @@ function App() {
       background: '#0f172a',
       minHeight: '100dvh',
       color: 'white',
-      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 20px) + 80px) 15px',
+      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 0px) + 75px) 15px',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       overflowX: 'hidden',
       display: 'flex',
@@ -573,7 +599,7 @@ function App() {
     }}>
       <style>{`
         body { background: #0f172a !important; margin: 0; width: 100%; overflow-x: hidden; height: 100dvh; }
-        .mobile-container { max-width: 500px; margin: 0 auto; flex: 1; }
+        .mobile-container { max-width: 500px; margin: 0 auto; flex: 1; position: relative; }
         .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; box-sizing: border-box; }
         .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-primary:active { transform: scale(0.96); opacity: 0.9; }
@@ -588,9 +614,9 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 500px; background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 10px 10px calc(env(safe-area-inset-bottom, 0px) + 10px) 10px; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); box-sizing: border-box; }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 8px 15px; border-radius: 15px; transition: 0.3s; flex: 1; }
-        .nav-item.active { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #111827; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-around; padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 5px) 0; z-index: 1000; box-shadow: 0 -8px 30px rgba(0,0,0,0.6); box-sizing: border-box; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #4b5563; text-decoration: none; font-size: 0.6rem; font-weight: 800; padding: 10px 5px; transition: 0.2s; flex: 1; }
+        .nav-item.active { color: #3b82f6; }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; }
