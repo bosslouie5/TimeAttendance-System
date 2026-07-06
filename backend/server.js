@@ -502,13 +502,15 @@ app.get('/api/departments', tenantGuard, async (req, res) => {
 
   // RULE: If employeeId is provided (from Mobile App), filter by assignment only
   if (employeeId) {
-    const assignment = (data.assignments || []).find(a =>
-      (a.employeeId || "").toString().toLowerCase() === employeeId.toString().toLowerCase() &&
-      (a.tenantId || "").toLowerCase() === tenantId.toLowerCase()
-    );
+    const assignedDeptIds = (data.assignments || [])
+      .filter(a =>
+        (a.employeeId || "").toString().toLowerCase() === employeeId.toString().toLowerCase() &&
+        (a.tenantId || "").toLowerCase() === tenantId.toLowerCase()
+      )
+      .map(a => a.departmentId);
 
-    if (assignment) {
-      filtered = filtered.filter(d => d.departmentId === assignment.departmentId);
+    if (assignedDeptIds.length > 0) {
+      filtered = filtered.filter(d => assignedDeptIds.includes(d.departmentId));
     } else {
       // If no assignment, return empty list to prevent unauthorized access to other branches
       filtered = [];
@@ -641,24 +643,32 @@ app.get('/api/assignments', tenantGuard, async (req, res) => {
 app.post('/api/assignments', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.assignments) data.assignments = [];
-  const { employeeId, departmentId } = req.body;
+  const { employeeId, departmentIds } = req.body;
   const tenantId = req.tenantId || 'master';
 
-  // Find existing or add new
-  const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
-  if (index !== -1) {
-    data.assignments[index].departmentId = departmentId;
-  } else {
-    data.assignments.push({ employeeId, departmentId, tenantId });
+  // 1. Remove all existing assignments for this employee under this tenant
+  data.assignments = data.assignments.filter(a => !(a.employeeId === employeeId && a.tenantId === tenantId));
+
+  // 2. Add new multi-assignments
+  if (Array.isArray(departmentIds) && departmentIds.length > 0) {
+    departmentIds.forEach(deptId => {
+      data.assignments.push({ employeeId, departmentId: deptId, tenantId });
+    });
   }
 
-  // Also update branchName in employee object for easier access
+  // 3. Sync branchName string in employee object for easier dashboard viewing
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
-  const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
-  if (emp && dept) emp.branchName = dept.name;
+  if (emp) {
+    if (Array.isArray(departmentIds) && departmentIds.length > 0) {
+      const depts = data.departments.filter(d => departmentIds.includes(d.departmentId) && d.tenantId === tenantId);
+      emp.branchName = depts.map(d => d.name).join(', ');
+    } else {
+      emp.branchName = 'Unassigned';
+    }
+  }
 
   await saveData(data);
-  res.json({ success: true });
+  res.json({ success: true, count: Array.isArray(departmentIds) ? departmentIds.length : 0 });
 });
 
 app.get('/api/logs', tenantGuard, async (req, res) => {
@@ -1108,9 +1118,11 @@ app.post('/api/master/build-apk', async (req, res) => {
 
     if (fs.existsSync(gradlePath)) {
       let gradleContent = fs.readFileSync(gradlePath, 'utf8');
+      // Increment versionCode and Sync versionName with package.json
       gradleContent = gradleContent.replace(/versionCode (\d+)/, (match, v) => `versionCode ${parseInt(v) + 1}`);
+      gradleContent = gradleContent.replace(/versionName ".*?"/, `versionName "${currentVersion}"`);
       fs.writeFileSync(gradlePath, gradleContent);
-      console.log(`[BUILD] Gradle versionCode bumped.`);
+      console.log(`[BUILD] Gradle version bumped to ${currentVersion}.`);
     }
 
     // 1. Update app_config.json & Sync version.json
