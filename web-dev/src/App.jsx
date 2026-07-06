@@ -24,7 +24,6 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [assignments, setAssignments] = useState([]);
   const [orgUnits, setOrgUnits] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [devAccounts, setDevAccounts] = useState([]);
@@ -139,10 +138,6 @@ function App() {
   const [selectedEmpForSchedule, setSelectedEmpForSchedule] = useState(null);
   const [newScheduleForEmp, setNewScheduleForEmp] = useState('');
 
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
-  const [selectedAssignBranches, setSelectedAssignBranches] = useState([]);
-
   const copyToClipboard = (text, label) => {
     navigator.clipboard.writeText(text);
     setStatus(`${label} Copied ✓`);
@@ -174,7 +169,7 @@ function App() {
   const loadInitialData = async () => {
     if (!activeApiBase) return;
     try {
-      const [u, l, e, d, da, o, pt, s, v, asg] = await Promise.all([
+      const [u, l, e, d, da, o, pt, s, v] = await Promise.all([
         fetch(`${activeApiBase}/master/users`).then(r => r.json()),
         fetch(`${activeApiBase}/master/logs`).then(r => r.json()),
         fetch(`${activeApiBase}/master/employees`).then(r => r.json()),
@@ -183,11 +178,9 @@ function App() {
         fetch(`${activeApiBase}/master/org-units`).then(r => r.json()),
         fetch(`${activeApiBase}/master/position-titles`).then(r => r.json()),
         fetch(`${activeApiBase}/master/schedules`).then(r => r.json()),
-        fetch(`${activeApiBase}/app-version`).then(r => r.json()),
-        fetch(`${activeApiBase}/assignments`).then(r => r.json())
+        fetch(`${activeApiBase}/app-version`).then(r => r.json())
       ]);
       setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []);
-      setAssignments(asg || []);
       if (v && v.version) setAppVersion(v.version);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
@@ -2301,18 +2294,19 @@ function App() {
                             )}
                          </td>
                          <td style={{textAlign:'center'}}>
-                            <button
-                              style={{...smallBtn, background:'#3b82f6', padding:'8px 12px'}}
-                              onClick={() => {
-                                setSelectedAssignEmp(e);
-                                const existing = assignments.find(a => a.employeeId === e.employeeId && a.tenantId === e.tenantId);
-                                const initialBranches = existing ? (existing.departmentIds || (existing.departmentId ? [existing.departmentId] : [])) : [];
-                                setSelectedAssignBranches(initialBranches);
-                                setIsAssignModalOpen(true);
-                              }}
-                            >
-                              Manage Branch
-                            </button>
+                            <select style={{...smallBtn, background:'#0f172a', padding:'8px 12px'}} onChange={async (event) => {
+                               const bId = event.target.value;
+                               if(!bId) return;
+                               await fetch(`${activeApiBase}/assignments?tenantId=${e.tenantId}`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
+                                  body: JSON.stringify({ employeeId: e.employeeId, departmentId: bId })
+                               });
+                               loadInitialData();
+                            }}>
+                               <option value="">Update Assignment...</option>
+                               {departments.filter(d => d.tenantId === e.tenantId).map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
+                            </select>
                          </td>
                       </tr>
                     ))}
@@ -2403,87 +2397,6 @@ function App() {
                   <div style={{display:'flex', gap:'10px'}}>
                     <button onClick={() => setIsAssignScheduleModalOpen(false)} style={{...smallBtn, flex:1, background:'#334155', padding:'12px'}}>Cancel</button>
                     <button onClick={handleSaveSchedule} className="btn-hover" style={{...addBtn, flex:2, padding:'12px'}}>Apply Schedule</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isAssignModalOpen && selectedAssignEmp && (
-            <div style={{
-              position:'fixed', top:0, left:0, width:'100vw', height:'100vh',
-              background:'rgba(15, 23, 42, 0.9)',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              zIndex:9999, backdropFilter:'blur(12px)', padding:'20px'
-            }}>
-              <div className="fade-in" style={{
-                background:'#1e293b', width:'100%', maxWidth:'450px',
-                borderRadius:'20px', border:'1px solid #334155',
-                boxShadow:'0 30px 60px rgba(0,0,0,0.8)',
-                overflow:'hidden', display:'flex', flexDirection:'column'
-              }}>
-                <div style={{padding:'20px 25px', background:'linear-gradient(to right, #1e293b, #0f172a)', borderBottom:'1px solid #334155', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                  <h2 style={{margin:0, fontSize:'1.1rem', color:'white', fontWeight:'900'}}>🔗 Multi-Branch Assignment</h2>
-                  <button onClick={() => setIsAssignModalOpen(false)} style={{background:'transparent', border:'none', color:'#64748b', fontSize:'1.2rem', cursor:'pointer'}}>✕</button>
-                </div>
-                <div style={{padding:'25px'}}>
-                  <div style={{background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '12px', marginBottom: '20px', border: '1px solid rgba(59, 130, 246, 0.2)'}}>
-                    <p style={{color:'#94a3b8', margin: '0', fontSize: '0.65rem', fontWeight: '800'}}>TENANT: {users.find(u => (u.tenantId || u.username) === selectedAssignEmp.tenantId)?.companyName}</p>
-                    <h3 style={{margin: 0, color: 'white', fontSize: '1.1rem', fontWeight: '900'}}>{selectedAssignEmp.name}</h3>
-                  </div>
-
-                  <label style={{fontSize:'0.65rem', color:'#3b82f6', display:'block', marginBottom:'10px', fontWeight:'900', letterSpacing:'0.5px'}}>AUTHORIZED BRANCHES</label>
-                  <div style={{background: '#0f172a', borderRadius: '12px', border: '1px solid #334155', maxHeight: '250px', overflowY: 'auto'}} className="custom-scroll">
-                    {departments.filter(d => d.tenantId === selectedAssignEmp.tenantId).length === 0 ? (
-                      <div style={{padding:'20px', textAlign:'center', color:'#64748b'}}>No branches found for this tenant.</div>
-                    ) : (
-                      departments.filter(d => d.tenantId === selectedAssignEmp.tenantId).map(d => {
-                        const isChecked = selectedAssignBranches.includes(d.departmentId);
-                        return (
-                          <div
-                            key={d.departmentId}
-                            onClick={() => {
-                              if (isChecked) setSelectedAssignBranches(selectedAssignBranches.filter(id => id !== d.departmentId));
-                              else setSelectedAssignBranches([...selectedAssignBranches, d.departmentId]);
-                            }}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
-                              borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer',
-                              background: isChecked ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                              transition: '0.2s'
-                            }}
-                          >
-                            <input type="checkbox" checked={isChecked} onChange={() => {}} style={{width:'18px', height:'18px'}} />
-                            <span style={{fontSize: '0.9rem', color: isChecked ? '#60a5fa' : 'white', fontWeight: isChecked ? 'bold' : 'normal'}}>{d.name}</span>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div style={{display:'flex', gap:'10px', marginTop:'25px'}}>
-                    <button onClick={() => setIsAssignModalOpen(false)} style={{...smallBtn, flex:1, background:'#334155', padding:'12px'}}>Cancel</button>
-                    <button
-                      onClick={async () => {
-                        if (selectedAssignBranches.length === 0) return alert('Pumili ng kahit isang branch.');
-                        setProcessing(true);
-                        setProcessingMsg('Updating Infrastructure...');
-                        try {
-                          await fetch(`${activeApiBase}/assignments?tenantId=${selectedAssignEmp.tenantId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedAssignEmp.tenantId },
-                            body: JSON.stringify({ employeeId: selectedAssignEmp.employeeId, departmentIds: selectedAssignBranches })
-                          });
-                          setIsAssignModalOpen(false);
-                          loadInitialData();
-                          setStatus('Assignments Updated ✓');
-                        } catch(e) { alert('Update failed'); }
-                        finally { setProcessing(false); }
-                      }}
-                      className="btn-hover" style={{...addBtn, flex:2, padding:'12px', background:'linear-gradient(135deg, #3b82f6, #2563eb)'}}
-                    >
-                      Save Changes
-                    </button>
                   </div>
                 </div>
               </div>

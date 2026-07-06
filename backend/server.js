@@ -16,16 +16,7 @@ const ALL_MODULES = [
   'assign-schedule', 'announcements', 'leave-management', 'payroll-bridge',
   'subscription-info'
 ];
-
-// Robust Loading to prevent Cloud Crash (Status 1)
-let brand = { brandName: 'Timekey', devHostname: 'TimekeyHUB', prodHostname: 'TimekeyHUB', version: '1.0.0' };
-try {
-  const brandPath = path.join(__dirname, 'brand_config.json');
-  if (fs.existsSync(brandPath)) {
-    brand = JSON.parse(fs.readFileSync(brandPath, 'utf8'));
-  }
-} catch (e) { console.warn('[INIT] Failed to load brand_config.json, using defaults.'); }
-
+const brand = JSON.parse(fs.readFileSync(path.join(__dirname, 'brand_config.json'), 'utf8'));
 const isTestMode = process.env.SYSTEM_MODE === 'test';
 const PORT = process.env.PORT || (isTestMode ? 4002 : 4001);
 const HOST = '0.0.0.0';
@@ -37,17 +28,8 @@ const DB_PATH = path.join(__dirname, dbFile);
 const MONGODB_URI = process.env.MONGODB_URI;
 let dbClient = null;
 
-// Global error handling to prevent "Status 1" crashes on Cloud providers
-process.on('uncaughtException', (err) => {
-  console.error('\x1b[31m[FATAL ERROR] Uncaught Exception:\x1b[0m', err);
-});
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('\x1b[31m[FATAL ERROR] Unhandled Rejection at:\x1b[0m', promise, 'reason:', reason);
-});
-
-console.log(`\n\x1b[36m[${(brand.brandName || 'SYSTEM').toUpperCase()}] System Starting...\x1b[0m`);
-console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + (brand.devHostname || 'localhost') + ')' : 'PRODUCTION (' + (brand.prodHostname || 'cloud') + ')'}\x1b[0m`);
-console.log(`\x1b[35m[ENV] Node Version: ${process.version}\x1b[0m`);
+console.log(`\n\x1b[36m[${brand.brandName.toUpperCase()}] System Starting...\x1b[0m`);
+console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + brand.devHostname + ')' : 'PRODUCTION (' + brand.prodHostname + ')'}\x1b[0m`);
 console.log(`\x1b[35m[ENV] Database: ${MONGODB_URI ? 'MONGODB ATLAS (Cloud)' : dbFile + ' (Local JSON)'}\x1b[0m\n`);
 
 async function getDb() {
@@ -526,12 +508,7 @@ app.get('/api/departments', tenantGuard, async (req, res) => {
     );
 
     if (assignment) {
-      // Support for multi-branch assignment (Array or single ID for backward compatibility)
-      const assignedIds = Array.isArray(assignment.departmentIds)
-        ? assignment.departmentIds
-        : (assignment.departmentId ? [assignment.departmentId] : []);
-
-      filtered = filtered.filter(d => assignedIds.includes(d.departmentId));
+      filtered = filtered.filter(d => d.departmentId === assignment.departmentId);
     } else {
       // If no assignment, return empty list to prevent unauthorized access to other branches
       filtered = [];
@@ -664,28 +641,21 @@ app.get('/api/assignments', tenantGuard, async (req, res) => {
 app.post('/api/assignments', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.assignments) data.assignments = [];
-  const { employeeId, departmentId, departmentIds } = req.body;
+  const { employeeId, departmentId } = req.body;
   const tenantId = req.tenantId || 'master';
-
-  // Support both single and multiple for flexibility
-  const finalIds = departmentIds || (departmentId ? [departmentId] : []);
 
   // Find existing or add new
   const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
   if (index !== -1) {
-    data.assignments[index].departmentIds = finalIds;
-    // Keep single ID for legacy if needed, but primarily use IDs array
-    data.assignments[index].departmentId = finalIds[0] || '';
+    data.assignments[index].departmentId = departmentId;
   } else {
-    data.assignments.push({ employeeId, departmentIds: finalIds, departmentId: finalIds[0] || '', tenantId });
+    data.assignments.push({ employeeId, departmentId, tenantId });
   }
 
-  // Also update branchName in employee object for easier access (Show multiple names)
+  // Also update branchName in employee object for easier access
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
-  if (emp) {
-    const assignedDepts = data.departments.filter(d => finalIds.includes(d.departmentId) && d.tenantId === tenantId);
-    emp.branchName = assignedDepts.map(d => d.name).join(', ');
-  }
+  const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
+  if (emp && dept) emp.branchName = dept.name;
 
   await saveData(data);
   res.json({ success: true });
@@ -1410,12 +1380,6 @@ app.listen(PORT, HOST, () => {
 
 // --- SAAS SELF-HEALING: DISCOVERY HUB ---
 function startTunnelMonitor() {
-  // Disable monitor if running in environment like Render (Linux/No local Git)
-  if (process.env.RENDER || process.env.NODE_ENV === 'production') {
-    console.log(`[HUB] Cloud Environment Detected. Local Tunnel Monitor suspended.`);
-    return;
-  }
-
   const tunnelLogPath = path.join(__dirname, 'tunnel.log');
   // Use ntfy.sh - super reliable for broadcast
   const REGISTRY_URL = 'https://ntfy.sh/attendance_hub_60003078_active_link';
