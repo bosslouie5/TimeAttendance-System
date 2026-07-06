@@ -804,7 +804,8 @@ app.get('/api/app-version', (req, res) => {
   const verPath = path.join(__dirname, 'version.json');
   const latestVersionPath = path.join(apksDir, isTestMode ? 'latest-version-test.json' : 'latest-version.json');
 
-  let payload = { version: '1.0.0', changelog: 'Initial Release' };
+  // Any version format allowed - no regex restrictions
+  let payload = { version: brand.version || '1.0.0', changelog: 'System is running normally.' };
 
   if (fs.existsSync(verPath)) {
     try {
