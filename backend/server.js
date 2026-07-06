@@ -537,7 +537,6 @@ app.get('/api/departments', tenantGuard, async (req, res) => {
       filtered = [];
     }
   }
-  }
 
   res.json(filtered);
 });
