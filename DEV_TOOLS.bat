@@ -125,14 +125,25 @@ goto MENU
 set "VER_FILE=backend\version.json"
 set "CONFIG_FILE=mobile-app\src\app_config.json"
 set "ADMIN_CONFIG=web-admin\src\app_config.json"
+set "GRADLE_FILE=mobile-app\android\app\build.gradle"
 set "CUR_V=1.0.0"
 if exist "%CONFIG_FILE%" for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CUR_V=%%v"
-set "ps=Add-Type -AssemblyName System.Windows.Forms; $f=New-Object Windows.Forms.Form; $f.Text='VERSION BUMP'; $f.Size='350,180'; $f.StartPosition='CenterScreen'; $f.FormBorderStyle='FixedDialog'; $l=New-Object Windows.Forms.Label; $l.Text='Enter New Version (Current: %CUR_V%):'; $l.Location='20,20'; $l.Size='300,20'; $t=New-Object Windows.Forms.TextBox; $t.Text='%CUR_V%'; $t.Location='20,45'; $t.Size='290,30'; $b=New-Object Windows.Forms.Button; $b.Text='BUMP NOW'; $b.Location='20,85'; $b.Size='290,35'; $b.DialogResult='OK'; $f.AcceptButton=$b; $f.Controls.AddRange(@($l,$t,$b)); if($f.ShowDialog() -eq 'OK'){$t.Text}"
-for /f "delims=" %%a in ('powershell -Command "%ps%"') do set "NEW_V=%%a"
-if "!NEW_V!"=="" exit /b
+
+echo.
+echo [ VERSION BUMP ]
+echo Current Version: %CUR_V%
+set /p NEW_V="Enter New Version (or press Enter to keep): "
+if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
+
 powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
 powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%CONFIG_FILE%'"
 if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%ADMIN_CONFIG%'"
+
+:: Increment Gradle Version Code
+if exist "%GRADLE_FILE%" (
+    powershell -Command "$content = Get-Content '%GRADLE_FILE%'; $newContent = $content -replace 'versionCode (\d+)', { param($m) 'versionCode ' + ([int]$m.Groups[1].Value + 1) }; $newContent | Set-Content '%GRADLE_FILE%'"
+    echo [OK] Gradle Version Code Incremented.
+)
 exit /b
 
 :BACKUP
