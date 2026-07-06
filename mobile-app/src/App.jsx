@@ -135,6 +135,37 @@ function App() {
     } catch (e) { return []; }
   });
 
+  const groupedLogs = useMemo(() => {
+    const groups = {};
+    personalLogs.forEach(log => {
+      const d = new Date(log.timestamp);
+      const dateKey = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const branchKey = log.departmentName || 'Unknown Branch';
+      const key = `${dateKey}_${branchKey}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          date: dateKey,
+          branch: branchKey,
+          in: null,
+          out: null,
+          rawTimestamp: d.getTime()
+        };
+      }
+
+      if (log.type === 'IN') {
+        if (!groups[key].in || new Date(log.timestamp) < new Date(groups[key].in.timestamp)) {
+           groups[key].in = log;
+        }
+      } else if (log.type === 'OUT') {
+        if (!groups[key].out || new Date(log.timestamp) > new Date(groups[key].out.timestamp)) {
+           groups[key].out = log;
+        }
+      }
+    });
+    return Object.values(groups).sort((a, b) => b.rawTimestamp - a.rawTimestamp);
+  }, [personalLogs]);
+
   const [cachedEmployee, setCachedEmployee] = useState(() => {
     try {
         const all = JSON.parse(localStorage.getItem('all_employees') || '[]');
@@ -551,20 +582,20 @@ function App() {
     }
   };
 
-  const getLogStatus = (l) => {
-      if (l.status && l.status !== 'Pending') return l.status.toUpperCase();
+  const getGroupStatus = (group) => {
+      const log = group.in || group.out;
+      if (!log) return 'PENDING';
+
+      if (log.status && log.status !== 'Pending') return log.status.toUpperCase();
 
       const emp = cachedEmployee;
       if (!emp || !emp.schedule) return 'RECORDED';
 
-      const timeInStr = l.timeIn || (l.type === 'IN' ? l.timestamp : null);
-      if (!timeInStr) return 'PENDING';
+      if (!group.in) return 'NO IN';
 
-      const d = new Date(l.timestamp);
+      const d = new Date(group.in.timestamp);
       const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-      const logInTime = new Date(timeInStr);
-      const logIn = new Date(`${datePart}T${String(logInTime.getHours()).padStart(2,'0')}:${String(logInTime.getMinutes()).padStart(2,'0')}:00`);
+      const logIn = new Date(group.in.timestamp);
 
       let sStart = null;
       const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/);
@@ -576,7 +607,7 @@ function App() {
           const grace = 15;
           const lateThreshold = new Date(sStart.getTime() + grace * 60000);
           if (logIn > lateThreshold) return 'LATE';
-          return 'COMPLETED';
+          return group.out ? 'COMPLETED' : 'DUTY';
       }
 
       return 'RECORDED';
@@ -610,6 +641,16 @@ function App() {
         .nav-item.active { color: #3b82f6; }
         .nav-item.active span:first-child { transform: translateY(-2px) scale(1.15); filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5)); }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
+        .log-table { width: 100%; border-collapse: separate; border-spacing: 0 12px; margin-top: 10px; }
+        .log-table th { text-align: left; padding: 0 10px 10px 10px; color: #64748b; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
+        .log-table td { padding: 18px 12px; background: rgba(30, 41, 59, 0.4); border-top: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; }
+        .log-table td:first-child { border-left: 1px solid rgba(255,255,255,0.05); border-top-left-radius: 20px; border-bottom-left-radius: 20px; }
+        .log-table td:last-child { border-right: 1px solid rgba(255,255,255,0.05); border-top-right-radius: 20px; border-bottom-right-radius: 20px; }
+        .time-label { font-size: 0.6rem; color: #64748b; font-weight: 800; display: block; margin-bottom: 4px; letter-spacing: 0.5px; }
+        .time-value { font-size: 0.8rem; font-weight: 700; color: #f8fafc; font-family: 'JetBrains Mono', monospace; }
+        .branch-name { font-weight: 800; font-size: 0.85rem; color: #fff; display: block; margin-bottom: 4px; }
+        .log-date { font-size: 0.65rem; color: #3b82f6; font-weight: 900; }
+        .badge-duty { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; }
       `}</style>
@@ -727,38 +768,65 @@ function App() {
 
               {activeTab === 'logs' && (
                 <div className="fade-in">
-                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
-                     <h2 style={{margin: 0}}>Personal Logs</h2>
-                     <button onClick={syncSystemData} style={{background: 'rgba(59, 130, 246, 0.1)', border: 'none', color: '#3b82f6', padding: '8px 15px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '900'}}>REFRESH</button>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '15px 20px', borderRadius: '20px'}}>
+                     <h2 style={{margin: 0, fontSize: '1.2rem'}}>Attendance Logs</h2>
+                     <button onClick={syncSystemData} style={{background: 'rgba(59, 130, 246, 0.1)', border: 'none', color: '#3b82f6', padding: '10px 18px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900', cursor: 'pointer'}}>REFRESH</button>
                   </div>
 
-                  {personalLogs.length === 0 ? (
-                    <div style={{textAlign: 'center', padding: '50px 20px', color: '#64748b'}}>
-                        <div style={{fontSize: '4rem', marginBottom: '20px'}}>📋</div>
-                        <p>Walang activity history na nahanap.</p>
+                  {groupedLogs.length === 0 ? (
+                    <div style={{textAlign: 'center', padding: '60px 20px', color: '#64748b'}}>
+                        <div style={{fontSize: '5rem', marginBottom: '20px'}}>📋</div>
+                        <p style={{fontWeight: '700'}}>Walang activity history na nahanap.</p>
                     </div>
                   ) : (
-                    personalLogs.slice().reverse().map((l, i) => {
-                        const status = getLogStatus(l);
-                        return (
-                            <div key={i} className="log-card fade-in">
-                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
-                                    <div>
-                                        <div style={{fontWeight: '900', fontSize: '1.1rem', marginBottom: '4px'}}>{l.departmentName}</div>
-                                        <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{new Date(l.timestamp).toLocaleString()}</div>
-                                    </div>
-                                    <span className={`badge ${status === 'COMPLETED' ? 'badge-success' : status === 'LATE' ? 'badge-late' : 'badge-pending'}`}>
-                                        {status}
+                    <div style={{overflowX: 'auto'}}>
+                      <table className="log-table">
+                        <thead>
+                          <tr>
+                            <th>Branch / Date</th>
+                            <th>Time In/Out</th>
+                            <th style={{textAlign: 'center'}}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {groupedLogs.map((group, i) => {
+                            const status = getGroupStatus(group);
+                            return (
+                              <tr key={i} className="fade-in" style={{animationDelay: `${i * 0.05}s`}}>
+                                <td>
+                                  <span className="branch-name">{group.branch}</span>
+                                  <span className="log-date">{group.date}</span>
+                                </td>
+                                <td>
+                                  <div style={{marginBottom: '8px'}}>
+                                    <span className="time-label">IN</span>
+                                    <span className="time-value" style={{color: group.in ? '#10b981' : '#334155'}}>
+                                      {group.in ? new Date(group.in.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
                                     </span>
-                                </div>
-                                <div style={{marginTop: '15px', display: 'flex', gap: '15px', fontSize: '0.75rem', fontWeight: '800'}}>
-                                    <span style={{color: l.type === 'IN' ? '#10b981' : '#f59e0b'}}>{l.type} RECORDED</span>
-                                    <span style={{color: '#64748b'}}>•</span>
-                                    <span style={{color: '#64748b'}}>{l.distanceMeters}M AWAY</span>
-                                </div>
-                            </div>
-                        );
-                    })
+                                  </div>
+                                  <div>
+                                    <span className="time-label">OUT</span>
+                                    <span className="time-value" style={{color: group.out ? '#f59e0b' : '#334155'}}>
+                                      {group.out ? new Date(group.out.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td style={{textAlign: 'center'}}>
+                                  <span className={`badge ${
+                                    status === 'COMPLETED' ? 'badge-success' :
+                                    status === 'LATE' ? 'badge-late' :
+                                    status === 'DUTY' ? 'badge-duty' :
+                                    'badge-pending'
+                                  }`}>
+                                    {status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               )}
