@@ -65,22 +65,14 @@ function App() {
   const [apiUrl, setApiUrl] = useState(() => {
     const saved = localStorage.getItem('server_url');
     const isNative = Capacitor.getPlatform() !== 'web';
-    const isLocalHost = !isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    // Check if we are in local development testing (usually via USB Bridge)
+    const isLocalDev = saved && (saved.includes('127.0.0.1') || saved.includes('localhost'));
 
     let base = appConfig.defaultApiUrl || 'https://timeattendance-system.onrender.com/api';
 
-    if (isLocalHost && base.includes('onrender.com')) {
-       base = 'http://127.0.0.1:4002/api';
-    }
-
-    if (saved) {
-      if (isNative && saved.startsWith('http://localhost')) return saved.replace('localhost', '127.0.0.1');
-      return saved;
-    }
-
-    if (isNative && base.startsWith('/')) {
-       base = `http://127.0.0.1:4002${base}`;
-    }
+    // Force Lab URL if detected we are running in local environment or if production is unreachable
+    if (saved) return saved;
 
     return isNative ? base.replace('localhost', '127.0.0.1') : (base.startsWith('http') ? base : `${window.location.origin}${base}`);
   });
@@ -145,15 +137,22 @@ function App() {
   const checkConnection = useCallback(async () => {
     if (!apiUrl.startsWith('http')) return;
     try {
-      const res = await fetchWithTimeout(`${apiUrl}/settings`, { timeout: 3000 });
+      // Use a faster check and handle both cloud and local
+      const res = await fetchWithTimeout(`${apiUrl}/settings`, { timeout: 5000 });
       if (res.ok) {
         setIsServerDown(false);
         if (status === 'Offline Mode') setStatus('System Online');
-      } else throw new Error('Unreachable');
+      } else {
+        throw new Error('Unreachable');
+      }
     } catch (e) {
+      // Don't immediately switch to offline if it was just a small hiccup
       setIsServerDown(true);
       setStatus('Offline Mode');
-      discoverNewLink();
+      // If we are offline, try to find the newest link (Discovery Hub)
+      if (!apiUrl.includes('127.0.0.1')) {
+         discoverNewLink();
+      }
     }
   }, [apiUrl, status]);
 
@@ -168,11 +167,12 @@ function App() {
         if (newUrl && (newUrl.includes('trycloudflare.com') || newUrl.includes('onrender.com'))) {
           const formatted = newUrl.endsWith('/api') ? newUrl : `${newUrl}/api`;
           if (formatted !== apiUrl) {
+            console.log(`[HUB] Switching to new link: ${formatted}`);
             setApiUrl(formatted);
             localStorage.setItem('server_url', formatted);
             setIsServerDown(false);
-            setStatus('System Updated ✓');
-            syncSystemData(tenantId, localStorage.getItem('cached_id'));
+            setStatus('Server Fixed ✓');
+            if (tenantId) syncSystemData(tenantId, localStorage.getItem('cached_id'));
           }
         }
       }
@@ -196,7 +196,7 @@ function App() {
 
       if (empRes.status === 200) {
         localStorage.setItem('all_employees', JSON.stringify(empRes.data));
-        const current = empRes.data.find(e => e.employeeId === targetEmpId);
+        const current = empRes.data.find(e => (e.employeeId || "").toString() === (targetEmpId || "").toString());
         if (current) setCachedEmployee(current);
       }
       if (deptRes.status === 200) {
@@ -204,11 +204,11 @@ function App() {
         setDepartments(deptRes.data);
       }
       if (logRes.status === 200) {
-        const myLogs = logRes.data.filter(l => l.employeeId === targetEmpId);
+        const myLogs = logRes.data.filter(l => (l.employeeId || "").toString() === (targetEmpId || "").toString());
         localStorage.setItem('personal_logs', JSON.stringify(myLogs));
         setPersonalLogs(myLogs);
       }
-      setStatus('Updated ✓');
+      setStatus('Data Synced ✓');
     } catch (e) {}
     setIsSyncing(false);
   };
@@ -239,6 +239,7 @@ function App() {
       setPendingLogs(remaining);
       localStorage.setItem('pending_logs', JSON.stringify(remaining));
       setStatus(forcedLogs ? `Sync completed ✓` : `Auto-synced ${processedCount} records!`);
+      syncSystemData();
     }
     setIsSyncing(false);
   }, [apiUrl, tenantId, isSyncing, isServerDown]);
@@ -256,7 +257,7 @@ function App() {
 
   useEffect(() => {
     checkConnection();
-    const connInterval = setInterval(checkConnection, 15000);
+    const connInterval = setInterval(checkConnection, 10000);
     const syncInterval = setInterval(attemptSync, 20000);
 
     if (tenantId) {
@@ -287,7 +288,7 @@ function App() {
           }
           if (isNewer) setUpdateAvailable(latest);
         }
-      } catch (err) { console.warn('[OTA] Update check failed'); }
+      } catch (err) { }
     };
     const timer = setTimeout(checkUpdate, 5000);
     return () => clearTimeout(timer);
@@ -306,12 +307,12 @@ function App() {
         setTenantId(tid);
         setTenantInfo(res.data);
         setStatus('Company Linked ✓');
-        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is now ready.`);
+        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is ngayon handa na.`);
       } else {
         alert('INVALID COMPANY ID');
       }
     } catch (e) {
-      alert('CONNECTION ERROR: Offline linking not supported.');
+      alert('CONNECTION ERROR: Pakicheck ang iyong internet o ang server link.');
     } finally {
       setIsSettingUp(false);
       setStatus('System Ready');
@@ -346,28 +347,28 @@ function App() {
         setLoading(false);
         return;
       } else if (res.status === 404) {
-        alert('ID Not Found in Cloud Portal.');
+        alert('ID Not Found sa system. Pakicheck ang iyong ID.');
       } else if (res.status === 403) {
-        alert(res.data?.error || 'Access Denied');
+        alert(res.data?.error || 'Access Denied: Device mismatch.');
       }
     } catch (e) { console.warn('Online login failed, trying cache...'); }
 
     const allEmployees = JSON.parse(localStorage.getItem('all_employees') || '[]');
-    const cachedEmp = allEmployees.find(e => e.employeeId.toString().toLowerCase() === cleanId.toLowerCase());
+    const cachedEmp = allEmployees.find(e => (e.employeeId || "").toString().toLowerCase() === cleanId.toLowerCase());
     if (cachedEmp) {
       setLoggedIn(true);
       localStorage.setItem('cached_id', cachedEmp.employeeId);
       localStorage.setItem('cached_name', cachedEmp.name);
       setStatus('Offline Access ✓');
-      alert('OFFLINE MODE: Logged in using cached credentials.');
+      alert('OFFLINE MODE: Nakapasok gamit ang cached credentials.');
     } else {
-      alert('CONNECTION REQUIRED for first-time login.');
+      alert('CONNECTION REQUIRED para sa unang login.');
     }
     setLoading(false);
   };
 
   const recordAttendance = async (type) => {
-    if (!selectedDepartment) return alert('Please select a branch first!');
+    if (!selectedDepartment) return alert('Pumili muna ng work branch!');
     const dept = departments.find(d => d.departmentId === selectedDepartment);
     if (!dept) return;
 
@@ -382,7 +383,7 @@ function App() {
         pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 10000 });
       } catch (err) {
         setStatus('❌ GPS Error');
-        alert('LOCATION ERROR: Please enable GPS.');
+        alert('LOCATION ERROR: Pakibuhay ang GPS sa iyong settings.');
         setLoading(false);
         return;
       }
@@ -393,7 +394,7 @@ function App() {
 
     if (dist > allowedRadius) {
       setStatus('❌ Too Far');
-      alert(`ACCESS DENIED!\n\nYou are ${Math.round(dist)}m away.\nAllowed: ${allowedRadius}m.`);
+      alert(`ACCESS DENIED!\n\nNasa ${Math.round(dist)}m ka palayo.\nAllowed Radius: ${allowedRadius}m.`);
       setLoading(false);
       return;
     }
@@ -416,7 +417,7 @@ function App() {
       const response = await postJson(`${apiUrl}/mobile/attendance`, logData, { 'x-tenant-id': tenantId });
       if (response.status === 200) {
         setStatus(`${type} Success ✓`);
-        alert(`SUCCESS recorded.`);
+        alert(`SUCCESS: Attendance recorded!`);
         syncSystemData();
       } else {
         throw new Error('Sync failed');
@@ -427,7 +428,7 @@ function App() {
       localStorage.setItem('pending_logs', JSON.stringify(updatedPending));
       setPendingLogs(updatedPending);
       setStatus('Log Cached ✓');
-      alert(`OFFLINE SUCCESS! Saved locally.`);
+      alert(`OFFLINE SUCCESS! Na-save muna sa phone.`);
     } finally {
       setLoading(false);
     }
@@ -455,7 +456,6 @@ function App() {
       const emp = cachedEmployee;
       if (!emp || !emp.schedule) return 'RECORDED';
 
-      // Advanced status logic same as web-admin
       const timeInStr = l.timeIn || (l.type === 'IN' ? l.timestamp : null);
       if (!timeInStr) return 'PENDING';
 
@@ -465,7 +465,6 @@ function App() {
       const logInTime = new Date(timeInStr);
       const logIn = new Date(`${datePart}T${String(logInTime.getHours()).padStart(2,'0')}:${String(logInTime.getMinutes()).padStart(2,'0')}:00`);
 
-      // Extract schedule start
       let sStart = null;
       const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/);
       if (timeMatch) {
@@ -473,7 +472,7 @@ function App() {
       }
 
       if (sStart) {
-          const grace = 15; // default grace
+          const grace = 15;
           const lateThreshold = new Date(sStart.getTime() + grace * 60000);
           if (logIn > lateThreshold) return 'LATE';
           return 'COMPLETED';
@@ -485,7 +484,7 @@ function App() {
   // --- RENDER ---
 
   return (
-    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 100px 15px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden'}}>
+    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 120px 15px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden'}}>
       <style>{`
         body { background: #0f172a !important; margin: 0; }
         .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 30px 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
@@ -494,16 +493,16 @@ function App() {
         .input-field { width: 100%; padding: 18px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1.1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
         .input-field:focus { border-color: #3b82f6; background: rgba(15, 23, 42, 0.8); }
         .label-visible { color: #94a3b8; font-size: 0.75rem; font-weight: 800; margin-bottom: 12px; display: block; letter-spacing: 1.5px; text-transform: uppercase; }
-        .fade-in { animation: fadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         .pulse { animation: pulseAnim 2s infinite; }
         @keyframes pulseAnim { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } 100% { transform: scale(1); opacity: 1; } }
         .badge { padding: 8px 16px; border-radius: 12px; font-size: 0.65rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; border: 1px solid currentColor; }
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 20px; left: 20px; right: 20px; background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(20px); border-radius: 25px; border: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 10px; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 5px; color: #64748b; text-decoration: none; font-size: 0.7rem; font-weight: 800; padding: 10px; border-radius: 15px; transition: 0.3s; }
+        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 15px 10px 25px 10px; z-index: 1000; box-shadow: 0 -10px 30px rgba(0,0,0,0.5); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 5px; color: #64748b; text-decoration: none; font-size: 0.7rem; font-weight: 800; padding: 8px 20px; border-radius: 15px; transition: 0.3s; }
         .nav-item.active { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
@@ -515,7 +514,7 @@ function App() {
            <div className="glass-card fade-in">
               <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
               <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>Time Attendance</h1>
-              <p style={{color: '#94a3b8', marginBottom: '40px'}}>Enter Company ID to activate terminal.</p>
+              <p style={{color: '#94a3b8', marginBottom: '40px'}}>Enter Company ID para simulan ang terminal.</p>
               <input value={setupId} onChange={e => setSetupId(e.target.value)} placeholder="e.g. 571044" className="input-field" style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900'}} />
               <button onClick={handleSetupTenant} disabled={isSettingUp} className="btn-primary">{isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}</button>
            </div>
@@ -536,7 +535,7 @@ function App() {
             </div>
           )}
 
-          <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '20px'}} onDoubleClick={handleUpdateServer}>
+          <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '15px'}} onDoubleClick={handleUpdateServer}>
               <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Time Attendance Hub</div>
               <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff'}}>{tenantInfo?.companyName?.toUpperCase() || 'OFFICIAL HUB'}</h1>
           </div>
@@ -556,7 +555,7 @@ function App() {
             <>
               {activeTab === 'home' && (
                 <div className="fade-in">
-                  <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                  <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', border: '1px solid rgba(255,255,255,0.05)'}}>
                     <div>
                       <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800'}}>SYSTEM STATUS</div>
                       <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px'}}>
@@ -609,7 +608,7 @@ function App() {
                   {personalLogs.length === 0 ? (
                     <div style={{textAlign: 'center', padding: '50px 20px', color: '#64748b'}}>
                         <div style={{fontSize: '4rem', marginBottom: '20px'}}>📋</div>
-                        <p>No activity history found yet.</p>
+                        <p>Walang activity history na nahanap.</p>
                     </div>
                   ) : (
                     personalLogs.slice().reverse().map((l, i) => {
@@ -661,7 +660,7 @@ function App() {
                          </div>
                       </div>
 
-                      <button onClick={() => {if(confirm('Are you sure you want to logout?')){localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} className="btn-primary" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '2px solid rgba(239, 68, 68, 0.2)', boxShadow: 'none'}}>LOGOUT ACCOUNT</button>
+                      <button onClick={() => {if(confirm('Sigurado ka bang mag-logout?')){localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} className="btn-primary" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '2px solid rgba(239, 68, 68, 0.2)', boxShadow: 'none'}}>LOGOUT ACCOUNT</button>
                    </div>
 
                    <div style={{textAlign: 'center', marginTop: '30px', color: '#64748b', fontSize: '0.7rem', fontWeight: '900'}}>

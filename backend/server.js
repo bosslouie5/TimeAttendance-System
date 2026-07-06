@@ -709,7 +709,10 @@ app.post('/api/mobile/attendance', async (req, res) => {
   const { employeeId, tenantId, type, latitude, longitude, departmentName, status } = req.body;
   const data = await loadData();
 
-  const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
+  const emp = data.employees.find(e =>
+    (e.employeeId || "").toString().toLowerCase() === (employeeId || "").toString().toLowerCase() &&
+    (e.tenantId || "").toLowerCase() === (tenantId || "").toLowerCase()
+  );
   if (!emp) return res.status(404).json({ error: 'Employee not found' });
 
   const timestamp = new Date().toISOString();
