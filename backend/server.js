@@ -126,28 +126,36 @@ app.get('/api/master/download-apk/:filename', (req, res) => {
 // --- DATABASE UTILS ---
 async function loadData() {
   const db = await getDb();
+  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] };
+
   if (db) {
     const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules'];
-    const data = { settings: {} };
     for (const col of collections) {
       data[col] = await db.collection(col).find({}).toArray();
     }
-    return data;
+  } else if (fs.existsSync(DB_PATH)) {
+    try {
+      const local = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+      data = { ...data, ...local };
+    } catch (e) { }
   }
 
-  if (!fs.existsSync(DB_PATH)) return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] };
-  try {
-    const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-    if (!data.employees) data.employees = [];
-    if (!data.departments) data.departments = [];
-    if (!data.logs) data.logs = [];
-    if (!data.users) data.users = [];
-    if (!data.orgUnits) data.orgUnits = [];
-    if (!data.assignments) data.assignments = [];
-    if (!data.positionTitles) data.positionTitles = [];
-    if (!data.schedules) data.schedules = [];
-    return data;
-  } catch (e) { return { users: [], settings: {}, employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] }; }
+  // --- AUTO-MIGRATION: Ensure all departments have a departmentId ---
+  let needsFix = false;
+  data.departments = (data.departments || []).map(d => {
+    if (!d.departmentId) {
+      d.departmentId = (d.name || 'branch').toLowerCase().replace(/\s+/g, '-') + '-' + Date.now() + Math.random().toString(36).substr(2, 5);
+      needsFix = true;
+    }
+    return d;
+  });
+
+  if (needsFix) {
+    console.log(`[MIGRATION] Fixed missing Department IDs. Saving...`);
+    await saveData(data);
+  }
+
+  return data;
 }
 
 async function saveData(data) {

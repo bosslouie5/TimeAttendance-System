@@ -1844,7 +1844,7 @@ function App() {
                                   <button onClick={() => editBranch(d)} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
                                   <button onClick={async () => {
                                     if(!d.departmentId) {
-                                      alert('Error: Missing ID. This item was created before the fix. Please refresh or delete manually in the JSON file.');
+                                      alert('Error: Data is still syncing. Please wait 5 seconds and refresh.');
                                       return;
                                     }
                                     if(!confirm(`Delete branch ${d.name}?`)) return;
