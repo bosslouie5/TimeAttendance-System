@@ -641,8 +641,8 @@ app.post('/api/logs', tenantGuard, async (req, res) => {
 
 app.get('/api/devices', tenantGuard, async (req, res) => {
   const data = await loadData();
-  // Devices are employees with deviceId
-  res.json(data.employees.filter(e => e.tenantId === (req.tenantId || 'master') && e.deviceId));
+  // Devices are employees with registeredDeviceId
+  res.json(data.employees.filter(e => e.tenantId === (req.tenantId || 'master') && (e.registeredDeviceId || e.deviceId)));
 });
 
 app.post('/api/device/reset', tenantGuard, async (req, res) => {
@@ -651,6 +651,9 @@ app.post('/api/device/reset', tenantGuard, async (req, res) => {
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === (req.tenantId || 'master'));
   if (emp) {
     delete emp.deviceId;
+    delete emp.registeredDeviceId;
+    delete emp.registeredDeviceName;
+    delete emp.registrationDate;
     await saveData(data);
     res.json({ success: true });
   } else res.status(404).send();
@@ -658,7 +661,7 @@ app.post('/api/device/reset', tenantGuard, async (req, res) => {
 
 // Mobile App Auth & Log
 app.post('/api/mobile/login', async (req, res) => {
-  const { tenantId, employeeId, deviceId } = req.body;
+  const { tenantId, employeeId, deviceId, deviceName } = req.body;
   const data = await loadData();
 
   const user = data.users.find(u => (u.tenantId || u.username || "").toLowerCase() === (tenantId || "").toLowerCase());
@@ -672,13 +675,16 @@ app.post('/api/mobile/login', async (req, res) => {
 
   if (!emp) return res.status(404).json({ error: 'Employee ID not found' });
 
-  // Device Locking Logic
-  if (emp.deviceId && emp.deviceId !== deviceId) {
+  // Device Locking Logic (Pro Security)
+  const currentDeviceId = emp.registeredDeviceId || emp.deviceId;
+  if (currentDeviceId && currentDeviceId !== deviceId) {
     return res.status(403).json({ error: 'Device Mismatch: This account is locked to another device.' });
   }
 
-  if (!emp.deviceId) {
-    emp.deviceId = deviceId;
+  if (!currentDeviceId) {
+    emp.registeredDeviceId = deviceId;
+    emp.registeredDeviceName = deviceName || 'Mobile Device';
+    emp.registrationDate = new Date().toISOString();
     await saveData(data);
   }
 
@@ -737,6 +743,14 @@ app.post('/api/mobile/attendance', async (req, res) => {
     };
     data.logs.push(log);
   } else {
+    // --- STRICT LOCK LOGIC (Tropa Rule #3) ---
+    if (type === 'IN' && log.timeIn) {
+      return res.status(400).json({ error: 'ALREADY_IN', message: 'Mayroon ka nang recorded Time In ngayong araw.' });
+    }
+    if (type === 'OUT' && log.timeOut) {
+      return res.status(400).json({ error: 'ALREADY_OUT', message: 'Mayroon ka nang recorded Time Out ngayong araw.' });
+    }
+
     if (type === 'IN') {
       log.timeIn = timestamp;
       log.locIn = { lat: latitude, lon: longitude };

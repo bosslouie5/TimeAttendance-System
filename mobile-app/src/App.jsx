@@ -563,7 +563,7 @@ function App() {
       background: '#0f172a',
       minHeight: '100dvh',
       color: 'white',
-      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 20px) + 80px) 15px',
+      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 0px) + 75px) 15px',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       overflowX: 'hidden',
       display: 'flex',
@@ -573,7 +573,7 @@ function App() {
     }}>
       <style>{`
         body { background: #0f172a !important; margin: 0; width: 100%; overflow-x: hidden; height: 100dvh; }
-        .mobile-container { max-width: 500px; margin: 0 auto; flex: 1; }
+        .mobile-container { max-width: 500px; margin: 0 auto; flex: 1; position: relative; }
         .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; box-sizing: border-box; }
         .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-primary:active { transform: scale(0.96); opacity: 0.9; }
@@ -588,9 +588,9 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 500px; background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 10px 10px calc(env(safe-area-inset-bottom, 0px) + 10px) 10px; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); box-sizing: border-box; }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 8px 15px; border-radius: 15px; transition: 0.3s; flex: 1; }
-        .nav-item.active { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #111827; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-around; padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 5px) 0; z-index: 1000; box-shadow: 0 -8px 30px rgba(0,0,0,0.6); box-sizing: border-box; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #4b5563; text-decoration: none; font-size: 0.6rem; font-weight: 800; padding: 10px 5px; transition: 0.2s; flex: 1; }
+        .nav-item.active { color: #3b82f6; }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; }

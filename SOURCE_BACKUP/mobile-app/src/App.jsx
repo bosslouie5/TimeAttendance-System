@@ -399,6 +399,30 @@ function App() {
     const dept = departments.find(d => d.departmentId === selectedDepartment);
     if (!dept) return;
 
+    // --- ATTENDANCE LOCK LOGIC (Tropa Security Fix) ---
+    const today = new Date().toLocaleDateString();
+
+    // 1. Check Synced Logs (personalLogs)
+    const hasSyncedLog = personalLogs.some(l => {
+      const logDate = new Date(l.timestamp).toLocaleDateString();
+      if (logDate !== today) return false;
+      // In personalLogs (from server), we check timeIn/timeOut fields
+      if (type === 'IN') return !!l.timeIn;
+      if (type === 'OUT') return !!l.timeOut;
+      return false;
+    });
+
+    // 2. Check Pending Logs (pendingLogs)
+    const hasPendingLog = pendingLogs.some(l => {
+      const logDate = new Date(l.timestamp).toLocaleDateString();
+      return logDate === today && l.type === type;
+    });
+
+    if (hasSyncedLog || hasPendingLog) {
+      alert(`NOTICE: Mayroon ka nang recorded ${type} para sa araw na ito.`);
+      return;
+    }
+
     setLoading(true);
     setStatus('📡 Checking Location...');
 
@@ -473,7 +497,16 @@ function App() {
 
   const handleDownloadUpdate = () => {
     if (!updateAvailable) return;
+
+    // FORCE DELETE DATA (Tropa Rule: Refresh after update)
+    const currentUrl = apiUrl; // Keep API URL if we want to stay connected, or clear all?
+    // User said "force delete data... para makapag log in ulit ng fresh".
+    // So we clear EVERYTHING.
+    localStorage.clear();
+
     const downloadUrl = updateAvailable.apkUrl.startsWith('http') ? updateAvailable.apkUrl : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
+
+    console.log(`[UPDATE] Triggering download from: ${downloadUrl}`);
 
     // Pro-level download trigger
     const link = document.createElement('a');
@@ -484,9 +517,11 @@ function App() {
     link.click();
     document.body.removeChild(link);
 
-    // Failsafe for some WebViews
+    // Failsafe for some WebViews & Clear State
     setTimeout(() => {
         window.location.assign(downloadUrl);
+        // Optional: reload to force user to setup again
+        setTimeout(() => window.location.reload(), 1000);
     }, 500);
   };
 
@@ -524,13 +559,25 @@ function App() {
   // --- RENDER ---
 
   return (
-    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 120px 15px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden'}}>
+    <div className="mobile-container" style={{
+      background: '#0f172a',
+      minHeight: '100dvh',
+      color: 'white',
+      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 20px) + 80px) 15px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      overflowX: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      boxSizing: 'border-box',
+      width: '100%'
+    }}>
       <style>{`
-        body { background: #0f172a !important; margin: 0; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 30px 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; }
+        body { background: #0f172a !important; margin: 0; width: 100%; overflow-x: hidden; height: 100dvh; }
+        .mobile-container { max-width: 500px; margin: 0 auto; flex: 1; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; box-sizing: border-box; }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-primary:active { transform: scale(0.96); opacity: 0.9; }
-        .input-field { width: 100%; padding: 18px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1.1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
+        .input-field { width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
         .input-field:focus { border-color: #3b82f6; background: rgba(15, 23, 42, 0.8); }
         .label-visible { color: #94a3b8; font-size: 0.75rem; font-weight: 800; margin-bottom: 12px; display: block; letter-spacing: 1.5px; text-transform: uppercase; }
         .fade-in { animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
@@ -541,8 +588,8 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 12px 10px env(safe-area-inset-bottom, 15px) 10px; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 10px 20px; border-radius: 18px; transition: 0.3s; }
+        .nav-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 500px; background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 10px 10px calc(env(safe-area-inset-bottom, 0px) + 10px) 10px; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); box-sizing: border-box; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 8px 15px; border-radius: 15px; transition: 0.3s; flex: 1; }
         .nav-item.active { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
