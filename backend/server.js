@@ -993,27 +993,17 @@ app.post('/api/master/build-apk', async (req, res) => {
     // 0. Cleanup old build to ensure fresh APK
     if (fs.existsSync(sourceApk)) fs.unlinkSync(sourceApk);
 
-  // 0.1 Versioning Logic (Pro Update System)
-    const verPath = path.join(__dirname, 'version.json');
-    let currentVersion = '1.0.0';
-
-    // Priority: Use the version set by the user via Bump Version (version.json)
-    if (fs.existsSync(verPath)) {
-      const verData = JSON.parse(fs.readFileSync(verPath, 'utf8'));
-      currentVersion = verData.version;
-      console.log(`[BUILD] Using Global System Version: ${currentVersion}`);
-    } else {
-      // Fallback: Auto-increment package.json if no global version exists
-      const pkgPath = path.join(mobileAppPath, 'package.json');
-      if (fs.existsSync(pkgPath)) {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        const vParts = pkg.version.split('.').map(Number);
-        vParts[2]++; // Increment patch
-        pkg.version = vParts.join('.');
-        currentVersion = pkg.version;
-        fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
-        console.log(`[BUILD] Auto-incremented package version: ${currentVersion}`);
-      }
+    // 0.1 Versioning Logic (Pro Update System)
+    const pkgPath = path.join(mobileAppPath, 'package.json');
+    let currentVersion = '0.1.0';
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const vParts = pkg.version.split('.').map(Number);
+      vParts[2]++; // Increment patch version (e.g., 0.1.0 -> 0.1.1)
+      pkg.version = vParts.join('.');
+      currentVersion = pkg.version;
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+      console.log(`[BUILD] Auto-incremented version to: ${currentVersion}`);
     }
 
     // 1. Update app_config.json
@@ -1110,11 +1100,9 @@ app.post('/api/master/build-and-run-apk', async (req, res) => {
   if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
 
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
-  const isViaTunnel = req.headers['host']?.includes('trycloudflare.com');
 
-  // Security Update: Allow if local OR if request is coming through the Cloudflare Tunnel to the Laptop
-  if (!isTestMode && !isLocal && !isViaTunnel) {
-    return res.status(403).json({ success: false, error: 'Security: USB Actions are only allowed when the server is running on the Laptop.' });
+  if (!isTestMode && !isLocal) {
+    return res.status(403).json({ success: false, error: 'Security: Build-and-Run is only allowed from the Local Server machine.' });
   }
 
   const { tenantId, companyName, publicUrl } = req.body;
@@ -1270,8 +1258,12 @@ app.listen(PORT, HOST, () => {
   console.log(`\x1b[32m%s\x1b[0m`, `SYSTEM LIVE: http://localhost:${PORT}`);
   console.log(`Status: Ready for Local or Public connections.`);
 
-  // Start Tunnel Monitoring for SaaS Self-Healing (ENABLED in Test Mode for Pro-Bridge)
-  startTunnelMonitor();
+  // Start Tunnel Monitoring for SaaS Self-Healing (Disabled in Test Mode)
+  if (!isTestMode) {
+    startTunnelMonitor();
+  } else {
+    console.log(`[HUB] Test Mode: SaaS Self-Healing disabled.`);
+  }
 });
 
 // --- SAAS SELF-HEALING: DISCOVERY HUB ---
