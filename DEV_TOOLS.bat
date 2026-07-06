@@ -131,11 +131,11 @@ pause
 goto MENU
 
 :VERSION_BUMP_UI
-set "VER_FILE=backend\version.json"
-set "CONFIG_FILE=mobile-app\src\app_config.json"
-set "ADMIN_CONFIG=web-admin\src\app_config.json"
-set "PKG_FILE=mobile-app\package.json"
-set "GRADLE_FILE=mobile-app\android\app\build.gradle"
+set "VER_FILE=backend/version.json"
+set "CONFIG_FILE=mobile-app/src/app_config.json"
+set "ADMIN_CONFIG=web-admin/src/app_config.json"
+set "PKG_FILE=mobile-app/package.json"
+set "GRADLE_FILE=mobile-app/android/app/build.gradle"
 set "CUR_V=1.0.0"
 if exist "%CONFIG_FILE%" for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CUR_V=%%v"
 
@@ -145,19 +145,20 @@ echo Current Version: %CUR_V%
 set /p NEW_V="Enter New Version (or press Enter to keep): "
 if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 
-powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $v | ConvertTo-Json | Set-Content -Path '%VER_FILE%' -Encoding utf8"
-powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content -Path '%CONFIG_FILE%' -Encoding utf8"
-if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content -Path '%ADMIN_CONFIG%' -Encoding utf8"
+:: Use Node to update JSON files (Guarantees UTF-8 without BOM and handles paths correctly)
+node -e "const fs=require('fs'); const v={version:'!NEW_V!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8');"
+node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
+if exist "%ADMIN_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
 
 :: Sync package.json
 if exist "%PKG_FILE%" (
-    powershell -Command "$p=Get-Content '%PKG_FILE%' | ConvertFrom-Json; $p.version='!NEW_V!'; $p | ConvertTo-Json | Set-Content -Path '%PKG_FILE%' -Encoding utf8"
+    node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('%PKG_FILE%', 'utf8').replace(/^\uFEFF/, '')); p.version='!NEW_V!'; fs.writeFileSync('%PKG_FILE%', JSON.stringify(p, null, 2), 'utf8');"
     echo [OK] package.json updated.
 )
 
-:: Increment Gradle Version Code
+:: Increment Gradle Version Code using Node (Safe from BOM/Encoding issues)
 if exist "%GRADLE_FILE%" (
-    powershell -Command "$c = Get-Content '%GRADLE_FILE%'; $c | ForEach-Object { if($_ -match 'versionCode (\d+)') { '        versionCode ' + ([int]$matches[1] + 1) } else { $_ } } | Set-Content '%GRADLE_FILE%'"
+    node -e "const fs=require('fs'); let c=fs.readFileSync('%GRADLE_FILE%', 'utf8'); c=c.replace(/versionCode (\d+)/, (m, v) => 'versionCode ' + (parseInt(v) + 1)); fs.writeFileSync('%GRADLE_FILE%', c, 'utf8');"
     echo [OK] Gradle Version Code Incremented.
 )
 exit /b
