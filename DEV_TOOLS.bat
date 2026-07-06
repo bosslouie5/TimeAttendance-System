@@ -125,6 +125,7 @@ goto MENU
 set "VER_FILE=backend\version.json"
 set "CONFIG_FILE=mobile-app\src\app_config.json"
 set "ADMIN_CONFIG=web-admin\src\app_config.json"
+set "PKG_FILE=mobile-app\package.json"
 set "GRADLE_FILE=mobile-app\android\app\build.gradle"
 set "CUR_V=1.0.0"
 if exist "%CONFIG_FILE%" for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CUR_V=%%v"
@@ -138,6 +139,12 @@ if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
 powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%CONFIG_FILE%'"
 if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%ADMIN_CONFIG%'"
+
+:: Sync package.json
+if exist "%PKG_FILE%" (
+    powershell -Command "$p=Get-Content '%PKG_FILE%' | ConvertFrom-Json; $p.version='!NEW_V!'; $p | ConvertTo-Json | Set-Content '%PKG_FILE%'"
+    echo [OK] package.json updated.
+)
 
 :: Increment Gradle Version Code
 if exist "%GRADLE_FILE%" (

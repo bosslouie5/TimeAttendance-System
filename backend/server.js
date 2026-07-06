@@ -1092,14 +1092,19 @@ app.post('/api/master/build-apk', async (req, res) => {
       console.log(`[BUILD] Gradle versionCode bumped.`);
     }
 
-    // 1. Update app_config.json
+    // 1. Update app_config.json & Sync version.json
     const configPath = path.join(mobileAppPath, 'src/app_config.json');
-    fs.writeFileSync(configPath, JSON.stringify({
+    const verPath = path.join(__dirname, 'version.json');
+    const updatePayload = {
       defaultApiUrl: apiUrl,
       defaultTenantId: tenantId,
       version: currentVersion,
       buildDate: new Date().toISOString()
-    }, null, 2));
+    };
+
+    fs.writeFileSync(configPath, JSON.stringify(updatePayload, null, 2));
+    fs.writeFileSync(verPath, JSON.stringify({ version: currentVersion, buildDate: updatePayload.buildDate }, null, 2));
+    console.log(`[BUILD] Synced app_config.json and version.json to ${currentVersion}`);
 
     // 2. Update app name in strings.xml
     const stringsPath = path.join(mobileAppPath, 'android/app/src/main/res/values/strings.xml');
