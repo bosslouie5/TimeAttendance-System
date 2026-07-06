@@ -495,7 +495,27 @@ app.delete('/api/employees/:id', tenantGuard, async (req, res) => {
 
 app.get('/api/departments', tenantGuard, async (req, res) => {
   const data = await loadData();
-  res.json(data.departments.filter(d => d.tenantId === (req.tenantId || 'master')));
+  const { employeeId } = req.query;
+  const tenantId = req.tenantId || 'master';
+
+  let filtered = data.departments.filter(d => d.tenantId === tenantId);
+
+  // RULE: If employeeId is provided (from Mobile App), filter by assignment only
+  if (employeeId) {
+    const assignment = (data.assignments || []).find(a =>
+      (a.employeeId || "").toString().toLowerCase() === employeeId.toString().toLowerCase() &&
+      (a.tenantId || "").toLowerCase() === tenantId.toLowerCase()
+    );
+
+    if (assignment) {
+      filtered = filtered.filter(d => d.departmentId === assignment.departmentId);
+    } else {
+      // If no assignment, return empty list to prevent unauthorized access to other branches
+      filtered = [];
+    }
+  }
+
+  res.json(filtered);
 });
 
 app.post('/api/departments', tenantGuard, async (req, res) => {

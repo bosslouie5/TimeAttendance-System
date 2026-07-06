@@ -111,6 +111,13 @@ function App() {
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
 
+  // Auto-select branch if only one is available (Pro UX)
+  useEffect(() => {
+    if (departments.length === 1 && departments[0].departmentId !== selectedDepartment) {
+      setSelectedDepartment(departments[0].departmentId);
+    }
+  }, [departments, selectedDepartment]);
+
   const [departments, setDepartments] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('all_departments')) || initialData.departments;
@@ -137,7 +144,13 @@ function App() {
 
   const groupedLogs = useMemo(() => {
     const groups = {};
-    personalLogs.forEach(log => {
+    // Merge Synced (personal) and Unsynced (pending) logs for full history
+    const combined = [
+      ...personalLogs.map(l => ({ ...l, isSynced: true })),
+      ...pendingLogs.map(l => ({ ...l, isSynced: false }))
+    ];
+
+    combined.forEach(log => {
       const d = new Date(log.timestamp);
       const dateKey = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
       const branchKey = log.departmentName || 'Unknown Branch';
@@ -153,18 +166,31 @@ function App() {
         };
       }
 
-      if (log.type === 'IN') {
-        if (!groups[key].in || new Date(log.timestamp) < new Date(groups[key].in.timestamp)) {
-           groups[key].in = log;
+      if (log.isSynced) {
+        // Handle Server structure (timeIn/timeOut in one object)
+        if (log.timeIn && (!groups[key].in || new Date(log.timeIn) < new Date(groups[key].in.timestamp))) {
+           groups[key].in = { ...log, timestamp: log.timeIn };
         }
-      } else if (log.type === 'OUT') {
-        if (!groups[key].out || new Date(log.timestamp) > new Date(groups[key].out.timestamp)) {
-           groups[key].out = log;
+        if (log.timeOut && (!groups[key].out || new Date(log.timeOut) > new Date(groups[key].out.timestamp))) {
+           groups[key].out = { ...log, timestamp: log.timeOut };
+        }
+        const latestTs = new Date(log.timeOut || log.timeIn || log.timestamp).getTime();
+        if (latestTs > groups[key].rawTimestamp) groups[key].rawTimestamp = latestTs;
+      } else {
+        // Handle Pending structure (action type per log)
+        if (log.type === 'IN') {
+          if (!groups[key].in || new Date(log.timestamp) < new Date(groups[key].in.timestamp)) {
+             groups[key].in = log;
+          }
+        } else if (log.type === 'OUT') {
+          if (!groups[key].out || new Date(log.timestamp) > new Date(groups[key].out.timestamp)) {
+             groups[key].out = log;
+          }
         }
       }
     });
     return Object.values(groups).sort((a, b) => b.rawTimestamp - a.rawTimestamp);
-  }, [personalLogs]);
+  }, [personalLogs, pendingLogs]);
 
   const [cachedEmployee, setCachedEmployee] = useState(() => {
     try {
@@ -642,12 +668,13 @@ function App() {
         .nav-item.active span:first-child { transform: translateY(-2px) scale(1.15); filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5)); }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .log-table { width: 100%; border-collapse: separate; border-spacing: 0 12px; margin-top: 10px; }
-        .log-table th { text-align: left; padding: 0 10px 10px 10px; color: #64748b; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
-        .log-table td { padding: 18px 12px; background: rgba(30, 41, 59, 0.4); border-top: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; }
-        .log-table td:first-child { border-left: 1px solid rgba(255,255,255,0.05); border-top-left-radius: 20px; border-bottom-left-radius: 20px; }
+        .log-table th { text-align: center; padding: 0 5px 10px 5px; color: #64748b; font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        .log-table th:first-child { text-align: left; padding-left: 10px; }
+        .log-table td { padding: 15px 5px; background: rgba(30, 41, 59, 0.4); border-top: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; text-align: center; }
+        .log-table td:first-child { text-align: left; padding-left: 12px; border-left: 1px solid rgba(255,255,255,0.05); border-top-left-radius: 20px; border-bottom-left-radius: 20px; }
         .log-table td:last-child { border-right: 1px solid rgba(255,255,255,0.05); border-top-right-radius: 20px; border-bottom-right-radius: 20px; }
-        .time-label { font-size: 0.6rem; color: #64748b; font-weight: 800; display: block; margin-bottom: 4px; letter-spacing: 0.5px; }
-        .time-value { font-size: 0.8rem; font-weight: 700; color: #f8fafc; font-family: 'JetBrains Mono', monospace; }
+        .time-label { font-size: 0.55rem; color: #64748b; font-weight: 800; display: block; margin-bottom: 2px; letter-spacing: 0.5px; }
+        .time-value { font-size: 0.75rem; font-weight: 700; color: #f8fafc; font-family: 'JetBrains Mono', monospace; }
         .branch-name { font-weight: 800; font-size: 0.85rem; color: #fff; display: block; margin-bottom: 4px; }
         .log-date { font-size: 0.65rem; color: #3b82f6; font-weight: 900; }
         .badge-duty { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
@@ -783,9 +810,10 @@ function App() {
                       <table className="log-table">
                         <thead>
                           <tr>
-                            <th>Branch / Date</th>
-                            <th>Time In/Out</th>
-                            <th style={{textAlign: 'center'}}>Status</th>
+                            <th>Branch</th>
+                            <th>Time In</th>
+                            <th>Time Out</th>
+                            <th>Status</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -794,30 +822,27 @@ function App() {
                             return (
                               <tr key={i} className="fade-in" style={{animationDelay: `${i * 0.05}s`}}>
                                 <td>
-                                  <span className="branch-name">{group.branch}</span>
-                                  <span className="log-date">{group.date}</span>
+                                  <span className="branch-name" style={{fontSize: '0.75rem', display: 'block'}}>{group.branch}</span>
+                                  <span className="log-date" style={{fontSize: '0.6rem', color: '#64748b'}}>{group.date}</span>
                                 </td>
                                 <td>
-                                  <div style={{marginBottom: '8px'}}>
-                                    <span className="time-label">IN</span>
-                                    <span className="time-value" style={{color: group.in ? '#10b981' : '#334155'}}>
+                                   <span className="time-value" style={{color: group.in ? '#10b981' : '#334155'}}>
                                       {group.in ? new Date(group.in.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="time-label">OUT</span>
-                                    <span className="time-value" style={{color: group.out ? '#f59e0b' : '#334155'}}>
-                                      {group.out ? new Date(group.out.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
-                                    </span>
-                                  </div>
+                                   </span>
                                 </td>
-                                <td style={{textAlign: 'center'}}>
+                                <td>
+                                   <span className="time-value" style={{color: group.out ? '#f59e0b' : '#334155'}}>
+                                      {group.out ? new Date(group.out.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                                   </span>
+                                </td>
+                                <td>
                                   <span className={`badge ${
                                     status === 'COMPLETED' ? 'badge-success' :
                                     status === 'LATE' ? 'badge-late' :
                                     status === 'DUTY' ? 'badge-duty' :
+                                    status === 'PRESENT' ? 'badge-success' :
                                     'badge-pending'
-                                  }`}>
+                                  }`} style={{fontSize: '0.55rem', padding: '5px 10px'}}>
                                     {status}
                                   </span>
                                 </td>

@@ -107,12 +107,20 @@ echo [*] 2/4 Checking for Version Bump...
 call :VERSION_BUMP_UI
 
 echo [*] 3/4 Syncing Lab to Main Folders...
+if exist "web-dev\dist" rd /s /q "web-dev\dist"
+if exist "web-admin\dist" rd /s /q "web-admin\dist"
+if exist "mobile-app\dist" rd /s /q "mobile-app\dist"
+
 if exist "web-dev\dist-test" xcopy /s /i /y "web-dev\dist-test" "web-dev\dist" >nul 2>&1
 if exist "web-admin\dist-test" xcopy /s /i /y "web-admin\dist-test" "web-admin\dist" >nul 2>&1
 if exist "mobile-app\dist-test" xcopy /s /i /y "mobile-app\dist-test" "mobile-app\dist" >nul 2>&1
 
 echo [*] 4/4 Deploying to Cloud (GitHub)...
 "%GIT_EXE%" add .
+:: Force add dist folders because they are in .gitignore
+"%GIT_EXE%" add -f web-dev/dist/
+"%GIT_EXE%" add -f web-admin/dist/
+"%GIT_EXE%" add -f mobile-app/dist/
 "%GIT_EXE%" commit -m "Production Release: %date% %time%"
 "%GIT_EXE%" push origin main
 
@@ -136,13 +144,13 @@ echo Current Version: %CUR_V%
 set /p NEW_V="Enter New Version (or press Enter to keep): "
 if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 
-powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $v | ConvertTo-Json | Set-Content '%VER_FILE%'"
-powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%CONFIG_FILE%'"
-if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Set-Content '%ADMIN_CONFIG%'"
+powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $v | ConvertTo-Json | Out-File -FilePath '%VER_FILE%' -Encoding utf8"
+powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Out-File -FilePath '%CONFIG_FILE%' -Encoding utf8"
+if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Out-File -FilePath '%ADMIN_CONFIG%' -Encoding utf8"
 
 :: Sync package.json
 if exist "%PKG_FILE%" (
-    powershell -Command "$p=Get-Content '%PKG_FILE%' | ConvertFrom-Json; $p.version='!NEW_V!'; $p | ConvertTo-Json | Set-Content '%PKG_FILE%'"
+    powershell -Command "$p=Get-Content '%PKG_FILE%' | ConvertFrom-Json; $p.version='!NEW_V!'; $p | ConvertTo-Json | Out-File -FilePath '%PKG_FILE%' -Encoding utf8"
     echo [OK] package.json updated.
 )
 
