@@ -110,6 +110,8 @@ function App() {
   const [isServerDown, setIsServerDown] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [whatsNewData, setWhatsNewData] = useState(null);
 
   const [departments, setDepartments] = useState(() => {
     try {
@@ -352,18 +354,29 @@ function App() {
     };
   }, [tenantId, loggedIn, checkConnection, attemptSync, fetchTenantInfo]);
 
-  // OTA Update Logic & Fresh Start Check
+  // OTA Update Logic & Session Preservation
   useEffect(() => {
-    // FRESH START CHECK (Tropa Rule: Clear data after update request)
-    const needsPurge = localStorage.getItem('pending_update_purge');
-    if (needsPurge === 'true') {
-        console.log('[SYSTEM] Executing post-update data purge...');
-        localStorage.clear();
-        // Keep the server URL so we don't have to setup again, or clear all?
-        // Master said "makapag log in ulit ng fresh", so we clear all.
-        window.location.reload();
-        return;
+    // Clean up update flag if it exists (No more clearing of data)
+    if (localStorage.getItem('pending_update_purge') === 'true') {
+        localStorage.removeItem('pending_update_purge');
     }
+
+    // WHAT'S NEW LOGIC (One-time prompt after update)
+    const checkWhatsNew = async () => {
+      const lastSeen = localStorage.getItem('last_seen_version');
+      const current = appConfig.version;
+
+      if (lastSeen && lastSeen !== current) {
+         try {
+           const res = await getJson(`${apiUrl}/app-version`);
+           if (res.ok && res.data) {
+             setWhatsNewData(res.data);
+             setShowWhatsNew(true);
+           }
+         } catch (e) {}
+      }
+      localStorage.setItem('last_seen_version', current);
+    };
 
     const checkUpdate = async () => {
       if (!apiUrl.startsWith('http') || isServerDown) return;
@@ -383,8 +396,13 @@ function App() {
         }
       } catch (err) { }
     };
-    const timer = setTimeout(checkUpdate, 5000);
-    return () => clearTimeout(timer);
+
+    checkWhatsNew();
+    checkUpdate();
+
+    // Auto-polling for updates every 45 seconds (PRO REAL-TIME)
+    const updateTimer = setInterval(checkUpdate, 45000);
+    return () => clearInterval(updateTimer);
   }, [apiUrl, isServerDown]);
 
   const handleSetupTenant = async () => {
@@ -588,6 +606,7 @@ function App() {
 
     console.log(`[UPDATE] Opening download URL: ${downloadUrl}`);
 
+    // Flag that an update was initiated, but we don't clear data anymore
     localStorage.setItem('pending_update_purge', 'true');
     setStatus('📥 DOWNLOADING UPDATE...');
 
@@ -679,7 +698,8 @@ function App() {
         .log-date { font-size: 0.65rem; color: #3b82f6; font-weight: 900; }
         .badge-duty { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
-        .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; }
+        .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       `}</style>
 
       {!tenantId ? (
@@ -711,7 +731,8 @@ function App() {
                   <span style={{fontSize: '5rem', marginBottom: '20px', display: 'block'}}>🚀</span>
                   <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Upgrade Available</h2>
                   <div style={{color: '#3b82f6', fontWeight: '900', marginBottom: '20px'}}>V{updateAvailable.version}</div>
-                  <div style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '15px'}}>
+                  <div style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '15px', textAlign: 'left', maxHeight: '200px', overflowY: 'auto'}}>
+                     <strong style={{color: '#fff', display: 'block', marginBottom: '8px'}}>What's New:</strong>
                      {updateAvailable.changelog || 'Stability updates and performance improvements.'}
                   </div>
                   <button className="btn-primary" onClick={handleDownloadUpdate}>INSTALL UPDATE</button>
@@ -719,9 +740,25 @@ function App() {
             </div>
           )}
 
+          {showWhatsNew && (
+            <div className="update-overlay fade-in" style={{zIndex: 2000}}>
+               <div className="update-card" style={{border: '1px solid #10b981'}}>
+                  <span style={{fontSize: '5rem', marginBottom: '20px', display: 'block'}}>✨</span>
+                  <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Update Successful!</h2>
+                  <div style={{color: '#10b981', fontWeight: '900', marginBottom: '20px'}}>System is now at V{appConfig.version}</div>
+                  <div style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '15px', textAlign: 'left'}}>
+                     <strong style={{color: '#fff', display: 'block', marginBottom: '8px'}}>Release Notes:</strong>
+                     {whatsNewData?.changelog || 'We have improved the system stability and fixed some bugs to give you a better experience.'}
+                  </div>
+                  <button className="btn-primary" style={{background: '#10b981'}} onClick={() => setShowWhatsNew(false)}>COOL, GOT IT!</button>
+               </div>
+            </div>
+          )}
+
           <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '15px'}} onDoubleClick={handleUpdateServer}>
               <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Time Attendance Hub</div>
               <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff'}}>{tenantInfo?.companyName?.toUpperCase() || 'OFFICIAL HUB'}</h1>
+              <div style={{fontSize: '0.7rem', color: '#64748b', fontWeight: '700', marginTop: '5px'}}>System V{appConfig.version}</div>
           </div>
 
           {!loggedIn ? (

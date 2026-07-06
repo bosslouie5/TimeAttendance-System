@@ -508,11 +508,17 @@ app.get('/api/departments', tenantGuard, async (req, res) => {
     );
 
     if (assignment) {
-      filtered = filtered.filter(d => d.departmentId === assignment.departmentId);
+      // Support for multi-branch assignment (Array or single ID for backward compatibility)
+      const assignedIds = Array.isArray(assignment.departmentIds)
+        ? assignment.departmentIds
+        : (assignment.departmentId ? [assignment.departmentId] : []);
+
+      filtered = filtered.filter(d => assignedIds.includes(d.departmentId));
     } else {
       // If no assignment, return empty list to prevent unauthorized access to other branches
       filtered = [];
     }
+  }
   }
 
   res.json(filtered);
@@ -641,21 +647,28 @@ app.get('/api/assignments', tenantGuard, async (req, res) => {
 app.post('/api/assignments', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.assignments) data.assignments = [];
-  const { employeeId, departmentId } = req.body;
+  const { employeeId, departmentId, departmentIds } = req.body;
   const tenantId = req.tenantId || 'master';
+
+  // Support both single and multiple for flexibility
+  const finalIds = departmentIds || (departmentId ? [departmentId] : []);
 
   // Find existing or add new
   const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
   if (index !== -1) {
-    data.assignments[index].departmentId = departmentId;
+    data.assignments[index].departmentIds = finalIds;
+    // Keep single ID for legacy if needed, but primarily use IDs array
+    data.assignments[index].departmentId = finalIds[0] || '';
   } else {
-    data.assignments.push({ employeeId, departmentId, tenantId });
+    data.assignments.push({ employeeId, departmentIds: finalIds, departmentId: finalIds[0] || '', tenantId });
   }
 
-  // Also update branchName in employee object for easier access
+  // Also update branchName in employee object for easier access (Show multiple names)
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
-  const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
-  if (emp && dept) emp.branchName = dept.name;
+  if (emp) {
+    const assignedDepts = data.departments.filter(d => finalIds.includes(d.departmentId) && d.tenantId === tenantId);
+    emp.branchName = assignedDepts.map(d => d.name).join(', ');
+  }
 
   await saveData(data);
   res.json({ success: true });
