@@ -98,13 +98,14 @@ set /p confirm="Proceed with Full Sync? (Y/N): "
 if /i "%confirm%" neq "Y" goto MENU
 
 set "INTERNAL_CALL=1"
-echo [*] 1/4 Rebuilding All Lab Assets...
+
+echo [*] 1/4 Checking for Version Bump...
+call :VERSION_BUMP_UI
+
+echo [*] 2/4 Rebuilding All Lab Assets with Version !NEW_V!...
 pushd web-dev & call npx vite build --outDir dist-test --emptyOutDir & popd
 pushd web-admin & call npx vite build --outDir dist-test --emptyOutDir & popd
 pushd mobile-app & call npx vite build --outDir dist-test --emptyOutDir & popd
-
-echo [*] 2/4 Checking for Version Bump...
-call :VERSION_BUMP_UI
 
 echo [*] 3/4 Syncing Lab to Main Folders...
 if exist "web-dev\dist" rd /s /q "web-dev\dist"
