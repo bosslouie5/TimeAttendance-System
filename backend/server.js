@@ -788,7 +788,8 @@ app.get('/api/app-version', (req, res) => {
 
   if (fs.existsSync(verPath)) {
     try {
-      payload = JSON.parse(fs.readFileSync(verPath, 'utf8'));
+      const verData = JSON.parse(fs.readFileSync(verPath, 'utf8'));
+      payload = { ...payload, ...verData };
     } catch (e) {
       console.warn('[OTA] Failed to parse version.json', e.message);
     }
@@ -797,10 +798,11 @@ app.get('/api/app-version', (req, res) => {
   if (fs.existsSync(latestVersionPath)) {
     try {
       const latest = JSON.parse(fs.readFileSync(latestVersionPath, 'utf8'));
+      // Merge metadata but prioritize system version from version.json for the display
       payload = {
-        ...payload,
         ...latest,
-        version: latest.version || payload.version,
+        ...payload, // Prioritize version.json fields (version, buildDate)
+        apkVersion: latest.version,
         apkUrl: latest.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
         downloadUrl: latest.downloadUrl || payload.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
         changelog: latest.notes || payload.changelog || 'System update available.'

@@ -585,21 +585,11 @@ function App() {
   // --- RENDER ---
 
   return (
-    <div className="mobile-container" style={{
-      background: '#0f172a',
-      minHeight: '100dvh',
-      color: 'white',
-      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 0px) + 75px) 15px',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      overflowX: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      boxSizing: 'border-box',
-      width: '100%'
-    }}>
+    <div className="mobile-container">
       <style>{`
-        body { background: #0f172a !important; margin: 0; width: 100%; overflow-x: hidden; height: 100dvh; }
-        .mobile-container { max-width: 500px; margin: 0 auto; flex: 1; position: relative; }
+        body { background: #0f172a !important; margin: 0; width: 100%; overflow-x: hidden; min-height: 100dvh; }
+        .mobile-container { max-width: 500px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; width: 100%; position: relative; background: #0f172a; color: white; font-family: 'Inter', system-ui, -apple-system, sans-serif; box-sizing: border-box; }
+        .content-area { flex: 1; padding: 20px 15px calc(env(safe-area-inset-bottom, 0px) + 100px) 15px; width: 100%; box-sizing: border-box; }
         .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; box-sizing: border-box; }
         .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-primary:active { transform: scale(0.96); opacity: 0.9; }
@@ -614,16 +604,18 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #111827; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-around; padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 5px) 0; z-index: 1000; box-shadow: 0 -8px 30px rgba(0,0,0,0.6); box-sizing: border-box; }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #4b5563; text-decoration: none; font-size: 0.6rem; font-weight: 800; padding: 10px 5px; transition: 0.2s; flex: 1; }
+        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; max-width: 500px; margin: 0 auto; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 12px 0 calc(env(safe-area-inset-bottom, 0px) + 15px) 0; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.6); box-sizing: border-box; user-select: none; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 10px; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); flex: 1; cursor: pointer; border-radius: 20px; }
+        .nav-item:active { transform: scale(0.92); background: rgba(255,255,255,0.05); }
         .nav-item.active { color: #3b82f6; }
+        .nav-item.active span:first-child { transform: translateY(-2px) scale(1.15); filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5)); }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; }
       `}</style>
 
       {!tenantId ? (
-        <div style={{padding: '40px 10px', textAlign: 'center'}}>
+        <div className="content-area" style={{padding: '40px 10px', textAlign: 'center'}}>
            <div className="glass-card fade-in">
               <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
               <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>Time Attendance</h1>
@@ -644,7 +636,7 @@ function App() {
            </div>
         </div>
       ) : (
-        <div className="fade-in">
+        <div className="content-area fade-in">
           {updateAvailable && (
             <div className="update-overlay fade-in">
                <div className="update-card">
@@ -806,15 +798,15 @@ function App() {
 
               <div className="nav-bar">
                 <div className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
-                   <span style={{fontSize: '1.5rem'}}>🏠</span>
+                   <span style={{fontSize: '1.6rem', transition: '0.3s'}}>🏠</span>
                    <span>HOME</span>
                 </div>
                 <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-                   <span style={{fontSize: '1.5rem'}}>📋</span>
+                   <span style={{fontSize: '1.6rem', transition: '0.3s'}}>📋</span>
                    <span>LOGS</span>
                 </div>
                 <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
-                   <span style={{fontSize: '1.5rem'}}>👤</span>
+                   <span style={{fontSize: '1.6rem', transition: '0.3s'}}>👤</span>
                    <span>PROFILE</span>
                 </div>
               </div>
