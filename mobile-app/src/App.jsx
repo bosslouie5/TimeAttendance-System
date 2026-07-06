@@ -339,6 +339,10 @@ function App() {
     try {
       const idInfo = await Device.getId();
       const devInfo = await Device.getInfo();
+
+      // DIAGNOSTIC LOG
+      console.log(`[AUTH] Attempting login at: ${apiUrl}`);
+
       const res = await postJson(`${apiUrl}/device/register`, {
         employeeId: cleanId,
         deviceId: idInfo.identifier,
@@ -359,13 +363,25 @@ function App() {
         return;
       } else if (res.status === 404) {
         alert('ID Not Found sa system. Pakicheck ang iyong ID.');
+        setLoading(false);
+        return;
       } else if (res.status === 403) {
         alert(res.data?.error || 'Access Denied: Device mismatch.');
+        setLoading(false);
+        return;
+      } else {
+          throw new Error(`Server Error: ${res.status}`);
       }
-    } catch (e) { console.warn('Online login failed, trying cache...'); }
+    } catch (e) {
+        console.warn('Online login failed:', e.message);
+    }
 
+    // --- CACHE FALLBACK ---
     const allEmployees = JSON.parse(localStorage.getItem('all_employees') || '[]');
-    const cachedEmp = allEmployees.find(e => (e.employeeId || "").toString().toLowerCase() === cleanId.toLowerCase());
+    const cachedEmp = allEmployees.find(e =>
+      (e.employeeId || "").toString().trim().toLowerCase() === cleanId.toLowerCase()
+    );
+
     if (cachedEmp) {
       setLoggedIn(true);
       localStorage.setItem('cached_id', cachedEmp.employeeId);
@@ -373,7 +389,7 @@ function App() {
       setStatus('Offline Access ✓');
       alert('OFFLINE MODE: Nakapasok gamit ang cached credentials.');
     } else {
-      alert('CONNECTION REQUIRED para sa unang login.');
+      alert(`CONNECTION REQUIRED!\n\n${isServerDown ? 'Server is currently OFFLINE.' : 'Hindi makakonekta sa system at wala kang cached data.'}\n\nURL: ${apiUrl}`);
     }
     setLoading(false);
   };
@@ -458,7 +474,20 @@ function App() {
   const handleDownloadUpdate = () => {
     if (!updateAvailable) return;
     const downloadUrl = updateAvailable.apkUrl.startsWith('http') ? updateAvailable.apkUrl : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
-    window.open(downloadUrl, '_blank');
+
+    // Pro-level download trigger
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.target = '_blank';
+    link.download = downloadUrl.split('/').pop();
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Failsafe for some WebViews
+    setTimeout(() => {
+        window.location.assign(downloadUrl);
+    }, 500);
   };
 
   const getLogStatus = (l) => {
@@ -527,13 +556,16 @@ function App() {
               <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>Time Attendance</h1>
               <p style={{color: '#94a3b8', marginBottom: '40px'}}>Enter Company ID para simulan ang terminal.</p>
               <input
+                name={`tenant_setup_${Math.random().toString(36).substring(7)}`}
                 value={setupId}
                 onChange={e => setSetupId(e.target.value)}
-                placeholder="e.g. 571044"
+                placeholder="--- ENTER ID ---"
                 className="input-field"
                 style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900'}}
-                autoComplete="off"
+                autoComplete="new-password"
+                autoCorrect="off"
                 spellCheck="false"
+                data-lpignore="true"
               />
               <button onClick={handleSetupTenant} disabled={isSettingUp} className="btn-primary">{isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}</button>
            </div>
@@ -568,13 +600,16 @@ function App() {
               </div>
               <span className="label-visible">EMPLOYEE ID</span>
               <input
+                name={`emp_id_${Math.random().toString(36).substring(7)}`}
                 value={employeeId}
                 onChange={e => setEmployeeId(e.target.value)}
-                placeholder="0001"
+                placeholder="--- ENTER ID ---"
                 className="input-field"
                 style={{textAlign: 'center', fontSize: '1.4rem'}}
-                autoComplete="off"
+                autoComplete="new-password"
+                autoCorrect="off"
                 spellCheck="false"
+                data-lpignore="true"
               />
               <button onClick={login} disabled={loading} className="btn-primary">{loading ? 'VERIFYING...' : 'SIGN IN'}</button>
             </div>
