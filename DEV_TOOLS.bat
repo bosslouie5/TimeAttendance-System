@@ -34,6 +34,7 @@ echo   Mode: Developer Testing (Port 4002)
 echo   Database: MongoDB Atlas (Cloud)
 echo   Last Safety Backup: !last_backup!
 echo.
+echo   [0] MASTER SYNC (Combined Workflow - Best for Tropa)
 echo   [1] DEPLOY ALL TO WEB (Sync 4001 to GitHub/Render)
 echo   [2] RUN TEST LAB (Port 4002 - Local/Online)
 echo   [3] REBUILD ALL LAB UI (Build 4002 Code)
@@ -49,6 +50,7 @@ echo.
 echo   ------------------------------------------------------
 set /p choice="Master Tropa, choose an action: "
 
+if /i "%choice%"=="0" goto MASTER_SYNC
 if /i "%choice%"=="1" goto BUILD_DEPLOY_ALL
 if /i "%choice%"=="2" goto RUN_LAB
 if /i "%choice%"=="3" goto REBUILD_LAB_ALL
@@ -121,6 +123,7 @@ call npx vite build --outDir dist-test --emptyOutDir
 popd
 echo.
 echo [SUCCESS] Lab Builds (4002) Refreshed.
+if "%INTERNAL_CALL%"=="1" exit /b
 pause
 goto MENU
 
@@ -196,6 +199,7 @@ if exist "%VER_FILE%" (
 )
 
 echo [STATUS] Current System Version: %CURRENT_VER%
+if "%BUMP_DONE%"=="1" goto SKIP_BUMP
 set /p bump="Bump version before deploy? (Y/N/Already Done='A'): "
 if /i "%bump%"=="A" goto SKIP_BUMP
 if /i "%bump%"=="N" goto SKIP_BUMP
@@ -235,6 +239,7 @@ echo [SUCCESS] SOURCE CODE UPLOADED!
 echo [*] GitHub Cloud is now building your Website and APK.
 echo [*] Please wait 5-8 minutes for the process to finish.
 echo Web: https://timeattendance-system.onrender.com/dev
+if "%INTERNAL_CALL%"=="1" exit /b
 pause
 goto MENU
 
@@ -278,6 +283,7 @@ if exist "%ADMIN_CONFIG%" (
 
 echo.
 echo [SUCCESS] Version bumped to !NEW_VER! across all modules.
+if "%INTERNAL_CALL%"=="1" exit /b
 pause
 goto MENU
 
@@ -285,12 +291,63 @@ goto MENU
 cls
 echo.
 echo !!! Step 4: SYNCING LAB TO PRODUCTION (4002 -> 4001) !!!
+if "%INTERNAL_CALL%"=="1" goto START_SYNC
 set /p confirm="Proceed? (Y/N): "
 if /i "%confirm%" neq "Y" goto MENU
+:START_SYNC
 echo [*] Copying dist-test to production dist folders...
 if exist "web-dev\dist-test" (rd /s /q "web-dev\dist" >nul 2>&1 & xcopy /s /i /y "web-dev\dist-test" "web-dev\dist" >nul 2>&1)
 if exist "web-admin\dist-test" (rd /s /q "web-admin\dist" >nul 2>&1 & xcopy /s /i /y "web-admin\dist-test" "web-admin\dist" >nul 2>&1)
 if exist "mobile-app\dist-test" (rd /s /q "mobile-app\dist" >nul 2>&1 & xcopy /s /i /y "mobile-app\dist-test" "mobile-app\dist" >nul 2>&1)
 echo [SUCCESS] Production folders updated.
+if "%INTERNAL_CALL%"=="1" exit /b
+pause
+goto MENU
+
+:MASTER_SYNC
+cls
+echo.
+echo   ______________________________________________________
+echo  ^|                                                      ^|
+echo  ^|           TIMEKEY MASTER AUTO-SYNC WORKFLOW        ^|
+echo  ^|______________________________________________________^|
+echo.
+echo   Tropa, this will run the following sequence:
+echo   1. REBUILD LAB UI [3]
+echo   2. BUMP VERSION [5] (Optional)
+echo   3. SYNC TO PRODUCTION [4]
+echo   4. DEPLOY TO WEB [1]
+echo.
+set /p mobile_edit="Master, did you edit the Mobile App? (Y/N): "
+
+set "INTERNAL_CALL=1"
+set "BUMP_DONE=0"
+
+echo.
+echo [*] Step 1/4: Rebuilding All Lab UI...
+call :REBUILD_LAB_ALL
+
+if /i "%mobile_edit%"=="Y" (
+    echo.
+    echo [*] Step 2/4: Bumping Mobile App Version...
+    call :BUMP_VERSION
+    set "BUMP_DONE=1"
+) else (
+    echo.
+    echo [*] Step 2/4: Skipping Version Bump...
+)
+
+echo.
+echo [*] Step 3/4: Syncing Lab to Production...
+call :SYNC_DATA
+
+echo.
+echo [*] Step 4/4: Deploying to GitHub and Render...
+call :BUILD_DEPLOY_ALL
+
+set "INTERNAL_CALL="
+set "BUMP_DONE="
+echo.
+echo [MASTER SUCCESS] All systems synced and deployed!
 pause
 goto MENU
