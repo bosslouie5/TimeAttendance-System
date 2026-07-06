@@ -764,13 +764,23 @@ app.post('/api/mobile/attendance', async (req, res) => {
     (e.employeeId || "").toString().toLowerCase() === (employeeId || "").toString().toLowerCase() &&
     (e.tenantId || "").toLowerCase() === (tenantId || "").toLowerCase()
   );
-  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+
+  if (!emp) {
+    console.error(`[ATTENDANCE] Rejected: Employee ${employeeId} not found for Tenant ${tenantId}`);
+    return res.status(404).json({ error: 'Employee not found' });
+  }
 
   const timestamp = new Date().toISOString();
-  const today = new Date().toLocaleDateString();
+  const today = timestamp.split('T')[0]; // Use ISO date YYYY-MM-DD for stable comparison
 
-  // Find existing log for today
-  let log = data.logs.find(l => l.employeeId === employeeId && l.tenantId === tenantId && new Date(l.timestamp).toLocaleDateString() === today);
+  // Find existing log for today (comparing only the date part of the timestamp)
+  let log = data.logs.find(l =>
+    l.employeeId === employeeId &&
+    l.tenantId === tenantId &&
+    l.timestamp.split('T')[0] === today
+  );
+
+  console.log(`[ATTENDANCE] Request: ${emp.name} (${type}) at ${departmentName}. Existing Log: ${log ? 'Yes' : 'No'}`);
 
   if (!log) {
     log = {
@@ -780,7 +790,7 @@ app.post('/api/mobile/attendance', async (req, res) => {
       tenantId,
       timestamp,
       departmentName,
-      status: status || 'Pending',
+      status: status || 'Present',
       timeIn: type === 'IN' ? timestamp : null,
       timeOut: type === 'OUT' ? timestamp : null,
       locIn: type === 'IN' ? { lat: latitude, lon: longitude } : null,
@@ -788,26 +798,24 @@ app.post('/api/mobile/attendance', async (req, res) => {
     };
     data.logs.push(log);
   } else {
-    // --- STRICT LOCK LOGIC (Tropa Rule #3) ---
-    if (type === 'IN' && log.timeIn) {
-      return res.status(400).json({ error: 'ALREADY_IN', message: 'Mayroon ka nang recorded Time In ngayong araw.' });
-    }
-    if (type === 'OUT' && log.timeOut) {
-      return res.status(400).json({ error: 'ALREADY_OUT', message: 'Mayroon ka nang recorded Time Out ngayong araw.' });
-    }
-
+    // Update existing log
     if (type === 'IN') {
+      if (log.timeIn) return res.status(400).json({ error: 'ALREADY_IN', message: 'Mayroon ka nang recorded Time In ngayong araw.' });
       log.timeIn = timestamp;
       log.locIn = { lat: latitude, lon: longitude };
     } else {
+      if (log.timeOut) return res.status(400).json({ error: 'ALREADY_OUT', message: 'Mayroon ka nang recorded Time Out ngayong araw.' });
       log.timeOut = timestamp;
       log.locOut = { lat: latitude, lon: longitude };
     }
-    log.status = status || log.status;
+
+    // Auto-set status to Completed if both in and out are present
+    if (log.timeIn && log.timeOut) log.status = 'Completed';
+    else if (log.timeIn) log.status = 'Present';
   }
 
   await saveData(data);
-  res.json({ success: true });
+  res.json({ success: true, log });
 });
 
 app.get('/api/app-version', (req, res) => {
