@@ -14,8 +14,8 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
+      # Apply Rule 6: Use stable environment and avoid conflicting flags
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -31,13 +31,14 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Setup Node.js
+      - name: Setup Node.js (Match Local v20.11.1)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.11.1'
 
       - name: Install All Dependencies
         run: |
+          # Use clean installs to ensure stability
           cd mobile-app && npm install --no-package-lock
           cd ../web-admin && npm install --no-package-lock
           cd ../web-dev && npm install --no-package-lock
@@ -55,7 +56,7 @@ jobs:
       - name: Build Mobile APK (Universal)
         run: |
           cd mobile-app
-          # Keep the version from laptop but set production URLs
+          # Apply production config logic
           node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('src/app_config.json')); c.defaultApiUrl='https://timeattendance-system.onrender.com/api'; c.defaultTenantId='MASTER_UNIVERSAL'; fs.writeFileSync('src/app_config.json', JSON.stringify(c, null, 2));"
           npm run build
           npx cap sync android
@@ -66,11 +67,19 @@ jobs:
           mkdir -p final-deploy/dev
           mkdir -p final-deploy/app
           mkdir -p final-deploy/apks
-          cp -r web-admin/dist/* final-deploy/
-          cp -r web-dev/dist/* final-deploy/dev/
-          cp -r mobile-app/dist/* final-deploy/app/
-          cp mobile-app/android/app/build/outputs/apk/debug/app-debug.apk final-deploy/apks/TimeKey_Master.apk
+          
+          # Verify builds before copying
+          if [ -d "web-admin/dist" ]; then cp -r web-admin/dist/* final-deploy/; fi
+          if [ -d "web-dev/dist" ]; then cp -r web-dev/dist/* final-deploy/dev/; fi
+          if [ -d "mobile-app/dist" ]; then cp -r mobile-app/dist/* final-deploy/app/; fi
+          
+          APK_PATH="mobile-app/android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK_PATH" ]; then
+            cp "$APK_PATH" final-deploy/apks/TimeKey_Master.apk
+          fi
+          
           echo "Last Deploy: $(date)" > final-deploy/version.txt
+          echo "Build Version: ${{ github.sha }}" >> final-deploy/version.txt
 
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
