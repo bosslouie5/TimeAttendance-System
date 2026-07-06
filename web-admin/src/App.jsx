@@ -33,7 +33,6 @@ function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [assignments, setAssignments] = useState([]);
   const [orgUnits, setOrgUnits] = useState([]);
   const [logs, setLogs] = useState([]);
   const [positionTitles, setPositionTitles] = useState([]);
@@ -57,7 +56,7 @@ function App() {
   const [isEditingEmp, setIsEditingEmp] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
-  const [selectedAssignBranches, setSelectedAssignBranches] = useState([]);
+  const [selectedAssignBranch, setSelectedAssignBranch] = useState('');
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
   const [empId, setEmpId] = useState('');
   const [empName, setEmpName] = useState('');
@@ -143,14 +142,13 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      const [e, b, o, l, pt, sc, asgn] = await Promise.all([
+      const [e, b, o, l, pt, sc] = await Promise.all([
         requestJson('/employees'),
         requestJson('/departments'),
         requestJson('/org-units'),
         requestJson('/logs'),
         requestJson('/position-titles'),
-        requestJson('/schedules'),
-        requestJson('/assignments')
+        requestJson('/schedules')
       ]);
       setEmployees(e || []);
       setDepartments(b || []);
@@ -158,7 +156,6 @@ function App() {
       setLogs(l || []);
       setPositionTitles(pt || []);
       setSchedules(sc || []);
-      setAssignments(asgn || []);
     } catch (err) { console.error('Load failed', err); }
   };
 
@@ -454,34 +451,24 @@ function App() {
   };
 
   const saveAssignment = async () => {
-    if (selectedAssignBranches.length === 0) {
-      if (!confirm('No branches selected. This employee will not be able to time in/out. Proceed?')) return;
-    }
-    setStatus('Assigning branches...');
+    if (!selectedAssignBranch) return alert('Select a branch first');
+    setStatus('Assigning branch...');
     try {
       await requestJson('/assignments', {
         method: 'POST',
         body: JSON.stringify({
           employeeId: selectedAssignEmp.employeeId,
-          departmentIds: selectedAssignBranches,
+          departmentId: selectedAssignBranch,
           tenantId: detectedTenantId
         })
       });
-      setStatus('Branches Assigned! ✓');
+      setStatus('Branch Assigned! ✓');
       setIsAssignModalOpen(false);
       loadInitialData();
     } catch (e) {
-      alert('Failed to assign branches');
-      setStatus('Error assigning branches');
+      alert('Failed to assign branch');
+      setStatus('Error assigning branch');
     }
-  };
-
-  const toggleBranchSelection = (deptId) => {
-    setSelectedAssignBranches(prev =>
-      prev.includes(deptId)
-        ? prev.filter(id => id !== deptId)
-        : [...prev, deptId]
-    );
   };
 
   const resetEmployeeDevice = async (employeeId, employeeName) => {
@@ -1674,14 +1661,7 @@ function App() {
                       </td>
                       <td style={{textAlign:'center'}}>
                         <button
-                          onClick={() => {
-                            setSelectedAssignEmp(e);
-                            const current = assignments
-                              .filter(a => a.employeeId === e.employeeId)
-                              .map(a => a.departmentId);
-                            setSelectedAssignBranches(current);
-                            setIsAssignModalOpen(true);
-                          }}
+                          onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranch(''); setIsAssignModalOpen(true); }}
                           className="btn-edit"
                           style={{padding:'10px 20px', borderRadius: '10px'}}
                         >
@@ -1800,54 +1780,32 @@ function App() {
         </div>
       )}
 
-      {/* ASSIGN BRANCH MODAL (MULTI-BRANCH CHECKBOXES) */}
+      {/* ASSIGN BRANCH MODAL */}
       {isAssignModalOpen && selectedAssignEmp && (
         <div className="modal-overlay">
           <div className="modal-content fade-in" style={{maxWidth:'550px'}}>
-            <h2 style={{marginTop:0, color:'#3b82f6', fontWeight: '900'}}>🔗 Multi-Branch Assignment</h2>
+            <h2 style={{marginTop:0, color:'#3b82f6', fontWeight: '900'}}>🔗 Branch Geofence Assignment</h2>
             <div style={{background: 'rgba(59, 130, 246, 0.05)', padding: '15px', borderRadius: '15px', marginBottom: '25px', border: '1px solid rgba(59, 130, 246, 0.2)'}}>
-               <p style={{color:'#94a3b8', margin: '0 0 5px 0', fontSize: '0.75rem', fontWeight: '800'}}>CONFIGURING ACCESSIBLE BRANCHES FOR:</p>
+               <p style={{color:'#94a3b8', margin: '0 0 5px 0', fontSize: '0.75rem', fontWeight: '800'}}>CONFIGURING FOR:</p>
                <h3 style={{margin: 0, color: 'white', fontSize: '1.2rem', fontWeight: '900'}}>{selectedAssignEmp.name} (ID: {selectedAssignEmp.employeeId})</h3>
             </div>
 
-            <p style={{fontSize:'0.8rem', color:'#64748b', marginBottom:'15px', fontWeight:'bold'}}>Check all branches where this employee is allowed to Time In/Out:</p>
-
-            <div style={{background: '#0f172a', borderRadius: '15px', border: '1px solid #334155', maxHeight: '300px', overflowY: 'auto', padding: '10px'}}>
-              {departments.length === 0 ? (
-                <div style={{padding:'20px', textAlign:'center', color:'#64748b'}}>No branches found. Setup branches first.</div>
-              ) : (
-                departments.map(d => (
-                  <div
-                    key={d.departmentId}
-                    onClick={() => toggleBranchSelection(d.departmentId)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '15px',
-                      padding: '12px 15px',
-                      cursor: 'pointer',
-                      borderBottom: '1px solid rgba(255,255,255,0.05)',
-                      background: selectedAssignBranches.includes(d.departmentId) ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                      transition: '0.2s'
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedAssignBranches.includes(d.departmentId)}
-                      onChange={() => {}} // Controlled by parent div click
-                      style={{width:'20px', height:'20px', cursor:'pointer'}}
-                    />
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:'900', color: selectedAssignBranches.includes(d.departmentId) ? '#3b82f6' : 'white', fontSize:'0.95rem'}}>{d.name}</div>
-                      <div style={{fontSize:'0.7rem', color:'#64748b'}}>{d.radiusMeters}m Geofence Radius</div>
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="form-group">
+              <label>SELECT OFFICE BRANCH</label>
+              <select
+                value={selectedAssignBranch}
+                onChange={e => setSelectedAssignBranch(e.target.value)}
+                style={{width: '100%', fontSize: '1rem', padding: '15px'}}
+              >
+                <option value="">-- Choose Secure Location --</option>
+                {departments.map(d => (
+                  <option key={d.departmentId} value={d.departmentId}>{d.name} ({d.radiusMeters}m Geofence)</option>
+                ))}
+              </select>
             </div>
 
-            <div style={{display:'flex', gap:'15px', marginTop:'30px'}}>
-               <button onClick={saveAssignment} className="btn-blue" style={{flex:1, padding: '18px', fontSize: '1rem', fontWeight: '900'}}>SAVE ASSIGNMENTS</button>
+            <div style={{display:'flex', gap:'15px', marginTop:'40px'}}>
+               <button onClick={saveAssignment} className="btn-blue" style={{flex:1, padding: '18px', fontSize: '1rem', fontWeight: '900'}}>COMMIT ASSIGNMENT</button>
                <button onClick={() => setIsAssignModalOpen(false)} style={{padding:'18px 25px', background:'transparent', color:'#64748b', border:'1px solid #334155', borderRadius:'16px', fontWeight:'900', cursor:'pointer', fontSize: '0.9rem'}}>CANCEL</button>
             </div>
           </div>

@@ -834,12 +834,7 @@ function App() {
                 <div className="fade-in">
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '15px 20px', borderRadius: '20px'}}>
                      <h2 style={{margin: 0, fontSize: '1.2rem'}}>Attendance Logs</h2>
-                     <div style={{display:'flex', gap:'10px'}}>
-                        {pendingLogs.length > 0 && (
-                          <button onClick={() => attemptSync()} style={{background: '#f59e0b', border: 'none', color: 'white', padding: '10px 18px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900', cursor: 'pointer'}}>SYNC ({pendingLogs.length})</button>
-                        )}
-                        <button onClick={() => syncSystemData()} style={{background: 'rgba(59, 130, 246, 0.1)', border: 'none', color: '#3b82f6', padding: '10px 18px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900', cursor: 'pointer'}}>REFRESH</button>
-                     </div>
+                     <button onClick={syncSystemData} style={{background: 'rgba(59, 130, 246, 0.1)', border: 'none', color: '#3b82f6', padding: '10px 18px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900', cursor: 'pointer'}}>REFRESH</button>
                   </div>
 
                   {groupedLogs.length === 0 ? (
@@ -861,15 +856,10 @@ function App() {
                         <tbody>
                           {groupedLogs.map((group, i) => {
                             const status = getGroupStatus(group);
-                            const isSynced = (group.in?.isSynced !== false) && (group.out?.isSynced !== false);
                             return (
                               <tr key={i} className="fade-in" style={{animationDelay: `${i * 0.05}s`}}>
                                 <td>
-                                  <div style={{display:'flex', alignItems:'center', gap:'5px'}}>
-                                    <span className="branch-name" style={{fontSize: '0.75rem', margin:0}}>{group.branch}</span>
-                                    {!isSynced && <span title="Pending Sync" style={{fontSize:'0.8rem'}}>⏳</span>}
-                                    {isSynced && <span title="Synced to Server" style={{fontSize:'0.7rem'}}>☁️</span>}
-                                  </div>
+                                  <span className="branch-name" style={{fontSize: '0.75rem', display: 'block'}}>{group.branch}</span>
                                   <span className="log-date" style={{fontSize: '0.6rem', color: '#64748b'}}>{group.date}</span>
                                 </td>
                                 <td>
@@ -913,15 +903,9 @@ function App() {
                       </div>
 
                       <div style={{background: 'rgba(255,255,255,0.03)', borderRadius: '20px', padding: '20px', marginBottom: '30px'}}>
-                         <div style={{marginBottom: '15px', display: 'flex', justifyContent: 'space-between'}}>
-                            <div>
-                               <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>EMPLOYEE ID</div>
-                               <div style={{fontWeight: '700'}}>{localStorage.getItem('cached_id')}</div>
-                            </div>
-                            <div style={{textAlign: 'right'}}>
-                               <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>COMPANY ID</div>
-                               <div style={{fontWeight: '700', color: '#3b82f6'}}>{tenantId}</div>
-                            </div>
+                         <div style={{marginBottom: '15px'}}>
+                            <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>EMPLOYEE ID</div>
+                            <div style={{fontWeight: '700'}}>{localStorage.getItem('cached_id')}</div>
                          </div>
                          <div style={{marginBottom: '15px'}}>
                             <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>DEPARTMENT</div>

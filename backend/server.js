@@ -502,15 +502,13 @@ app.get('/api/departments', tenantGuard, async (req, res) => {
 
   // RULE: If employeeId is provided (from Mobile App), filter by assignment only
   if (employeeId) {
-    const assignedDeptIds = (data.assignments || [])
-      .filter(a =>
-        (a.employeeId || "").toString().toLowerCase() === employeeId.toString().toLowerCase() &&
-        (a.tenantId || "").toLowerCase() === tenantId.toLowerCase()
-      )
-      .map(a => a.departmentId);
+    const assignment = (data.assignments || []).find(a =>
+      (a.employeeId || "").toString().toLowerCase() === employeeId.toString().toLowerCase() &&
+      (a.tenantId || "").toLowerCase() === tenantId.toLowerCase()
+    );
 
-    if (assignedDeptIds.length > 0) {
-      filtered = filtered.filter(d => assignedDeptIds.includes(d.departmentId));
+    if (assignment) {
+      filtered = filtered.filter(d => d.departmentId === assignment.departmentId);
     } else {
       // If no assignment, return empty list to prevent unauthorized access to other branches
       filtered = [];
@@ -643,32 +641,24 @@ app.get('/api/assignments', tenantGuard, async (req, res) => {
 app.post('/api/assignments', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.assignments) data.assignments = [];
-  const { employeeId, departmentIds } = req.body;
+  const { employeeId, departmentId } = req.body;
   const tenantId = req.tenantId || 'master';
 
-  // 1. Remove all existing assignments for this employee under this tenant
-  data.assignments = data.assignments.filter(a => !(a.employeeId === employeeId && a.tenantId === tenantId));
-
-  // 2. Add new multi-assignments
-  if (Array.isArray(departmentIds) && departmentIds.length > 0) {
-    departmentIds.forEach(deptId => {
-      data.assignments.push({ employeeId, departmentId: deptId, tenantId });
-    });
+  // Find existing or add new
+  const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
+  if (index !== -1) {
+    data.assignments[index].departmentId = departmentId;
+  } else {
+    data.assignments.push({ employeeId, departmentId, tenantId });
   }
 
-  // 3. Sync branchName string in employee object for easier dashboard viewing
+  // Also update branchName in employee object for easier access
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
-  if (emp) {
-    if (Array.isArray(departmentIds) && departmentIds.length > 0) {
-      const depts = data.departments.filter(d => departmentIds.includes(d.departmentId) && d.tenantId === tenantId);
-      emp.branchName = depts.map(d => d.name).join(', ');
-    } else {
-      emp.branchName = 'Unassigned';
-    }
-  }
+  const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
+  if (emp && dept) emp.branchName = dept.name;
 
   await saveData(data);
-  res.json({ success: true, count: Array.isArray(departmentIds) ? departmentIds.length : 0 });
+  res.json({ success: true });
 });
 
 app.get('/api/logs', tenantGuard, async (req, res) => {
@@ -764,23 +754,13 @@ app.post('/api/mobile/attendance', async (req, res) => {
     (e.employeeId || "").toString().toLowerCase() === (employeeId || "").toString().toLowerCase() &&
     (e.tenantId || "").toLowerCase() === (tenantId || "").toLowerCase()
   );
-
-  if (!emp) {
-    console.error(`[ATTENDANCE] Rejected: Employee ${employeeId} not found for Tenant ${tenantId}`);
-    return res.status(404).json({ error: 'Employee not found' });
-  }
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
 
   const timestamp = new Date().toISOString();
-  const today = timestamp.split('T')[0]; // Use ISO date YYYY-MM-DD for stable comparison
+  const today = new Date().toLocaleDateString();
 
-  // Find existing log for today (comparing only the date part of the timestamp)
-  let log = data.logs.find(l =>
-    l.employeeId === employeeId &&
-    l.tenantId === tenantId &&
-    l.timestamp.split('T')[0] === today
-  );
-
-  console.log(`[ATTENDANCE] Request: ${emp.name} (${type}) at ${departmentName}. Existing Log: ${log ? 'Yes' : 'No'}`);
+  // Find existing log for today
+  let log = data.logs.find(l => l.employeeId === employeeId && l.tenantId === tenantId && new Date(l.timestamp).toLocaleDateString() === today);
 
   if (!log) {
     log = {
@@ -790,7 +770,7 @@ app.post('/api/mobile/attendance', async (req, res) => {
       tenantId,
       timestamp,
       departmentName,
-      status: status || 'Present',
+      status: status || 'Pending',
       timeIn: type === 'IN' ? timestamp : null,
       timeOut: type === 'OUT' ? timestamp : null,
       locIn: type === 'IN' ? { lat: latitude, lon: longitude } : null,
@@ -798,24 +778,26 @@ app.post('/api/mobile/attendance', async (req, res) => {
     };
     data.logs.push(log);
   } else {
-    // Update existing log
+    // --- STRICT LOCK LOGIC (Tropa Rule #3) ---
+    if (type === 'IN' && log.timeIn) {
+      return res.status(400).json({ error: 'ALREADY_IN', message: 'Mayroon ka nang recorded Time In ngayong araw.' });
+    }
+    if (type === 'OUT' && log.timeOut) {
+      return res.status(400).json({ error: 'ALREADY_OUT', message: 'Mayroon ka nang recorded Time Out ngayong araw.' });
+    }
+
     if (type === 'IN') {
-      if (log.timeIn) return res.status(400).json({ error: 'ALREADY_IN', message: 'Mayroon ka nang recorded Time In ngayong araw.' });
       log.timeIn = timestamp;
       log.locIn = { lat: latitude, lon: longitude };
     } else {
-      if (log.timeOut) return res.status(400).json({ error: 'ALREADY_OUT', message: 'Mayroon ka nang recorded Time Out ngayong araw.' });
       log.timeOut = timestamp;
       log.locOut = { lat: latitude, lon: longitude };
     }
-
-    // Auto-set status to Completed if both in and out are present
-    if (log.timeIn && log.timeOut) log.status = 'Completed';
-    else if (log.timeIn) log.status = 'Present';
+    log.status = status || log.status;
   }
 
   await saveData(data);
-  res.json({ success: true, log });
+  res.json({ success: true });
 });
 
 app.get('/api/app-version', (req, res) => {
@@ -1126,11 +1108,9 @@ app.post('/api/master/build-apk', async (req, res) => {
 
     if (fs.existsSync(gradlePath)) {
       let gradleContent = fs.readFileSync(gradlePath, 'utf8');
-      // Increment versionCode and Sync versionName with package.json
       gradleContent = gradleContent.replace(/versionCode (\d+)/, (match, v) => `versionCode ${parseInt(v) + 1}`);
-      gradleContent = gradleContent.replace(/versionName ".*?"/, `versionName "${currentVersion}"`);
       fs.writeFileSync(gradlePath, gradleContent);
-      console.log(`[BUILD] Gradle version bumped to ${currentVersion}.`);
+      console.log(`[BUILD] Gradle versionCode bumped.`);
     }
 
     // 1. Update app_config.json & Sync version.json
