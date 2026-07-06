@@ -743,6 +743,14 @@ app.post('/api/mobile/attendance', async (req, res) => {
     };
     data.logs.push(log);
   } else {
+    // --- STRICT LOCK LOGIC (Tropa Rule #3) ---
+    if (type === 'IN' && log.timeIn) {
+      return res.status(400).json({ error: 'ALREADY_IN', message: 'Mayroon ka nang recorded Time In ngayong araw.' });
+    }
+    if (type === 'OUT' && log.timeOut) {
+      return res.status(400).json({ error: 'ALREADY_OUT', message: 'Mayroon ka nang recorded Time Out ngayong araw.' });
+    }
+
     if (type === 'IN') {
       log.timeIn = timestamp;
       log.locIn = { lat: latitude, lon: longitude };

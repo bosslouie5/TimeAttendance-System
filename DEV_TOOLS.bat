@@ -40,6 +40,7 @@ echo   [2] RUN TEST LAB (Port 4002 - Local/Online)
 echo   [3] REBUILD ALL LAB UI (Build 4002 Code)
 echo   [4] SYNC LAB TO PRODUCTION (Move 4002 to 4001)
 echo   [5] BUMP MOBILE APP VERSION (Trigger OTA)
+echo   [S] SYSTEM ROADMAP ^& INSTRUCTIONS (Guide)
 echo.
 echo   [B] CREATE SAFETY BACKUP (Checkpoint)
 echo   [R] REVERT SOURCE CODE (Restore from Checkpoint)
@@ -56,6 +57,7 @@ if /i "%choice%"=="2" goto RUN_LAB
 if /i "%choice%"=="3" goto REBUILD_LAB_ALL
 if /i "%choice%"=="4" goto SYNC_DATA
 if /i "%choice%"=="5" goto BUMP_VERSION
+if /i "%choice%"=="S" goto ROADMAP
 if /i "%choice%"=="B" goto BACKUP_CODE
 if /i "%choice%"=="R" goto REVERT_CODE
 if /i "%choice%"=="6" goto STOP_ALL
@@ -174,6 +176,37 @@ ping 127.0.0.1 -n 4 >nul
 start "" "http://localhost:4002/dev"
 goto MENU
 
+:ROADMAP
+cls
+echo.
+echo   ______________________________________________________
+echo  ^|                                                      ^|
+echo  ^|           TIMEKEY MASTER DEVELOPER ROADMAP         ^|
+echo  ^|______________________________________________________^|
+echo.
+echo   [1] LOCAL TESTING (Port 4002)
+echo       - Piliin ang [2] RUN TEST LAB.
+echo       - Buksan ang http://localhost:4002/dev para sa Web.
+echo       - Gamitin ang USB Debugging para sa Mobile App (4002).
+echo.
+echo   [2] VERIFY RECENT UPDATES (Mobile v0.1.1)
+echo       - Subukan ang "Attendance Lock": Dapat hindi pwede
+echo         mag-Time In twice sa isang araw.
+echo       - Check UI Autofit: Siguraduhing sakto ang view sa
+echo         iba't ibang laki ng screen ng phone.
+echo.
+echo   [3] SYNCING ^& VERSIONING
+echo       - Piliin ang [5] BUMP VERSION kung release ready na.
+echo       - Piliin ang [4] SYNC DATA para malipat ang 4002 -> 4001.
+echo.
+echo   [4] GLOBAL DEPLOYMENT
+echo       - Piliin ang [1] DEPLOY ALL para mag-live sa GitHub/Render.
+echo       - Ang Mobile App ay automatic mag-aask ng update (OTA).
+echo.
+echo   ------------------------------------------------------
+pause
+goto MENU
+
 :STOP_ALL
 cls
 echo [*] Global System Force Stop...
@@ -189,7 +222,10 @@ goto MENU
 :BUILD_DEPLOY_ALL
 cls
 echo.
-echo !!! Step 1: INITIATING GLOBAL PRODUCTION DEPLOYMENT !!!
+echo   ______________________________________________________
+echo  ^|                                                      ^|
+echo  ^|        INITIATING GLOBAL PRODUCTION DEPLOYMENT     ^|
+echo  ^|______________________________________________________^|
 echo.
 set "VER_FILE=backend\version.json"
 set "CONFIG_FILE=mobile-app\src\app_config.json"
@@ -204,7 +240,7 @@ set /p bump="Bump version before deploy? (Y/N/Already Done='A'): "
 if /i "%bump%"=="A" goto SKIP_BUMP
 if /i "%bump%"=="N" goto SKIP_BUMP
 
-:: USE THE SAME PRO GUI
+:: PRO GUI FOR VERSION BUMP
 set "psCommand=Add-Type -AssemblyName System.Windows.Forms; $form = New-Object Windows.Forms.Form; $form.Text = 'DEPLOYMENT - VERSION BUMP'; $form.Size = New-Object Drawing.Size(400,250); $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'; $form.MaximizeBox = $false; $lbl = New-Object Windows.Forms.Label; $lbl.Text = 'Enter New Version (Current: %CURRENT_VER%):'; $lbl.Location = '20,20'; $lbl.Size = '300,20'; $txt = New-Object Windows.Forms.TextBox; $txt.Text = '%CURRENT_VER%'; $txt.Location = '20,45'; $txt.Size = '340,30'; $lbl2 = New-Object Windows.Forms.Label; $lbl2.Text = 'Deployment Changelog:'; $lbl2.Location = '20,80'; $lbl2.Size = '300,20'; $txt2 = New-Object Windows.Forms.TextBox; $txt2.Text = 'Production Release %date%'; $txt2.Location = '20,105'; $txt2.Size = '340,30'; $btn = New-Object Windows.Forms.Button; $btn.Text = 'CONFIRM VERSION ^& DEPLOY'; $btn.Location = '20,150'; $btn.Size = '340,40'; $btn.DialogResult = [Windows.Forms.DialogResult]::OK; $form.AcceptButton = $btn; $form.Controls.AddRange(@($lbl,$txt,$lbl2,$txt2,$btn)); $form.Add_Shown({$txt.Focus()}); if($form.ShowDialog() -eq 'OK'){$txt.Text + '|' + $txt2.Text}"
 
 for /f "tokens=1,2 delims=|" %%a in ('powershell -Command "%psCommand%"') do (
@@ -225,20 +261,30 @@ if exist "%CONFIG_FILE%" (
 )
 
 :SKIP_BUMP
-echo [*] CLOUD DEPLOYMENT MODE ACTIVE...
-echo [*] (Laptop building is disabled. Cloud will handle All Builds)
-
-echo [*] Pushing Source Code to GitHub...
+echo.
+echo [*] PUSHING TO CLOUD REGISTRY...
 cd /d "%ROOT_DIR%"
+
+echo [GIT] Staging changes...
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Production Sync: %date% %time%" >nul 2>&1
+
+echo [GIT] Creating commit...
+"%GIT_EXE%" commit -m "Production Sync: %date% %time% - Version !NEW_VER!"
+
+echo [GIT] Pushing to GitHub (Render Build Trigger)...
 "%GIT_EXE%" push origin main
 
 echo.
-echo [SUCCESS] SOURCE CODE UPLOADED!
-echo [*] GitHub Cloud is now building your Website and APK.
-echo [*] Please wait 5-8 minutes for the process to finish.
-echo Web: https://timeattendance-system.onrender.com/dev
+echo   ______________________________________________________
+echo  ^|                                                      ^|
+echo  ^|         DEPLOYMENT SUCCESSFUL ^& LIVE NOW!         ^|
+echo  ^|______________________________________________________^|
+echo.
+echo   - GitHub Source Updated.
+echo   - Render Dashboard: Building new Website...
+echo   - Render Website: https://timeattendance-system.onrender.com
+echo   - Mobile App: OTA Update Triggered.
+echo.
 if "%INTERNAL_CALL%"=="1" exit /b
 pause
 goto MENU
