@@ -661,10 +661,15 @@ app.post('/api/mobile/login', async (req, res) => {
   const { tenantId, employeeId, deviceId } = req.body;
   const data = await loadData();
 
-  const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
+  const user = data.users.find(u => (u.tenantId || u.username || "").toLowerCase() === (tenantId || "").toLowerCase());
   if (!user) return res.status(404).json({ error: 'Company ID not found' });
 
-  const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === (user.tenantId || user.username));
+  const targetTenantId = user.tenantId || user.username;
+  const emp = data.employees.find(e =>
+    (e.employeeId || "").toString().toLowerCase() === (employeeId || "").toString().toLowerCase() &&
+    (e.tenantId || "").toLowerCase() === targetTenantId.toLowerCase()
+  );
+
   if (!emp) return res.status(404).json({ error: 'Employee ID not found' });
 
   // Device Locking Logic
@@ -678,19 +683,26 @@ app.post('/api/mobile/login', async (req, res) => {
   }
 
   // Find branch assignment
-  const assign = (data.assignments || []).find(a => a.employeeId === employeeId && a.tenantId === emp.tenantId);
+  const assign = (data.assignments || []).find(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
   const branch = assign ? data.departments.find(d => d.departmentId === assign.departmentId) : null;
 
   res.json({
     success: true,
+    tenantId: targetTenantId,
     employee: {
       employeeId: emp.employeeId,
       name: emp.name,
       tenantId: emp.tenantId,
       companyName: user.companyName,
-      branch: branch || { name: 'Unassigned', radiusMeters: 0 }
+      branch: branch || { name: 'Unassigned', radiusMeters: 50 }
     }
   });
+});
+
+// Alias for device register to match mobile app
+app.post('/api/device/register', async (req, res) => {
+  req.body.tenantId = req.headers['x-tenant-id'] || req.body.tenantId;
+  return app._router.handle({ method: 'POST', url: '/api/mobile/login', body: req.body }, res);
 });
 
 app.post('/api/mobile/attendance', async (req, res) => {
@@ -1043,7 +1055,7 @@ app.post('/api/master/build-apk', async (req, res) => {
 
     // 5. Verify and Move APK
     const safeFileName = (companyName || tenantId).toString().replace(/[^a-z0-9]/gi, '_');
-    const destName = `${tenantId}_${safeFileName}.apk`;
+    const destName = `${safeFileName}_Time_Attendance.apk`;
     const destPath = path.join(apksDir, destName);
 
     if (fs.existsSync(sourceApk)) {

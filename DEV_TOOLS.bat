@@ -247,8 +247,10 @@ set "CONFIG_FILE=mobile-app\src\app_config.json"
 set "ADMIN_CONFIG=web-admin\src\app_config.json"
 set "CURRENT_VER=1.0.0"
 
-:: Get current version from backend/version.json if it exists
-if exist "%VER_FILE%" (
+:: Get current version from mobile config first as it's the source of truth for the app
+if exist "%CONFIG_FILE%" (
+    for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CURRENT_VER=%%v"
+) else if exist "%VER_FILE%" (
     for /f "delims=" %%v in ('powershell -Command "(Get-Content %VER_FILE% | ConvertFrom-Json).version"') do set "CURRENT_VER=%%v"
 )
 

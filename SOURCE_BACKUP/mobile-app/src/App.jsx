@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { Device } from '@capacitor/device';
@@ -69,7 +69,6 @@ function App() {
 
     let base = appConfig.defaultApiUrl || 'https://timeattendance-system.onrender.com/api';
 
-    // Testing ground logic: If on localhost, use port 4002
     if (isLocalHost && base.includes('onrender.com')) {
        base = 'http://127.0.0.1:4002/api';
     }
@@ -97,6 +96,7 @@ function App() {
     return null;
   });
 
+  const [activeTab, setActiveTab] = useState('home');
   const [setupId, setSetupId] = useState('');
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('cached_id'));
@@ -105,7 +105,6 @@ function App() {
   const [status, setStatus] = useState('System Online');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isServerDown, setIsServerDown] = useState(false);
-  const [showLogsModal, setShowLogsModal] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
 
@@ -131,6 +130,14 @@ function App() {
     try {
       return JSON.parse(localStorage.getItem('personal_logs')) || [];
     } catch (e) { return []; }
+  });
+
+  const [cachedEmployee, setCachedEmployee] = useState(() => {
+    try {
+        const all = JSON.parse(localStorage.getItem('all_employees') || '[]');
+        const id = localStorage.getItem('cached_id');
+        return all.find(e => e.employeeId === id) || { name: localStorage.getItem('cached_name') || 'Employee' };
+    } catch (e) { return { name: 'Employee' }; }
   });
 
   // --- LOGIC FUNCTIONS ---
@@ -189,6 +196,8 @@ function App() {
 
       if (empRes.status === 200) {
         localStorage.setItem('all_employees', JSON.stringify(empRes.data));
+        const current = empRes.data.find(e => e.employeeId === targetEmpId);
+        if (current) setCachedEmployee(current);
       }
       if (deptRes.status === 200) {
         localStorage.setItem('all_departments', JSON.stringify(deptRes.data));
@@ -213,7 +222,7 @@ function App() {
     let processedCount = 0;
     for (const log of currentLogs) {
       try {
-        const response = await postJson(`${apiUrl}/timein`, { ...log, tenantId }, { 'x-tenant-id': tenantId });
+        const response = await postJson(`${apiUrl}/mobile/attendance`, { ...log, tenantId }, { 'x-tenant-id': tenantId });
         if (response.status === 200 || response.status === 400) {
            processedCount++;
         } else {
@@ -315,14 +324,14 @@ function App() {
     setStatus('Authenticating...');
     const cleanId = employeeId.trim();
 
-    // Attempt Online Registration/Login
     try {
       const idInfo = await Device.getId();
       const devInfo = await Device.getInfo();
       const res = await postJson(`${apiUrl}/device/register`, {
         employeeId: cleanId,
         deviceId: idInfo.identifier,
-        deviceName: `${devInfo.model}`
+        deviceName: `${devInfo.model}`,
+        tenantId: tenantId
       }, { 'x-tenant-id': tenantId });
 
       if (res.status === 200) {
@@ -343,13 +352,12 @@ function App() {
       }
     } catch (e) { console.warn('Online login failed, trying cache...'); }
 
-    // Offline Fallback
     const allEmployees = JSON.parse(localStorage.getItem('all_employees') || '[]');
-    const cachedEmployee = allEmployees.find(e => e.employeeId === cleanId);
-    if (cachedEmployee) {
+    const cachedEmp = allEmployees.find(e => e.employeeId.toString().toLowerCase() === cleanId.toLowerCase());
+    if (cachedEmp) {
       setLoggedIn(true);
-      localStorage.setItem('cached_id', cachedEmployee.employeeId);
-      localStorage.setItem('cached_name', cachedEmployee.name);
+      localStorage.setItem('cached_id', cachedEmp.employeeId);
+      localStorage.setItem('cached_name', cachedEmp.name);
       setStatus('Offline Access ✓');
       alert('OFFLINE MODE: Logged in using cached credentials.');
     } else {
@@ -396,6 +404,8 @@ function App() {
       departmentId: selectedDepartment,
       departmentName: dept.name,
       type,
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
       timestamp: new Date().toISOString(),
       distanceMeters: Math.round(dist),
       tenantId
@@ -403,7 +413,7 @@ function App() {
 
     setStatus('💾 Saving log...');
     try {
-      const response = await postJson(`${apiUrl}/timein`, logData, { 'x-tenant-id': tenantId });
+      const response = await postJson(`${apiUrl}/mobile/attendance`, logData, { 'x-tenant-id': tenantId });
       if (response.status === 200) {
         setStatus(`${type} Success ✓`);
         alert(`SUCCESS recorded.`);
@@ -439,10 +449,43 @@ function App() {
     window.open(downloadUrl, '_blank');
   };
 
+  const getLogStatus = (l) => {
+      if (l.status && l.status !== 'Pending') return l.status.toUpperCase();
+
+      const emp = cachedEmployee;
+      if (!emp || !emp.schedule) return 'RECORDED';
+
+      // Advanced status logic same as web-admin
+      const timeInStr = l.timeIn || (l.type === 'IN' ? l.timestamp : null);
+      if (!timeInStr) return 'PENDING';
+
+      const d = new Date(l.timestamp);
+      const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      const logInTime = new Date(timeInStr);
+      const logIn = new Date(`${datePart}T${String(logInTime.getHours()).padStart(2,'0')}:${String(logInTime.getMinutes()).padStart(2,'0')}:00`);
+
+      // Extract schedule start
+      let sStart = null;
+      const timeMatch = emp.schedule.match(/(\d{1,2}:\d{2})/);
+      if (timeMatch) {
+          sStart = new Date(`${datePart}T${timeMatch[1].padStart(5, '0')}:00`);
+      }
+
+      if (sStart) {
+          const grace = 15; // default grace
+          const lateThreshold = new Date(sStart.getTime() + grace * 60000);
+          if (logIn > lateThreshold) return 'LATE';
+          return 'COMPLETED';
+      }
+
+      return 'RECORDED';
+  };
+
   // --- RENDER ---
 
   return (
-    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 80px 15px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden'}}>
+    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 100px 15px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden'}}>
       <style>{`
         body { background: #0f172a !important; margin: 0; }
         .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 30px 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
@@ -451,16 +494,18 @@ function App() {
         .input-field { width: 100%; padding: 18px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1.1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
         .input-field:focus { border-color: #3b82f6; background: rgba(15, 23, 42, 0.8); }
         .label-visible { color: #94a3b8; font-size: 0.75rem; font-weight: 800; margin-bottom: 12px; display: block; letter-spacing: 1.5px; text-transform: uppercase; }
-        .fade-in { animation: fadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .fade-in { animation: fadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         .pulse { animation: pulseAnim 2s infinite; }
         @keyframes pulseAnim { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } 100% { transform: scale(1); opacity: 1; } }
-        .badge { padding: 8px 16px; border-radius: 14px; font-size: 0.7rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
-        .badge-pending { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
-        .badge-online { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.95); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(15px); padding: 20px; }
-        .modal-content { background: #1e293b; width: 100%; max-width: 400px; max-height: 85vh; border-radius: 35px; padding: 35px; border: 1px solid rgba(255,255,255,0.1); overflow-y: auto; position: relative; }
-        .log-item { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 20px 0; display: flex; justify-content: space-between; align-items: center; }
+        .badge { padding: 8px 16px; border-radius: 12px; font-size: 0.65rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; border: 1px solid currentColor; }
+        .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+        .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+        .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
+        .nav-bar { position: fixed; bottom: 20px; left: 20px; right: 20px; background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(20px); border-radius: 25px; border: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 10px; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 5px; color: #64748b; text-decoration: none; font-size: 0.7rem; font-weight: 800; padding: 10px; border-radius: 15px; transition: 0.3s; }
+        .nav-item.active { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+        .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; }
       `}</style>
@@ -469,7 +514,7 @@ function App() {
         <div style={{padding: '40px 10px', textAlign: 'center'}}>
            <div className="glass-card fade-in">
               <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
-              <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>System Setup</h1>
+              <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>Time Attendance</h1>
               <p style={{color: '#94a3b8', marginBottom: '40px'}}>Enter Company ID to activate terminal.</p>
               <input value={setupId} onChange={e => setSetupId(e.target.value)} placeholder="e.g. 571044" className="input-field" style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900'}} />
               <button onClick={handleSetupTenant} disabled={isSettingUp} className="btn-primary">{isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}</button>
@@ -491,100 +536,158 @@ function App() {
             </div>
           )}
 
-          <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '25px'}} onDoubleClick={handleUpdateServer}>
-              <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Official Attendance Hub</div>
-              <h1 style={{fontSize: '1.8rem', margin: 0, fontWeight: '900', color: '#fff'}}>{tenantInfo?.companyName?.toUpperCase() || 'TIMEKEY HUB'}</h1>
+          <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '20px'}} onDoubleClick={handleUpdateServer}>
+              <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Time Attendance Hub</div>
+              <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff'}}>{tenantInfo?.companyName?.toUpperCase() || 'OFFICIAL HUB'}</h1>
           </div>
-
-          <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', border: '1px solid rgba(255,255,255,0.05)'}}>
-            <div>
-              <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800'}}>SYSTEM STATUS</div>
-              <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px'}}>
-                <div style={{width: '10px', height: '10px', borderRadius: '50%', background: isServerDown ? '#ef4444' : '#10b981'}}></div>
-                <span style={{fontSize: '0.9rem', fontWeight: '900', color: isServerDown ? '#ef4444' : '#10b981'}}>{isServerDown ? 'OFFLINE' : 'ONLINE'}</span>
-              </div>
-            </div>
-            <div style={{textAlign: 'right'}}>
-              <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800'}}>QUEUE</div>
-              <div style={{marginTop: '6px'}}><span className={`badge ${pendingLogs.length > 0 ? 'badge-pending' : 'badge-online'}`}>{pendingLogs.length} Records</span></div>
-            </div>
-          </header>
 
           {!loggedIn ? (
             <div className="glass-card fade-in">
               <div style={{textAlign: 'center', marginBottom: '40px'}}>
                  <div style={{fontSize: '5rem', marginBottom: '15px'}} className="pulse">🛡️</div>
-                 <h2>Security Hub</h2>
-                 <p style={{color: '#94a3b8'}}>Identity Verification Required</p>
+                 <h2>Identity Hub</h2>
+                 <p style={{color: '#94a3b8'}}>Verification Required</p>
               </div>
               <span className="label-visible">EMPLOYEE ID</span>
               <input value={employeeId} onChange={e => setEmployeeId(e.target.value)} placeholder="0001" className="input-field" style={{textAlign: 'center', fontSize: '1.4rem'}} />
               <button onClick={login} disabled={loading} className="btn-primary">{loading ? 'VERIFYING...' : 'SIGN IN'}</button>
             </div>
           ) : (
-            <div className="glass-card fade-in">
-              <div style={{display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '35px', background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '25px'}}>
-                <div style={{width: '60px', height: '60px', borderRadius: '20px', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem'}}>👤</div>
-                <div>
-                  <span className="label-visible" style={{marginBottom: '4px'}}>WELCOME BACK</span>
-                  <div style={{fontSize: '1.4rem', fontWeight: '900'}}>{localStorage.getItem('cached_name')}</div>
+            <>
+              {activeTab === 'home' && (
+                <div className="fade-in">
+                  <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div>
+                      <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800'}}>SYSTEM STATUS</div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px'}}>
+                        <div style={{width: '10px', height: '10px', borderRadius: '50%', background: isServerDown ? '#ef4444' : '#10b981'}}></div>
+                        <span style={{fontSize: '0.9rem', fontWeight: '900', color: isServerDown ? '#ef4444' : '#10b981'}}>{isServerDown ? 'OFFLINE' : 'ONLINE'}</span>
+                      </div>
+                    </div>
+                    <div style={{textAlign: 'right'}}>
+                      <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800'}}>QUEUE</div>
+                      <div style={{marginTop: '6px'}}><span className={`badge ${pendingLogs.length > 0 ? 'badge-pending' : 'badge-success'}`}>{pendingLogs.length} Records</span></div>
+                    </div>
+                  </header>
+
+                  <div className="glass-card">
+                    <div style={{display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '35px', background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '25px'}}>
+                      <div style={{width: '60px', height: '60px', borderRadius: '20px', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem'}}>👤</div>
+                      <div>
+                        <span className="label-visible" style={{marginBottom: '4px'}}>WELCOME BACK</span>
+                        <div style={{fontSize: '1.4rem', fontWeight: '900'}}>{localStorage.getItem('cached_name')}</div>
+                      </div>
+                    </div>
+
+                    <span className="label-visible">SELECT WORK LOCATION</span>
+                    <select value={selectedDepartment} onChange={e => setSelectedDepartment(e.target.value)} className="input-field" style={{cursor: 'pointer'}}>
+                      <option value="" style={{color: '#000'}}>-- Select Office/Branch --</option>
+                      {departments.map(d => <option key={d.departmentId} value={d.departmentId} style={{color: '#000'}}>{d.name}</option>)}
+                    </select>
+
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '10px'}}>
+                      <button onClick={() => recordAttendance('IN')} className="btn-primary" style={{background: '#10b981', padding: '30px 10px'}}>
+                        <span style={{fontSize: '2rem', display: 'block'}}>📥</span>
+                        <span>TIME IN</span>
+                      </button>
+                      <button onClick={() => recordAttendance('OUT')} className="btn-primary" style={{background: '#f59e0b', padding: '30px 10px'}}>
+                        <span style={{fontSize: '2rem', display: 'block'}}>📤</span>
+                        <span>TIME OUT</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'logs' && (
+                <div className="fade-in">
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+                     <h2 style={{margin: 0}}>Personal Logs</h2>
+                     <button onClick={syncSystemData} style={{background: 'rgba(59, 130, 246, 0.1)', border: 'none', color: '#3b82f6', padding: '8px 15px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '900'}}>REFRESH</button>
+                  </div>
+
+                  {personalLogs.length === 0 ? (
+                    <div style={{textAlign: 'center', padding: '50px 20px', color: '#64748b'}}>
+                        <div style={{fontSize: '4rem', marginBottom: '20px'}}>📋</div>
+                        <p>No activity history found yet.</p>
+                    </div>
+                  ) : (
+                    personalLogs.slice().reverse().map((l, i) => {
+                        const status = getLogStatus(l);
+                        return (
+                            <div key={i} className="log-card fade-in">
+                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+                                    <div>
+                                        <div style={{fontWeight: '900', fontSize: '1.1rem', marginBottom: '4px'}}>{l.departmentName}</div>
+                                        <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{new Date(l.timestamp).toLocaleString()}</div>
+                                    </div>
+                                    <span className={`badge ${status === 'COMPLETED' ? 'badge-success' : status === 'LATE' ? 'badge-late' : 'badge-pending'}`}>
+                                        {status}
+                                    </span>
+                                </div>
+                                <div style={{marginTop: '15px', display: 'flex', gap: '15px', fontSize: '0.75rem', fontWeight: '800'}}>
+                                    <span style={{color: l.type === 'IN' ? '#10b981' : '#f59e0b'}}>{l.type} RECORDED</span>
+                                    <span style={{color: '#64748b'}}>•</span>
+                                    <span style={{color: '#64748b'}}>{l.distanceMeters}M AWAY</span>
+                                </div>
+                            </div>
+                        );
+                    })
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'profile' && (
+                <div className="fade-in">
+                   <div className="glass-card">
+                      <div style={{textAlign: 'center', marginBottom: '30px'}}>
+                         <div style={{width: '100px', height: '100px', borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', margin: '0 auto 20px auto'}}>👤</div>
+                         <h2 style={{margin: 0}}>{cachedEmployee?.name}</h2>
+                         <p style={{color: '#94a3b8', margin: '5px 0 0 0'}}>{cachedEmployee?.jobTitle || 'Staff'}</p>
+                      </div>
+
+                      <div style={{background: 'rgba(255,255,255,0.03)', borderRadius: '20px', padding: '20px', marginBottom: '30px'}}>
+                         <div style={{marginBottom: '15px'}}>
+                            <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>EMPLOYEE ID</div>
+                            <div style={{fontWeight: '700'}}>{localStorage.getItem('cached_id')}</div>
+                         </div>
+                         <div style={{marginBottom: '15px'}}>
+                            <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>DEPARTMENT</div>
+                            <div style={{fontWeight: '700'}}>{cachedEmployee?.department || '-'}</div>
+                         </div>
+                         <div>
+                            <div style={{fontSize: '0.65rem', color: '#64748b', fontWeight: '900', marginBottom: '5px'}}>WORK SCHEDULE</div>
+                            <div style={{fontWeight: '700', color: '#f59e0b'}}>{cachedEmployee?.schedule || 'Regular Shift'}</div>
+                         </div>
+                      </div>
+
+                      <button onClick={() => {if(confirm('Are you sure you want to logout?')){localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} className="btn-primary" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '2px solid rgba(239, 68, 68, 0.2)', boxShadow: 'none'}}>LOGOUT ACCOUNT</button>
+                   </div>
+
+                   <div style={{textAlign: 'center', marginTop: '30px', color: '#64748b', fontSize: '0.7rem', fontWeight: '900'}}>
+                      {status.toUpperCase()} | V{appConfig.version} | {apiUrl.includes('127.0.0.1') ? 'LAB MODE' : 'CLOUD LIVE'}
+                   </div>
+                </div>
+              )}
+
+              <div className="nav-bar">
+                <div className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+                   <span style={{fontSize: '1.5rem'}}>🏠</span>
+                   <span>HOME</span>
+                </div>
+                <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                   <span style={{fontSize: '1.5rem'}}>📋</span>
+                   <span>LOGS</span>
+                </div>
+                <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
+                   <span style={{fontSize: '1.5rem'}}>👤</span>
+                   <span>PROFILE</span>
                 </div>
               </div>
-
-              <span className="label-visible">SELECT WORK LOCATION</span>
-              <select value={selectedDepartment} onChange={e => setSelectedDepartment(e.target.value)} className="input-field" style={{cursor: 'pointer'}}>
-                <option value="" style={{color: '#000'}}>-- Select Office/Branch --</option>
-                {departments.map(d => <option key={d.departmentId} value={d.departmentId} style={{color: '#000'}}>{d.name}</option>)}
-              </select>
-
-              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px'}}>
-                <button onClick={() => recordAttendance('IN')} className="btn-primary" style={{background: '#10b981', padding: '30px 10px'}}>
-                  <span style={{fontSize: '2rem', display: 'block'}}>📥</span>
-                  <span>IN</span>
-                </button>
-                <button onClick={() => recordAttendance('OUT')} className="btn-primary" style={{background: '#f59e0b', padding: '30px 10px'}}>
-                  <span style={{fontSize: '2rem', display: 'block'}}>📤</span>
-                  <span>OUT</span>
-                </button>
-              </div>
-
-              <button onClick={() => { syncSystemData(); setShowLogsModal(true); }} style={{width: '100%', padding: '20px', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '2px solid rgba(59, 130, 246, 0.3)', borderRadius: '22px', fontWeight: '900', marginBottom: '20px'}}>📋 ACTIVITY HISTORY</button>
-              <button onClick={() => {if(confirm('Logout?')){localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} style={{width: '100%', padding: '10px', background: 'transparent', color: '#64748b', border: 'none', fontSize: '0.8rem'}}>LOGOUT ACCOUNT</button>
-            </div>
+            </>
           )}
         </div>
       )}
-
-      {showLogsModal && (
-        <div className="modal-overlay" onClick={() => setShowLogsModal(false)}>
-          <div className="modal-content fade-in" onClick={e => e.stopPropagation()}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px'}}>
-               <h2 style={{margin: 0, color: '#60a5fa'}}>Personal Logs</h2>
-               <button onClick={() => setShowLogsModal(false)} style={{background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.5rem'}}>✕</button>
-            </div>
-            {personalLogs.length === 0 ? (
-              <p style={{textAlign: 'center', color: '#475569'}}>No history found.</p>
-            ) : (
-              personalLogs.slice().reverse().map((l, i) => (
-                <div key={i} className="log-item">
-                  <div>
-                    <div style={{fontWeight:'900', color: '#fff'}}>{l.departmentName}</div>
-                    <div style={{fontSize:'0.75rem', color:'#94a3b8'}}>{new Date(l.timestamp).toLocaleString()}</div>
-                  </div>
-                  <span className="badge" style={{background: l.type === 'IN' ? '#10b981' : '#f59e0b'}}>{l.type}</span>
-                </div>
-              ))
-            )}
-            <button className="btn-primary" onClick={() => setShowLogsModal(false)} style={{marginTop: '25px'}}>CLOSE</button>
-          </div>
-        </div>
-      )}
-
-      <footer style={{position: 'fixed', bottom: 0, left: 0, right: 0, padding: '20px', textAlign: 'center', background: 'linear-gradient(to top, #0f172a 80%, transparent)'}}>
-         <div style={{fontWeight: '900', fontSize: '0.7rem', color: '#64748b', letterSpacing: '1px'}}>
-            {status.toUpperCase()} | V{appConfig.version} | DEBUG: {apiUrl.includes('127.0.0.1') ? 'LAB' : 'CLOUD'}
-         </div>
-      </footer>
     </div>
   );
 }
