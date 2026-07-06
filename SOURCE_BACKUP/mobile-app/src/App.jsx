@@ -66,13 +66,14 @@ function App() {
     const saved = localStorage.getItem('server_url');
     const isNative = Capacitor.getPlatform() !== 'web';
 
-    // Check if we are in local development testing (usually via USB Bridge)
-    const isLocalDev = saved && (saved.includes('127.0.0.1') || saved.includes('localhost'));
-
+    // Default fallback from config
     let base = appConfig.defaultApiUrl || 'https://timeattendance-system.onrender.com/api';
 
-    // Force Lab URL if detected we are running in local environment or if production is unreachable
-    if (saved) return saved;
+    if (saved) {
+       // If saved is local but we want to ensure it works
+       if (isNative && saved.startsWith('http://localhost')) return saved.replace('localhost', '127.0.0.1');
+       return saved;
+    }
 
     return isNative ? base.replace('localhost', '127.0.0.1') : (base.startsWith('http') ? base : `${window.location.origin}${base}`);
   });
@@ -80,11 +81,7 @@ function App() {
   const [tenantId, setTenantId] = useState(() => {
     const saved = localStorage.getItem('tenant_id');
     if (saved) return saved;
-    const configTenantId = appConfig.defaultTenantId;
-    if (configTenantId && !["/", "master", "MASTER_UNIVERSAL"].includes(configTenantId)) {
-      localStorage.setItem('tenant_id', configTenantId);
-      return configTenantId;
-    }
+    // Removed auto-prefill from appConfig to keep it empty for privacy as requested
     return null;
   });
 
@@ -92,7 +89,7 @@ function App() {
   const [setupId, setSetupId] = useState('');
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('cached_id'));
-  const [employeeId, setEmployeeId] = useState(localStorage.getItem('cached_id') || '');
+  const [employeeId, setEmployeeId] = useState(''); // Initialized as empty
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('System Online');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -128,7 +125,7 @@ function App() {
     try {
         const all = JSON.parse(localStorage.getItem('all_employees') || '[]');
         const id = localStorage.getItem('cached_id');
-        return all.find(e => e.employeeId === id) || { name: localStorage.getItem('cached_name') || 'Employee' };
+        return all.find(e => (e.employeeId || "").toString() === (id || "").toString()) || { name: localStorage.getItem('cached_name') || 'Employee' };
     } catch (e) { return { name: 'Employee' }; }
   });
 
@@ -137,22 +134,33 @@ function App() {
   const checkConnection = useCallback(async () => {
     if (!apiUrl.startsWith('http')) return;
     try {
-      // Use a faster check and handle both cloud and local
-      const res = await fetchWithTimeout(`${apiUrl}/settings`, { timeout: 5000 });
+      // PRO CONNECTIVITY: Check current API
+      const res = await fetchWithTimeout(`${apiUrl}/settings`, { timeout: 4000 });
       if (res.ok) {
         setIsServerDown(false);
         if (status === 'Offline Mode') setStatus('System Online');
-      } else {
-        throw new Error('Unreachable');
+        return;
       }
+      throw new Error('Timeout');
     } catch (e) {
-      // Don't immediately switch to offline if it was just a small hiccup
+      // IF FAILED, attempt to check the Default Production URL as fallback
+      const prodUrl = 'https://timeattendance-system.onrender.com/api';
+      if (apiUrl !== prodUrl) {
+         try {
+            const resProd = await fetchWithTimeout(`${prodUrl}/settings`, { timeout: 3000 });
+            if (resProd.ok) {
+               console.log("[CONNECTIVITY] Fallback to Production successful.");
+               setApiUrl(prodUrl);
+               localStorage.setItem('server_url', prodUrl);
+               setIsServerDown(false);
+               return;
+            }
+         } catch (err) {}
+      }
+
       setIsServerDown(true);
       setStatus('Offline Mode');
-      // If we are offline, try to find the newest link (Discovery Hub)
-      if (!apiUrl.includes('127.0.0.1')) {
-         discoverNewLink();
-      }
+      discoverNewLink();
     }
   }, [apiUrl, status]);
 
@@ -167,11 +175,10 @@ function App() {
         if (newUrl && (newUrl.includes('trycloudflare.com') || newUrl.includes('onrender.com'))) {
           const formatted = newUrl.endsWith('/api') ? newUrl : `${newUrl}/api`;
           if (formatted !== apiUrl) {
-            console.log(`[HUB] Switching to new link: ${formatted}`);
             setApiUrl(formatted);
             localStorage.setItem('server_url', formatted);
             setIsServerDown(false);
-            setStatus('Server Fixed ✓');
+            setStatus('Server Recovered ✓');
             if (tenantId) syncSystemData(tenantId, localStorage.getItem('cached_id'));
           }
         }
@@ -196,7 +203,9 @@ function App() {
 
       if (empRes.status === 200) {
         localStorage.setItem('all_employees', JSON.stringify(empRes.data));
-        const current = empRes.data.find(e => (e.employeeId || "").toString() === (targetEmpId || "").toString());
+        const current = empRes.data.find(e =>
+          (e.employeeId || "").toString().trim().toLowerCase() === (targetEmpId || "").toString().trim().toLowerCase()
+        );
         if (current) setCachedEmployee(current);
       }
       if (deptRes.status === 200) {
@@ -204,7 +213,9 @@ function App() {
         setDepartments(deptRes.data);
       }
       if (logRes.status === 200) {
-        const myLogs = logRes.data.filter(l => (l.employeeId || "").toString() === (targetEmpId || "").toString());
+        const myLogs = (logRes.data || []).filter(l =>
+          (l.employeeId || "").toString().trim().toLowerCase() === (targetEmpId || "").toString().trim().toLowerCase()
+        );
         localStorage.setItem('personal_logs', JSON.stringify(myLogs));
         setPersonalLogs(myLogs);
       }
@@ -257,7 +268,7 @@ function App() {
 
   useEffect(() => {
     checkConnection();
-    const connInterval = setInterval(checkConnection, 10000);
+    const connInterval = setInterval(checkConnection, 12000);
     const syncInterval = setInterval(attemptSync, 20000);
 
     if (tenantId) {
@@ -328,6 +339,10 @@ function App() {
     try {
       const idInfo = await Device.getId();
       const devInfo = await Device.getInfo();
+
+      // DIAGNOSTIC LOG
+      console.log(`[AUTH] Attempting login at: ${apiUrl}`);
+
       const res = await postJson(`${apiUrl}/device/register`, {
         employeeId: cleanId,
         deviceId: idInfo.identifier,
@@ -348,13 +363,25 @@ function App() {
         return;
       } else if (res.status === 404) {
         alert('ID Not Found sa system. Pakicheck ang iyong ID.');
+        setLoading(false);
+        return;
       } else if (res.status === 403) {
         alert(res.data?.error || 'Access Denied: Device mismatch.');
+        setLoading(false);
+        return;
+      } else {
+          throw new Error(`Server Error: ${res.status}`);
       }
-    } catch (e) { console.warn('Online login failed, trying cache...'); }
+    } catch (e) {
+        console.warn('Online login failed:', e.message);
+    }
 
+    // --- CACHE FALLBACK ---
     const allEmployees = JSON.parse(localStorage.getItem('all_employees') || '[]');
-    const cachedEmp = allEmployees.find(e => (e.employeeId || "").toString().toLowerCase() === cleanId.toLowerCase());
+    const cachedEmp = allEmployees.find(e =>
+      (e.employeeId || "").toString().trim().toLowerCase() === cleanId.toLowerCase()
+    );
+
     if (cachedEmp) {
       setLoggedIn(true);
       localStorage.setItem('cached_id', cachedEmp.employeeId);
@@ -362,7 +389,7 @@ function App() {
       setStatus('Offline Access ✓');
       alert('OFFLINE MODE: Nakapasok gamit ang cached credentials.');
     } else {
-      alert('CONNECTION REQUIRED para sa unang login.');
+      alert(`CONNECTION REQUIRED!\n\n${isServerDown ? 'Server is currently OFFLINE.' : 'Hindi makakonekta sa system at wala kang cached data.'}\n\nURL: ${apiUrl}`);
     }
     setLoading(false);
   };
@@ -447,7 +474,20 @@ function App() {
   const handleDownloadUpdate = () => {
     if (!updateAvailable) return;
     const downloadUrl = updateAvailable.apkUrl.startsWith('http') ? updateAvailable.apkUrl : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
-    window.open(downloadUrl, '_blank');
+
+    // Pro-level download trigger
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.target = '_blank';
+    link.download = downloadUrl.split('/').pop();
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Failsafe for some WebViews
+    setTimeout(() => {
+        window.location.assign(downloadUrl);
+    }, 500);
   };
 
   const getLogStatus = (l) => {
@@ -501,8 +541,8 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 15px 10px 25px 10px; z-index: 1000; box-shadow: 0 -10px 30px rgba(0,0,0,0.5); }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 5px; color: #64748b; text-decoration: none; font-size: 0.7rem; font-weight: 800; padding: 8px 20px; border-radius: 15px; transition: 0.3s; }
+        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 12px 10px env(safe-area-inset-bottom, 15px) 10px; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 10px 20px; border-radius: 18px; transition: 0.3s; }
         .nav-item.active { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
@@ -515,7 +555,18 @@ function App() {
               <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
               <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>Time Attendance</h1>
               <p style={{color: '#94a3b8', marginBottom: '40px'}}>Enter Company ID para simulan ang terminal.</p>
-              <input value={setupId} onChange={e => setSetupId(e.target.value)} placeholder="e.g. 571044" className="input-field" style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900'}} />
+              <input
+                name={`tenant_setup_${Math.random().toString(36).substring(7)}`}
+                value={setupId}
+                onChange={e => setSetupId(e.target.value)}
+                placeholder="--- ENTER ID ---"
+                className="input-field"
+                style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900'}}
+                autoComplete="new-password"
+                autoCorrect="off"
+                spellCheck="false"
+                data-lpignore="true"
+              />
               <button onClick={handleSetupTenant} disabled={isSettingUp} className="btn-primary">{isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}</button>
            </div>
         </div>
@@ -548,7 +599,18 @@ function App() {
                  <p style={{color: '#94a3b8'}}>Verification Required</p>
               </div>
               <span className="label-visible">EMPLOYEE ID</span>
-              <input value={employeeId} onChange={e => setEmployeeId(e.target.value)} placeholder="0001" className="input-field" style={{textAlign: 'center', fontSize: '1.4rem'}} />
+              <input
+                name={`emp_id_${Math.random().toString(36).substring(7)}`}
+                value={employeeId}
+                onChange={e => setEmployeeId(e.target.value)}
+                placeholder="--- ENTER ID ---"
+                className="input-field"
+                style={{textAlign: 'center', fontSize: '1.4rem'}}
+                autoComplete="new-password"
+                autoCorrect="off"
+                spellCheck="false"
+                data-lpignore="true"
+              />
               <button onClick={login} disabled={loading} className="btn-primary">{loading ? 'VERIFYING...' : 'SIGN IN'}</button>
             </div>
           ) : (
@@ -660,7 +722,7 @@ function App() {
                          </div>
                       </div>
 
-                      <button onClick={() => {if(confirm('Sigurado ka bang mag-logout?')){localStorage.removeItem('cached_id'); localStorage.removeItem('cached_name'); window.location.reload();}}} className="btn-primary" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '2px solid rgba(239, 68, 68, 0.2)', boxShadow: 'none'}}>LOGOUT ACCOUNT</button>
+                      <button onClick={() => {if(confirm('Sigurado ka bang mag-logout?')){localStorage.clear(); window.location.reload();}}} className="btn-primary" style={{background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '2px solid rgba(239, 68, 68, 0.2)', boxShadow: 'none'}}>LOGOUT ACCOUNT</button>
                    </div>
 
                    <div style={{textAlign: 'center', marginTop: '30px', color: '#64748b', fontSize: '0.7rem', fontWeight: '900'}}>

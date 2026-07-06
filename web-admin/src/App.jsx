@@ -471,8 +471,8 @@ function App() {
     }
   };
 
-  const resetEmployeeDevice = async (employeeId) => {
-    if (!confirm(`Are you sure you want to UNLINK the device for employee ${employeeId}?`)) return;
+  const resetEmployeeDevice = async (employeeId, employeeName) => {
+    if (!confirm(`Are you sure you want to UNLINK the device for ${employeeName || employeeId}?`)) return;
     setStatus('Resetting device...');
     try {
       await requestJson('/device/reset', {
@@ -1712,10 +1712,10 @@ function App() {
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
                       <td>
-                        {e.registeredDeviceId ? (
+                        {e.registeredDeviceId || e.deviceId ? (
                           <div style={{display:'flex', flexDirection:'column', gap: '2px'}}>
                             <span style={{color:'#10b981', fontWeight:'900', fontSize: '0.9rem'}}>{e.registeredDeviceName || 'Mobile Device'}</span>
-                            <span style={{fontSize:'0.65rem', color:'#64748b', fontWeight: 'bold'}}>UUID: {e.registeredDeviceId}</span>
+                            <span style={{fontSize:'0.65rem', color:'#64748b', fontWeight: 'bold'}}>UUID: {e.registeredDeviceId || e.deviceId}</span>
                           </div>
                         ) : (
                           <span style={{color:'#64748b', fontStyle:'italic', fontSize: '0.85rem'}}>No Secure Device Linked</span>
@@ -1723,9 +1723,9 @@ function App() {
                       </td>
                       <td style={{fontSize: '0.8rem'}}>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : 'N/A'}</td>
                       <td style={{textAlign:'center'}}>
-                        {e.registeredDeviceId ? (
+                        {e.registeredDeviceId || e.deviceId ? (
                           <button
-                            onClick={() => resetEmployeeDevice(e.employeeId)}
+                            onClick={() => resetEmployeeDevice(e.employeeId, e.name)}
                             className="btn-red"
                             style={{padding:'10px 20px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: '900'}}
                           >

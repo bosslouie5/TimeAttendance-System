@@ -2177,24 +2177,34 @@ function App() {
                 <tr><th>Tenant</th><th>Employee</th><th>Device Info</th><th>Linked Date</th><th>Action</th></tr>
               </thead>
               <tbody>
-                {employees.filter(e => e.registeredDeviceId).map((e, idx) => (
+                {employees.filter(e => e.registeredDeviceId || e.deviceId).map((e, idx) => (
                   <tr key={idx}>
                     <td>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
                     <td style={{fontWeight:'bold'}}>{e.name}</td>
                     <td>
                       <div style={{fontWeight:'bold', color:'#10b981'}}>{e.registeredDeviceName || 'Mobile Device'}</div>
-                      <div style={{fontSize:'0.6rem', color:'#64748b'}}>{e.registeredDeviceId}</div>
+                      <div style={{fontSize:'0.6rem', color:'#64748b'}}>{e.registeredDeviceId || e.deviceId}</div>
                     </td>
                     <td style={{fontSize:'0.8rem'}}>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : 'N/A'}</td>
                     <td>
                       <button onClick={async () => {
-                        if(!confirm('Unlink device?')) return;
-                        await fetch(`${activeApiBase}/device/reset?tenantId=${e.tenantId}`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
-                          body: JSON.stringify({ employeeId: e.employeeId })
-                        });
-                        loadInitialData();
+                        if(!confirm(`Are you sure you want to UNLINK the device for ${e.name}?`)) return;
+                        setStatus('Unlinking device...');
+                        try {
+                          const res = await fetch(`${activeApiBase}/device/reset?tenantId=${e.tenantId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
+                            body: JSON.stringify({ employeeId: e.employeeId })
+                          });
+                          if (res.ok) {
+                            setStatus('Device Unlinked ✓');
+                            await loadInitialData();
+                          } else {
+                            alert('Unlink failed');
+                          }
+                        } catch (err) {
+                          alert('Connection error');
+                        }
                       }} style={{...smallBtn, background:'#ef4444'}}>Unlink</button>
                     </td>
                   </tr>
