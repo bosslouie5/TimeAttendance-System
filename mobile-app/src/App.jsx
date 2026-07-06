@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { Device } from '@capacitor/device';
+import { Browser } from '@capacitor/browser';
 import initialData from './initial_data.json';
 import appConfig from './app_config.json';
 import './styles.css';
@@ -57,6 +58,19 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function resolveUpdateDownloadUrl(updatePayload, apiUrl) {
+  const rawUrl = updatePayload?.downloadUrl || updatePayload?.apkUrl || updatePayload?.url;
+  if (!rawUrl) return null;
+
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+  if (rawUrl.startsWith('/')) {
+    const base = apiUrl.replace(/\/api$/i, '');
+    return `${base}${rawUrl}`;
+  }
+
+  return rawUrl;
 }
 
 function App() {
@@ -281,8 +295,19 @@ function App() {
     };
   }, [tenantId, loggedIn, checkConnection, attemptSync, fetchTenantInfo]);
 
-  // OTA Update Logic
+  // OTA Update Logic & Fresh Start Check
   useEffect(() => {
+    // FRESH START CHECK (Tropa Rule: Clear data after update request)
+    const needsPurge = localStorage.getItem('pending_update_purge');
+    if (needsPurge === 'true') {
+        console.log('[SYSTEM] Executing post-update data purge...');
+        localStorage.clear();
+        // Keep the server URL so we don't have to setup again, or clear all?
+        // Master said "makapag log in ulit ng fresh", so we clear all.
+        window.location.reload();
+        return;
+    }
+
     const checkUpdate = async () => {
       if (!apiUrl.startsWith('http') || isServerDown) return;
       try {
@@ -495,34 +520,35 @@ function App() {
     }
   };
 
-  const handleDownloadUpdate = () => {
+  const handleDownloadUpdate = async () => {
     if (!updateAvailable) return;
 
-    // FORCE DELETE DATA (Tropa Rule: Refresh after update)
-    const currentUrl = apiUrl; // Keep API URL if we want to stay connected, or clear all?
-    // User said "force delete data... para makapag log in ulit ng fresh".
-    // So we clear EVERYTHING.
-    localStorage.clear();
+    const downloadUrl = resolveUpdateDownloadUrl(updateAvailable, apiUrl);
+    if (!downloadUrl) {
+      alert('No update download link is available right now.');
+      return;
+    }
 
-    const downloadUrl = updateAvailable.apkUrl.startsWith('http') ? updateAvailable.apkUrl : `${apiUrl.replace('/api', '')}${updateAvailable.apkUrl}`;
+    console.log(`[UPDATE] Opening download URL: ${downloadUrl}`);
 
-    console.log(`[UPDATE] Triggering download from: ${downloadUrl}`);
+    localStorage.setItem('pending_update_purge', 'true');
+    setStatus('📥 DOWNLOADING UPDATE...');
 
-    // Pro-level download trigger
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.target = '_blank';
-    link.download = downloadUrl.split('/').pop();
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      if (Capacitor.getPlatform() === 'web') {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        await Browser.open({ url: downloadUrl });
+      }
 
-    // Failsafe for some WebViews & Clear State
-    setTimeout(() => {
-        window.location.assign(downloadUrl);
-        // Optional: reload to force user to setup again
-        setTimeout(() => window.location.reload(), 1000);
-    }, 500);
+      setUpdateAvailable(null);
+      alert('DOWNLOAD STARTED: Pakicheck ang notification bar mo. Pagkatapos ma-install, buksan ulit ang app para sa fresh update.');
+    } catch (e) {
+      console.warn('[UPDATE] Browser open failed, trying fallback.', e);
+      if (typeof window !== 'undefined' && window.open) {
+        window.open(downloadUrl, '_system');
+      }
+    }
   };
 
   const getLogStatus = (l) => {

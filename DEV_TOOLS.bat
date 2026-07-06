@@ -40,6 +40,7 @@ echo   [2] RUN TEST LAB (Port 4002 - Local/Online)
 echo   [3] REBUILD ALL LAB UI (Build 4002 Code)
 echo   [4] SYNC LAB TO PRODUCTION (Move 4002 to 4001)
 echo   [5] BUMP MOBILE APP VERSION (Trigger OTA)
+echo   [M] MOBILE DEVELOPER LAB (Build, Sync, Mirror ^& Run)
 echo   [S] SYSTEM ROADMAP ^& INSTRUCTIONS (Guide)
 echo.
 echo   [B] CREATE SAFETY BACKUP (Checkpoint)
@@ -57,6 +58,7 @@ if /i "%choice%"=="2" goto RUN_LAB
 if /i "%choice%"=="3" goto REBUILD_LAB_ALL
 if /i "%choice%"=="4" goto SYNC_DATA
 if /i "%choice%"=="5" goto BUMP_VERSION
+if /i "%choice%"=="M" goto MOBILE_LAB
 if /i "%choice%"=="S" goto ROADMAP
 if /i "%choice%"=="B" goto BACKUP_CODE
 if /i "%choice%"=="R" goto REVERT_CODE
@@ -174,6 +176,41 @@ popd
 echo [LIVE] Running on http://localhost:4002
 ping 127.0.0.1 -n 4 >nul
 start "" "http://localhost:4002/dev"
+goto MENU
+
+:MOBILE_LAB
+cls
+echo.
+echo   ______________________________________________________
+echo  ^|                                                      ^|
+echo  ^|          TIMEKEY MOBILE DEVELOPER LAB (4002)       ^|
+echo  ^|______________________________________________________^|
+echo.
+echo [*] Step 1: Cleaning previous Mirror/ADB sessions...
+taskkill /F /IM scrcpy.exe /T >nul 2>&1
+"%ADB_EXE%" kill-server >nul 2>&1
+"%ADB_EXE%" start-server >nul 2>&1
+
+echo [*] Step 2: Establishing ADB Bridge (Port 4002)...
+"%ADB_EXE%" reverse tcp:4002 tcp:4002
+
+echo [*] Step 2: Starting Phone Mirroring...
+start /b "" cmd /c "MIRROR_PHONE.bat"
+
+echo [*] Step 3: Building Mobile UI...
+pushd mobile-app
+call npx vite build --outDir dist-test --emptyOutDir
+
+echo [*] Step 4: Syncing Capacitor ^& Android...
+call npx cap sync android
+
+echo [*] Step 5: Launching App on Device...
+call npx cap run android
+popd
+
+echo.
+echo [SUCCESS] Mobile Lab is active. App should be running on your phone.
+pause
 goto MENU
 
 :ROADMAP
