@@ -399,6 +399,18 @@ function App() {
     const dept = departments.find(d => d.departmentId === selectedDepartment);
     if (!dept) return;
 
+    // --- ATTENDANCE LOCK LOGIC (Tropa Security) ---
+    const today = new Date().toLocaleDateString();
+    const hasLogToday = personalLogs.some(l => {
+      const logDate = new Date(l.timestamp).toLocaleDateString();
+      return logDate === today && l.type === type;
+    });
+
+    if (hasLogToday) {
+      alert(`NOTICE: Mayroon ka nang recorded ${type} para sa araw na ito.`);
+      return;
+    }
+
     setLoading(true);
     setStatus('📡 Checking Location...');
 
@@ -524,13 +536,25 @@ function App() {
   // --- RENDER ---
 
   return (
-    <div className="mobile-container" style={{background: '#0f172a', minHeight: '100vh', color: 'white', padding: '10px 15px 120px 15px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden'}}>
+    <div className="mobile-container" style={{
+      background: '#0f172a',
+      minHeight: '100vh',
+      color: 'white',
+      padding: 'env(safe-area-inset-top, 20px) 15px calc(env(safe-area-inset-bottom, 20px) + 100px) 15px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      overflowX: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      boxSizing: 'border-box',
+      width: '100%'
+    }}>
       <style>{`
-        body { background: #0f172a !important; margin: 0; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 30px 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; }
+        body { background: #0f172a !important; margin: 0; width: 100%; overflow-x: hidden; }
+        .mobile-container { max-width: 500px; margin: 0 auto; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; box-sizing: border-box; }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
         .btn-primary:active { transform: scale(0.96); opacity: 0.9; }
-        .input-field { width: 100%; padding: 18px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1.1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
+        .input-field { width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
         .input-field:focus { border-color: #3b82f6; background: rgba(15, 23, 42, 0.8); }
         .label-visible { color: #94a3b8; font-size: 0.75rem; font-weight: 800; margin-bottom: 12px; display: block; letter-spacing: 1.5px; text-transform: uppercase; }
         .fade-in { animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
