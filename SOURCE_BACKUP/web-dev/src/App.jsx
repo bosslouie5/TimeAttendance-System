@@ -149,37 +149,9 @@ function App() {
   };
 
   useEffect(() => {
-    const discoverSaaS = async () => {
-      const host = window.location.hostname;
-
-      let discoveredUrl = null;
-      try {
-        const res = await fetch(`https://raw.githubusercontent.com/bosslouie5/TimeAttendance-System/main/backend/active_link.txt?t=${Date.now()}`);
-        if (res.ok) {
-          const url = (await res.text()).trim();
-          if (url && url.startsWith('http')) {
-            discoveredUrl = `${url}/api`;
-            setTunnelBase(discoveredUrl);
-          }
-        }
-      } catch (e) { }
-
-      if (host === 'localhost' || host === '127.0.0.1' || host.includes('trycloudflare.com') || host.includes('onrender.com')) {
-         setSaasStatus(discoveredUrl ? `Hybrid Active (Laptop Online)` : `Direct Connection Active`);
-         setActiveApiBase('/api');
-         return;
-      }
-
-      if (discoveredUrl) {
-          setActiveApiBase(discoveredUrl);
-          setSaasStatus(`Connected: ${discoveredUrl}`);
-      } else {
-          setSaasStatus('Waiting for Backend...');
-      }
-    };
-    discoverSaaS();
-    const interval = setInterval(discoverSaaS, 30000);
-    return () => clearInterval(interval);
+    // Strictly Local/Relative API Mode
+    setActiveApiBase('/api');
+    setSaasStatus('Local System Active');
   }, []);
 
   useEffect(() => { if (activeApiBase) loadInitialData(); }, [activeApiBase]);
@@ -444,6 +416,34 @@ function App() {
     setEmpTenantId(emp.tenantId);
     setIsEditingEmp(true);
     setIsAddEmpModalOpen(true);
+  };
+
+  const editBranch = (b) => {
+    setEditingDeptId(b.departmentId);
+    setDeptName(b.name);
+    setDeptLat(b.pinLatitude.toString());
+    setDeptLon(b.pinLongitude.toString());
+    setDeptRad(b.radiusMeters.toString());
+    setSelectedDeptTenant(b.tenantId);
+  };
+
+  const useCurrentLocation = () => {
+    setStatus('Detecting Location...');
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDeptLat(position.coords.latitude.toFixed(6));
+        setDeptLon(position.coords.longitude.toFixed(6));
+        setStatus('Location Detected ✓');
+      },
+      (error) => {
+        alert(`Error detecting location: ${error.message}`);
+      },
+      { enableHighAccuracy: true }
+    );
   };
 
   const saveNewEmployee = async () => {
@@ -1756,6 +1756,9 @@ function App() {
                     {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                  </select>
                  <input style={inputStyle} placeholder="Branch Name" value={deptName} onChange={e => setDeptName(e.target.value)} />
+                 <button onClick={useCurrentLocation} style={{...smallBtn, width:'100%', marginBottom:'10px', background:'rgba(59, 130, 246, 0.1)', color:'#3b82f6', border:'1px solid #3b82f6'}}>
+                    📍 Use Current Location
+                 </button>
                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
                     <input style={inputStyle} placeholder="Latitude" value={deptLat} onChange={e => setDeptLat(e.target.value)} />
                     <input style={inputStyle} placeholder="Longitude" value={deptLon} onChange={e => setDeptLon(e.target.value)} />
@@ -1763,13 +1766,52 @@ function App() {
                  <input style={inputStyle} placeholder="Radius (Meters)" type="number" value={deptRad} onChange={e => setDeptRad(e.target.value)} />
                  <button onClick={async () => {
                     if(!deptName || selectedDeptTenant === 'ALL') return alert('Fill all fields');
-                    const res = await fetch(`${activeApiBase}/departments?tenantId=${selectedDeptTenant}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedDeptTenant },
-                      body: JSON.stringify({ name: deptName, pinLatitude: parseFloat(deptLat), pinLongitude: parseFloat(deptLon), radiusMeters: parseInt(deptRad) })
-                    });
-                    if(res.ok) { setDeptName(''); setDeptLat(''); setDeptLon(''); loadInitialData(); setStatus('Branch Saved ✓'); }
-                 }} style={{...addBtn, width:'100%'}}>Save Location</button>
+                    setProcessing(true);
+                    setProcessingMsg(editingDeptId ? 'Updating Branch...' : 'Saving Branch...');
+                    try {
+                      const payload = {
+                        name: deptName,
+                        pinLatitude: parseFloat(deptLat),
+                        pinLongitude: parseFloat(deptLon),
+                        radiusMeters: parseInt(deptRad),
+                        tenantId: selectedDeptTenant
+                      };
+
+                      if (!editingDeptId) {
+                        payload.departmentId = deptName.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
+                      }
+
+                      const url = editingDeptId
+                        ? `${activeApiBase}/departments/${editingDeptId}?tenantId=${selectedDeptTenant}`
+                        : `${activeApiBase}/departments?tenantId=${selectedDeptTenant}`;
+
+                      const method = editingDeptId ? 'PUT' : 'POST';
+
+                      const res = await fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedDeptTenant },
+                        body: JSON.stringify(payload)
+                      });
+
+                      if(res.ok) {
+                        const statusMsg = editingDeptId ? 'Branch Updated ✓' : 'Branch Saved ✓';
+                        setDeptName(''); setDeptLat(''); setDeptLon(''); setDeptRad('50'); setEditingDeptId(null);
+                        await loadInitialData();
+                        setStatus(statusMsg);
+                      } else {
+                        alert('Failed to save branch');
+                      }
+                    } catch (e) {
+                      alert('Connection error');
+                    } finally {
+                      setProcessing(false);
+                    }
+                 }} style={{...addBtn, width:'100%'}}>{editingDeptId ? 'Update Branch' : 'Save Location'}</button>
+
+                 {editingDeptId && (
+                    <button onClick={() => { setEditingDeptId(null); setDeptName(''); setDeptLat(''); setDeptLon(''); setDeptRad('50'); }}
+                      style={{...smallBtn, width:'100%', marginTop:'10px', background:'transparent', border:'1px solid #334155'}}>Cancel Edit</button>
+                 )}
               </div>
 
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
@@ -1792,17 +1834,37 @@ function App() {
                           </tr>
                        </thead>
                        <tbody>
-                          {departments.filter(d => selectedDeptTenant === 'ALL' || d.tenantId === selectedDeptTenant).map(d => (
-                            <tr key={d.departmentId}>
+                          {departments.filter(d => selectedDeptTenant === 'ALL' || d.tenantId === selectedDeptTenant).map((d, idx) => (
+                            <tr key={d.departmentId || idx}>
                                <td>{users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId}</td>
                                <td style={{fontWeight:'bold'}}>{d.name}</td>
                                <td style={{fontSize:'0.7rem', color:'#64748b'}}>{d.pinLatitude}, {d.pinLongitude}</td>
                                <td>{d.radiusMeters}m</td>
-                               <td><button onClick={async () => {
-                                  if(!confirm('Delete?')) return;
-                                  await fetch(`${activeApiBase}/departments/${d.departmentId}?tenantId=${d.tenantId}`, { method: 'DELETE', headers: { 'x-tenant-id': d.tenantId } });
-                                  loadInitialData();
-                               }} style={{...smallBtn, background:'#ef4444'}}>Del</button></td>
+                               <td><div style={{display:'flex', gap:'5px'}}>
+                                  <button onClick={() => editBranch(d)} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
+                                  <button onClick={async () => {
+                                    if(!d.departmentId) {
+                                      alert('Error: Missing ID. This item was created before the fix. Please refresh or delete manually in the JSON file.');
+                                      return;
+                                    }
+                                    if(!confirm(`Delete branch ${d.name}?`)) return;
+                                    setProcessing(true);
+                                    setProcessingMsg('Removing Branch...');
+                                    try {
+                                      const res = await fetch(`${activeApiBase}/departments/${d.departmentId}?tenantId=${d.tenantId}`, {
+                                        method: 'DELETE',
+                                        headers: { 'x-tenant-id': d.tenantId }
+                                      });
+                                      if(res.ok) {
+                                        setStatus('Branch Removed ✓');
+                                        await loadInitialData();
+                                      } else {
+                                        alert('Delete failed');
+                                      }
+                                    } catch(e) { alert('Network Error'); }
+                                    finally { setProcessing(false); }
+                                  }} style={{...smallBtn, background:'#ef4444'}}>Del</button>
+                               </div></td>
                             </tr>
                           ))}
                        </tbody>

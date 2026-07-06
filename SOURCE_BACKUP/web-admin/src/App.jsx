@@ -97,18 +97,8 @@ function App() {
   };
 
   useEffect(() => {
-    const checkConnection = async () => {
-      if (window.location.hostname.includes('trycloudflare.com') || window.location.hostname.includes('onrender.com') || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        setActiveApiBase('/api');
-      } else {
-        try {
-          const res = await fetch(`https://raw.githubusercontent.com/bosslouie5/TimeAttendance-System/main/backend/active_link.txt?t=${Date.now()}`);
-          if (res.ok) {
-            const url = (await res.text()).trim();
-            if (url && url.startsWith('http')) setActiveApiBase(`${url}/api`);
-          }
-        } catch (e) { setActiveApiBase('/api'); }
-      }
+    const checkConnection = () => {
+      setActiveApiBase('/api');
     };
     checkConnection();
   }, []);
@@ -693,6 +683,28 @@ function App() {
     setBranchRad(b.radiusMeters.toString());
   };
 
+  const useCurrentLocation = () => {
+    setStatus('Detecting Location...');
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      setStatus('Location Failed');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setBranchLat(position.coords.latitude.toFixed(6));
+        setBranchLon(position.coords.longitude.toFixed(6));
+        setStatus('Location Detected ✓');
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        alert(`Error detecting location: ${error.message}`);
+        setStatus('Location Error');
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
   const exportEmployeesExcel = () => {
     if (employees.length === 0) return alert('Walang data na pwedeng i-export.');
 
@@ -875,7 +887,7 @@ function App() {
           {appVersionInfo && (
             <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
               <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-              APP VERSION: <span style={{color: '#10b981'}}>V1.0.1</span>
+              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || 'V1.0.1'}</span>
               <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
             </div>
           )}
@@ -1386,6 +1398,10 @@ function App() {
                   <input placeholder="46.6753" value={branchLon} onChange={e => setBranchLon(e.target.value)} />
                 </div>
               </div>
+
+              <button onClick={useCurrentLocation} style={{width:'100%', background:'rgba(59, 130, 246, 0.1)', color:'#3b82f6', border:'1px solid rgba(59, 130, 246, 0.3)', padding:'10px', borderRadius:'8px', cursor:'pointer', fontWeight: '900', fontSize: '0.7rem', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'}}>
+                📍 USE CURRENT LOCATION
+              </button>
 
               <div className="form-group">
                 <label>Geofence Radius (Meters)</label>

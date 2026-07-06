@@ -181,18 +181,23 @@ async function loadDevAccounts() {
       { username: 'dev1', password: 'dev1', displayName: 'Developer 1' }
     ];
 
-    if (fs.existsSync(DEV_ACCOUNTS_PATH)) {
-      try {
-        const local = JSON.parse(fs.readFileSync(DEV_ACCOUNTS_PATH, 'utf8'));
-        // Merge unique accounts from local json
-        local.forEach(l => {
-          if (!seed.find(s => s.username.toLowerCase() === l.username.toLowerCase())) seed.push(l);
-        });
-      } catch (e) {}
-    }
+    // Ensure dev1 and john cruz are ALWAYS present in the results even if DB has other accounts
+    const localSeed = [
+      { username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' },
+      { username: 'dev', password: 'dev', displayName: 'Developer' },
+      { username: 'dev1', password: 'dev1', displayName: 'Developer 1' }
+    ];
 
-    await db.collection('devAccounts').insertMany(seed);
-    return seed;
+    if (accounts.length > 0) {
+      // Merge: priority to localSeed to prevent lockout
+      const combined = [...accounts.map(({ _id, ...acc }) => acc)];
+      localSeed.forEach(s => {
+        if (!combined.find(c => c.username.toLowerCase() === s.username.toLowerCase())) {
+          combined.push(s);
+        }
+      });
+      return combined;
+    }
   }
 
   if (!fs.existsSync(DEV_ACCOUNTS_PATH)) return [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }];
@@ -806,6 +811,12 @@ app.put('/api/employees/:id', tenantGuard, async (req, res) => {
 app.post('/api/departments', tenantGuard, async (req, res) => {
   const data = await loadData();
   const newDept = { ...req.body, tenantId: req.tenantId || 'master' };
+
+  // Robustness check: Ensure departmentId exists
+  if (!newDept.departmentId) {
+    newDept.departmentId = newDept.name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
+  }
+
   data.departments.push(newDept);
   await saveData(data);
   res.json(newDept);
@@ -1445,8 +1456,12 @@ app.listen(PORT, HOST, () => {
   console.log(`\x1b[32m%s\x1b[0m`, `SYSTEM LIVE: http://localhost:${PORT}`);
   console.log(`Status: Ready for Local or Public connections.`);
 
-  // Start Tunnel Monitoring for SaaS Self-Healing
-  startTunnelMonitor();
+  // Start Tunnel Monitoring for SaaS Self-Healing (Disabled in Test Mode)
+  if (!isTestMode) {
+    startTunnelMonitor();
+  } else {
+    console.log(`[HUB] Test Mode: SaaS Self-Healing disabled.`);
+  }
 });
 
 // --- SAAS SELF-HEALING: DISCOVERY HUB ---

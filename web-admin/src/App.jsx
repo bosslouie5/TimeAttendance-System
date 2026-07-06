@@ -97,18 +97,8 @@ function App() {
   };
 
   useEffect(() => {
-    const checkConnection = async () => {
-      if (window.location.hostname.includes('trycloudflare.com') || window.location.hostname.includes('onrender.com') || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        setActiveApiBase('/api');
-      } else {
-        try {
-          const res = await fetch(`https://raw.githubusercontent.com/bosslouie5/TimeAttendance-System/main/backend/active_link.txt?t=${Date.now()}`);
-          if (res.ok) {
-            const url = (await res.text()).trim();
-            if (url && url.startsWith('http')) setActiveApiBase(`${url}/api`);
-          }
-        } catch (e) { setActiveApiBase('/api'); }
-      }
+    const checkConnection = () => {
+      setActiveApiBase('/api');
     };
     checkConnection();
   }, []);
@@ -691,6 +681,28 @@ function App() {
     setBranchLat(b.pinLatitude.toString());
     setBranchLon(b.pinLongitude.toString());
     setBranchRad(b.radiusMeters.toString());
+  };
+
+  const useCurrentLocation = () => {
+    setStatus('Detecting Location...');
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      setStatus('Location Failed');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setBranchLat(position.coords.latitude.toFixed(6));
+        setBranchLon(position.coords.longitude.toFixed(6));
+        setStatus('Location Detected ✓');
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        alert(`Error detecting location: ${error.message}`);
+        setStatus('Location Error');
+      },
+      { enableHighAccuracy: true }
+    );
   };
 
   const exportEmployeesExcel = () => {
@@ -1386,6 +1398,10 @@ function App() {
                   <input placeholder="46.6753" value={branchLon} onChange={e => setBranchLon(e.target.value)} />
                 </div>
               </div>
+
+              <button onClick={useCurrentLocation} style={{width:'100%', background:'rgba(59, 130, 246, 0.1)', color:'#3b82f6', border:'1px solid rgba(59, 130, 246, 0.3)', padding:'10px', borderRadius:'8px', cursor:'pointer', fontWeight: '900', fontSize: '0.7rem', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'}}>
+                📍 USE CURRENT LOCATION
+              </button>
 
               <div className="form-group">
                 <label>Geofence Radius (Meters)</label>

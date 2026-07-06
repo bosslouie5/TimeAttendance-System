@@ -10,7 +10,6 @@ set "GIT_EXE=%DEV_TOOLS%\Git\cmd\git.exe"
 set "ADB_EXE=%DEV_TOOLS%\platform-tools\adb.exe"
 
 :: MONGODB CONFIGURATION (Atlas Cloud)
-:: ISOLATED ENVIRONMENTS: PRODUCTION ONLY
 :: Port 4002 will strictly use LOCAL JSON files for privacy.
 set "MONGODB_URI_PROD=mongodb+srv://johnlouiecruz23_db_user:b6VvErL6I1HPFG06@timekeydev.2fvpmdy.mongodb.net/TimeKeyPROD?retryWrites=true&w=majority&appName=TimeKeyDev"
 
@@ -44,7 +43,6 @@ echo.
 echo   [B] CREATE SAFETY BACKUP (Checkpoint)
 echo   [R] REVERT SOURCE CODE (Restore from Checkpoint)
 echo.
-echo   [S] START SAAS HUB (Production Port 4001)
 echo   [6] STOP ALL SYSTEMS (Stop Node ^& Tunnel)
 echo   [7] EXIT ALL
 echo.
@@ -58,7 +56,6 @@ if /i "%choice%"=="4" goto SYNC_DATA
 if /i "%choice%"=="5" goto BUMP_VERSION
 if /i "%choice%"=="B" goto BACKUP_CODE
 if /i "%choice%"=="R" goto REVERT_CODE
-if /i "%choice%"=="S" goto SAAS_START
 if /i "%choice%"=="6" goto STOP_ALL
 if /i "%choice%"=="7" exit
 goto MENU
@@ -109,46 +106,6 @@ echo [SUCCESS] Reverted to stable point.
 pause
 goto MENU
 
-:SAAS_START
-cls
-echo.
-echo [*] Starting SaaS Production (Port 4001)
-echo  [0] ONLINE - Cloudflare Tunnel
-echo  [1] LOCAL - Internal Network Only
-set /p saas_mode="Choice: "
-if "%saas_mode%"=="0" goto SAAS_ONLINE
-if "%saas_mode%"=="1" goto SAAS_LOCAL
-goto MENU
-
-:SAAS_ONLINE
-cls
-echo [*] Activating SaaS Port 4001 ONLINE...
-taskkill /F /IM node.exe /T >nul 2>&1
-taskkill /F /IM cloudflared.exe /T >nul 2>&1
-pushd backend
-set SYSTEM_MODE=production
-set "MONGODB_URI=%MONGODB_URI_PROD%"
-start /b node server.js > server_prod.log 2>&1
-start /b "" "%DEV_TOOLS%\cloudflared.exe" tunnel --url http://127.0.0.1:4001 > tunnel.log 2>&1
-popd
-echo [LIVE] Check tunnel.log for link.
-ping 127.0.0.1 -n 5 >nul
-goto MENU
-
-:SAAS_LOCAL
-cls
-echo [*] Activating SaaS Port 4001 LOCAL...
-taskkill /F /IM node.exe /T >nul 2>&1
-pushd backend
-set SYSTEM_MODE=production
-set "MONGODB_URI=%MONGODB_URI_PROD%"
-start /b node server.js > server_prod.log 2>&1
-popd
-echo [LIVE] Running on http://localhost:4001
-ping 127.0.0.1 -n 3 >nul
-start "" "http://localhost:4001/dev"
-goto MENU
-
 :REBUILD_LAB_ALL
 cls
 echo.
@@ -181,12 +138,14 @@ goto MENU
 :LAB_ONLINE
 cls
 echo [*] Activating Lab Port 4002 ONLINE...
-echo [*] DATA MODE: MONGODB ATLAS (Cloud Sync Active)
+echo [*] DATA MODE: LOCAL JSON (Privacy Mode Active)
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 pushd backend
+del /f /q tunnel.log >nul 2>&1
+del /f /q active_link.txt >nul 2>&1
 set SYSTEM_MODE=test
-set "MONGODB_URI=%MONGODB_URI_PROD%"
+set "MONGODB_URI="
 start /b node server.js > server_test.log 2>&1
 start /b "" "%DEV_TOOLS%\cloudflared.exe" tunnel --url http://127.0.0.1:4002 > tunnel.log 2>&1
 popd
@@ -197,12 +156,14 @@ goto MENU
 :LAB_LOCAL
 cls
 echo [*] Activating Lab Port 4002 LOCAL...
-echo [*] DATA MODE: MONGODB ATLAS (Cloud Sync Active)
+echo [*] DATA MODE: LOCAL JSON (Privacy Mode Active)
 "%ADB_EXE%" reverse tcp:4002 tcp:4002
 taskkill /F /IM node.exe /T >nul 2>&1
 pushd backend
+del /f /q tunnel.log >nul 2>&1
+del /f /q active_link.txt >nul 2>&1
 set SYSTEM_MODE=test
-set "MONGODB_URI=%MONGODB_URI_PROD%"
+set "MONGODB_URI="
 start /b node server.js > server_test.log 2>&1
 popd
 echo [LIVE] Running on http://localhost:4002
@@ -215,6 +176,9 @@ cls
 echo [*] Global System Force Stop...
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
+echo [*] Closing browsers used for testing...
+taskkill /F /IM msedge.exe /T >nul 2>&1
+taskkill /F /IM firefox.exe /T >nul 2>&1
 echo [CLEAN] All processes stopped.
 pause
 goto MENU
@@ -237,7 +201,7 @@ if /i "%bump%"=="A" goto SKIP_BUMP
 if /i "%bump%"=="N" goto SKIP_BUMP
 
 :: USE THE SAME PRO GUI
-set "psCommand=Add-Type -AssemblyName System.Windows.Forms; $form = New-Object Windows.Forms.Form; $form.Text = 'DEPLOYMENT - VERSION BUMP'; $form.Size = New-Object Drawing.Size(400,250); $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'; $form.MaximizeBox = $false; $lbl = New-Object Windows.Forms.Label; $lbl.Text = 'Enter New Version (Current: %CURRENT_VER%):'; $lbl.Location = '20,20'; $lbl.Size = '300,20'; $txt = New-Object Windows.Forms.TextBox; $txt.Text = '%CURRENT_VER%'; $txt.Location = '20,45'; $txt.Size = '340,30'; $lbl2 = New-Object Windows.Forms.Label; $lbl2.Text = 'Deployment Changelog:'; $lbl2.Location = '20,80'; $lbl2.Size = '300,20'; $txt2 = New-Object Windows.Forms.TextBox; $txt2.Text = 'Production Release %date%'; $txt2.Location = '20,105'; $txt2.Size = '340,30'; $btn = New-Object Windows.Forms.Button; $btn.Text = 'CONFIRM VERSION & DEPLOY'; $btn.Location = '20,150'; $btn.Size = '340,40'; $btn.DialogResult = [Windows.Forms.DialogResult]::OK; $form.AcceptButton = $btn; $form.Controls.AddRange(@($lbl,$txt,$lbl2,$txt2,$btn)); $form.Add_Shown({$txt.Focus()}); if($form.ShowDialog() -eq 'OK'){$txt.Text + '|' + $txt2.Text}"
+set "psCommand=Add-Type -AssemblyName System.Windows.Forms; $form = New-Object Windows.Forms.Form; $form.Text = 'DEPLOYMENT - VERSION BUMP'; $form.Size = New-Object Drawing.Size(400,250); $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'; $form.MaximizeBox = $false; $lbl = New-Object Windows.Forms.Label; $lbl.Text = 'Enter New Version (Current: %CURRENT_VER%):'; $lbl.Location = '20,20'; $lbl.Size = '300,20'; $txt = New-Object Windows.Forms.TextBox; $txt.Text = '%CURRENT_VER%'; $txt.Location = '20,45'; $txt.Size = '340,30'; $lbl2 = New-Object Windows.Forms.Label; $lbl2.Text = 'Deployment Changelog:'; $lbl2.Location = '20,80'; $lbl2.Size = '300,20'; $txt2 = New-Object Windows.Forms.TextBox; $txt2.Text = 'Production Release %date%'; $txt2.Location = '20,105'; $txt2.Size = '340,30'; $btn = New-Object Windows.Forms.Button; $btn.Text = 'CONFIRM VERSION ^& DEPLOY'; $btn.Location = '20,150'; $btn.Size = '340,40'; $btn.DialogResult = [Windows.Forms.DialogResult]::OK; $form.AcceptButton = $btn; $form.Controls.AddRange(@($lbl,$txt,$lbl2,$txt2,$btn)); $form.Add_Shown({$txt.Focus()}); if($form.ShowDialog() -eq 'OK'){$txt.Text + '|' + $txt2.Text}"
 
 for /f "tokens=1,2 delims=|" %%a in ('powershell -Command "%psCommand%"') do (
     set "NEW_VER=%%a"
