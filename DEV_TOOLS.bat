@@ -144,13 +144,13 @@ echo Current Version: %CUR_V%
 set /p NEW_V="Enter New Version (or press Enter to keep): "
 if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 
-powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $v | ConvertTo-Json | Out-File -FilePath '%VER_FILE%' -Encoding utf8"
-powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Out-File -FilePath '%CONFIG_FILE%' -Encoding utf8"
-if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $c | ConvertTo-Json | Out-File -FilePath '%ADMIN_CONFIG%' -Encoding utf8"
+powershell -Command "$v=@{version='!NEW_V!'; buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')}; $json=$v | ConvertTo-Json; [IO.File]::WriteAllText('%VER_FILE%', $json)"
+powershell -Command "$c=Get-Content '%CONFIG_FILE%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $json=$c | ConvertTo-Json; [IO.File]::WriteAllText('%CONFIG_FILE%', $json)"
+if exist "%ADMIN_CONFIG%" powershell -Command "$c=Get-Content '%ADMIN_CONFIG%' | ConvertFrom-Json; $c.version='!NEW_V!'; $c.buildDate=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ'); $json=$c | ConvertTo-Json; [IO.File]::WriteAllText('%ADMIN_CONFIG%', $json)"
 
 :: Sync package.json
 if exist "%PKG_FILE%" (
-    powershell -Command "$p=Get-Content '%PKG_FILE%' | ConvertFrom-Json; $p.version='!NEW_V!'; $p | ConvertTo-Json | Out-File -FilePath '%PKG_FILE%' -Encoding utf8"
+    powershell -Command "$p=Get-Content '%PKG_FILE%' | ConvertFrom-Json; $p.version='!NEW_V!'; $json=$p | ConvertTo-Json; [IO.File]::WriteAllText('%PKG_FILE%', $json)"
     echo [OK] package.json updated.
 )
 
