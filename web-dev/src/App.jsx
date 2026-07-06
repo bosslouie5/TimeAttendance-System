@@ -154,17 +154,26 @@ function App() {
       setActiveApiBase('/api');
       if (window.location.hostname.includes('onrender.com')) {
         try {
+          // 1. Try local active-link from Render first
           const res = await fetch('/api/master/active-link');
-          const tunnelUrl = await res.text();
+          let tunnelUrl = await res.text();
+
+          // 2. Fallback: Try the public registry (ntfy.sh) if Render's link is old/missing
+          if (!tunnelUrl || !tunnelUrl.includes('trycloudflare.com')) {
+            console.log('[PRO-BRIDGE] Fetching from public registry...');
+            const ntfyRes = await fetch('https://ntfy.sh/attendance_hub_60003078_active_link/raw');
+            tunnelUrl = await ntfyRes.text();
+          }
+
           if (tunnelUrl && tunnelUrl.includes('trycloudflare.com')) {
-            setTunnelBase(tunnelUrl);
-            setSaasStatus('Cloud-to-Local Bridge Active');
-            console.log(`[PRO-BRIDGE] Tunnel detected: ${tunnelUrl}`);
+            setTunnelBase(tunnelUrl.trim());
+            setSaasStatus('Cloud-to-Local Bridge Active ✓');
+            console.log(`[PRO-BRIDGE] Tunnel link established: ${tunnelUrl}`);
           } else {
-            setSaasStatus('Cloud Portal (No Local Bridge)');
+            setSaasStatus('Cloud Portal (Waiting for Bridge)');
           }
         } catch (e) {
-          setSaasStatus('Cloud Portal');
+          setSaasStatus('Bridge Connection Error');
         }
       } else {
         setSaasStatus('Local System Active');

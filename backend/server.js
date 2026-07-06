@@ -1270,12 +1270,8 @@ app.listen(PORT, HOST, () => {
   console.log(`\x1b[32m%s\x1b[0m`, `SYSTEM LIVE: http://localhost:${PORT}`);
   console.log(`Status: Ready for Local or Public connections.`);
 
-  // Start Tunnel Monitoring for SaaS Self-Healing (Disabled in Test Mode)
-  if (!isTestMode) {
-    startTunnelMonitor();
-  } else {
-    console.log(`[HUB] Test Mode: SaaS Self-Healing disabled.`);
-  }
+  // Start Tunnel Monitoring for SaaS Self-Healing (ENABLED in Test Mode for Pro-Bridge)
+  startTunnelMonitor();
 });
 
 // --- SAAS SELF-HEALING: DISCOVERY HUB ---
