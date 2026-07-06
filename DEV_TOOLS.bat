@@ -148,7 +148,7 @@ if exist "%PKG_FILE%" (
 
 :: Increment Gradle Version Code
 if exist "%GRADLE_FILE%" (
-    powershell -Command "$content = Get-Content '%GRADLE_FILE%'; $newContent = $content -replace 'versionCode (\d+)', { param($m) 'versionCode ' + ([int]$m.Groups[1].Value + 1) }; $newContent | Set-Content '%GRADLE_FILE%'"
+    powershell -Command "$c = Get-Content '%GRADLE_FILE%'; $c | ForEach-Object { if($_ -match 'versionCode (\d+)') { '        versionCode ' + ([int]$matches[1] + 1) } else { $_ } } | Set-Content '%GRADLE_FILE%'"
     echo [OK] Gradle Version Code Incremented.
 )
 exit /b

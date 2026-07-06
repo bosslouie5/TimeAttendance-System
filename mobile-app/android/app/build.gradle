@@ -7,7 +7,7 @@ android {
         applicationId "com.example.timeattendance"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-         param($m) 'versionCode ' + ([int]$m.Groups[1].Value + 1) 
+        versionCode 6
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
