@@ -1,6 +1,6 @@
 {
   "defaultApiUrl": "http://localhost:4002/api",
   "defaultTenantId": "949230",
-  "version": "1.0.3",
-  "buildDate": "2026-07-07T15:43:06.931Z"
+  "version": "1.0.4",
+  "buildDate": "2026-07-07T15:45:20.553Z"
 }
