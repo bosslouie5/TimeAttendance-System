@@ -34,10 +34,12 @@ echo   [1] START TEST LAB    (Build + Run + Tunnel - 4002)
 echo   [2] MOBILE DEV LAB    (Mirror + Sync + Run)
 echo   [3] MASTER SYNC       (Full Automation: Build to Deploy)
 echo.
-echo   [4] SAFETY BACKUP     (Create Point)
-echo   [5] REVERT CODE    (Restore Point)
+echo   [4] SIGNED APK BUILD  (Release APK for TimeKey Pro)
+echo   [5] SAFETY BACKUP     (Create Point)
+
+echo   [6] REVERT CODE    (Restore Point)
 echo.
-echo   [6] STOP ALL       (Force Kill Processes)
+echo   [7] STOP ALL       (Force Kill Processes)
 echo   [0] EXIT
 echo   ______________________________________________________
 set /p choice="Master Tropa, input command: "
@@ -45,9 +47,10 @@ set /p choice="Master Tropa, input command: "
 if "%choice%"=="1" goto START_LAB
 if "%choice%"=="2" goto MOBILE_LAB
 if "%choice%"=="3" goto MASTER_SYNC
-if "%choice%"=="4" goto BACKUP
-if "%choice%"=="5" goto REVERT
-if "%choice%"=="6" goto STOP_ALL
+if "%choice%"=="4" goto BUILD_SIGNED_APK
+if "%choice%"=="5" goto BACKUP
+if "%choice%"=="6" goto REVERT
+if "%choice%"=="7" goto STOP_ALL
 if "%choice%"=="0" exit
 goto MENU
 
@@ -153,6 +156,15 @@ echo [*] 4/4 Deploying to Cloud (GitHub)...
 "%GIT_EXE%" commit -m "Production Release: %date% %time%"
 "%GIT_EXE%" push origin main
 
+if exist "mobile-app\android\release-key.jks" (
+    echo.
+    set /p buildSigned="Build signed APK now? (Y/N): "
+    if /i "!buildSigned!"=="Y" (
+        set "INTERNAL_CALL="
+        call :BUILD_SIGNED_APK
+    )
+)
+
 set "INTERNAL_CALL="
 echo [SUCCESS] Full Sync Complete.
 pause
@@ -184,10 +196,18 @@ if exist "%PKG_FILE%" (
     echo [OK] package.json updated.
 )
 
-:: Increment Gradle Version Code using Node (Safe from BOM/Encoding issues)
+:: Increment Gradle Version Code and update versionName using Node (Safe from BOM/Encoding issues)
 if exist "%GRADLE_FILE%" (
-    node -e "const fs=require('fs'); let c=fs.readFileSync('%GRADLE_FILE%', 'utf8'); c=c.replace(/versionCode (\d+)/, (m, v) => 'versionCode ' + (parseInt(v) + 1)); fs.writeFileSync('%GRADLE_FILE%', c, 'utf8');"
-    echo [OK] Gradle Version Code Incremented.
+    (
+        echo const fs=require('fs');
+        echo let p='!GRADLE_FILE!';
+        echo let c=fs.readFileSync(p,'utf8');
+        echo c=c.replace(/versionCode\s+(\d+)/,(m,v)=^>'versionCode '+(parseInt(v)+1));
+        echo c=c.replace(/versionName\s+"[^"]*"/g,'versionName "!NEW_V!"');
+        echo fs.writeFileSync(p,c,'utf8');
+    ) > "%temp%\update_gradle.js"
+    node "%temp%\update_gradle.js"
+    echo [OK] Gradle Version Code and Name Updated.
 )
 exit /b
 
@@ -231,4 +251,33 @@ taskkill /F /IM cloudflared.exe /T >nul 2>&1
 taskkill /F /IM scrcpy.exe /T >nul 2>&1
 echo [OK] Processes Cleared.
 pause
+goto MENU
+
+:BUILD_SIGNED_APK
+cls
+echo [*] Building signed Android APK for TimeKey Pro...
+if not exist "mobile-app\android\release-key.jks" (
+    echo [ERROR] release-key.jks not found in mobile-app\android.
+    echo [INFO] Place your keystore at mobile-app\android\release-key.jks or generate it there.
+    pause
+    goto MENU
+)
+pushd mobile-app\android
+call gradlew.bat assembleRelease
+if errorlevel 1 (
+    echo [ERROR] Signed APK build failed.
+    popd
+    pause
+    goto MENU
+)
+set "APK_SOURCE=app\build\outputs\apk\release\app-release.apk"
+if exist "%APK_SOURCE%" (
+    copy /y "%APK_SOURCE%" "..\app-release-TimeKey-Pro.apk" >nul
+    echo [OK] Signed APK created at mobile-app\app-release-TimeKey-Pro.apk
+) else (
+    echo [ERROR] APK output not found after build.
+)
+popd
+pause
+goto MENU
 goto MENU

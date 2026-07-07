@@ -1,6 +1,6 @@
 {
   "appId": "com.example.timeattendance",
-  "appName": "Time Attendance Mobile",
+  "appName": "TimeKey Pro",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {

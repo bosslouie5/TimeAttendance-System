@@ -16,8 +16,19 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def keystorePath = project.hasProperty('KEYSTORE_FILE') ? KEYSTORE_FILE : 'release-key.jks'
+            storeFile file(keystorePath)
+            storePassword project.hasProperty('KEYSTORE_PASSWORD') ? KEYSTORE_PASSWORD : 'timekeypro'
+            keyAlias project.hasProperty('KEY_ALIAS') ? KEY_ALIAS : 'timekeypro'
+            keyPassword project.hasProperty('KEY_PASSWORD') ? KEY_PASSWORD : 'timekeypro'
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
