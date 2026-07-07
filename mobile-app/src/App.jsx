@@ -110,6 +110,7 @@ function App() {
   const [isServerDown, setIsServerDown] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [showBranchPicker, setShowBranchPicker] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [whatsNewData, setWhatsNewData] = useState(null);
 
@@ -143,6 +144,16 @@ function App() {
       return JSON.parse(localStorage.getItem('personal_logs')) || [];
     } catch (e) { return []; }
   });
+
+  const [noticeModal, setNoticeModal] = useState({ visible: false, title: '', message: '', type: 'info' });
+
+  const showNotice = (title, message, type = 'info') => {
+    setNoticeModal({ visible: true, title, message, type });
+  };
+
+  const hideNotice = () => {
+    setNoticeModal(prev => ({ ...prev, visible: false }));
+  };
 
   const groupedLogs = useMemo(() => {
     const groups = {};
@@ -416,9 +427,12 @@ function App() {
   }, [apiUrl, isServerDown]);
 
   const handleSetupTenant = async () => {
-    if (!setupId.trim()) return alert('Please enter a valid Company ID');
+    if (!setupId.trim()) {
+      showNotice('Company ID Required', 'Please enter a valid Company ID to continue.', 'warning');
+      return;
+    }
     setIsSettingUp(true);
-    setStatus('Linking Company...');
+    setStatus('Establishing secure connection...');
     try {
       const res = await getJson(`${apiUrl}/tenant-info/${setupId.trim()}`);
       if (res.ok && res.data) {
@@ -427,13 +441,13 @@ function App() {
         localStorage.setItem('tenant_info', JSON.stringify(res.data));
         setTenantId(tid);
         setTenantInfo(res.data);
-        setStatus('Company Linked ✓');
-        alert(`SUCCESS!\n\nLinked to: ${res.data.companyName}\nSystem is ngayon handa na.`);
+        setStatus('Company linked successfully.');
+        showNotice('Success', `Linked to ${res.data.companyName}. Your terminal is ready.`, 'success');
       } else {
-        alert('INVALID COMPANY ID');
+        showNotice('Invalid Company', 'Company ID not recognized. Please verify and try again.', 'warning');
       }
     } catch (e) {
-      alert('CONNECTION ERROR: Pakicheck ang iyong internet o ang server link.');
+      showNotice('Connection Error', 'Unable to reach the server. Please verify your network or server settings.', 'error');
     } finally {
       setIsSettingUp(false);
       setStatus('System Ready');
@@ -441,7 +455,10 @@ function App() {
   };
 
   const login = async () => {
-    if (!employeeId.trim()) return alert('Please enter your Employee ID');
+    if (!employeeId.trim()) {
+      showNotice('Employee ID Required', 'Please enter your Employee ID to continue.', 'warning');
+      return;
+    }
     setLoading(true);
     setStatus('Authenticating...');
     const cleanId = employeeId.trim();
@@ -472,11 +489,11 @@ function App() {
         setLoading(false);
         return;
       } else if (res.status === 404) {
-        alert('ID Not Found sa system. Pakicheck ang iyong ID.');
+        showNotice('Employee Not Found', 'The Employee ID is not registered. Please verify and try again.', 'warning');
         setLoading(false);
         return;
       } else if (res.status === 403) {
-        alert(res.data?.error || 'Access Denied: Device mismatch.');
+        showNotice('Access Denied', res.data?.error || 'Device mismatch detected. Please use an authorized device.', 'error');
         setLoading(false);
         return;
       } else {
@@ -497,15 +514,22 @@ function App() {
       localStorage.setItem('cached_id', cachedEmp.employeeId);
       localStorage.setItem('cached_name', cachedEmp.name);
       setStatus('Offline Access ✓');
-      alert('OFFLINE MODE: Nakapasok gamit ang cached credentials.');
+      showNotice('Offline Login', 'You are logged in using cached credentials. Connectivity will be restored when available.', 'info');
     } else {
-      alert(`CONNECTION REQUIRED!\n\n${isServerDown ? 'Server is currently OFFLINE.' : 'Hindi makakonekta sa system at wala kang cached data.'}\n\nURL: ${apiUrl}`);
+      showNotice(
+        'Connection Required',
+        `${isServerDown ? 'The server is currently offline.' : 'Unable to connect to the system, and no cached credentials are available.'} Please check your network or server settings.`,
+        'error'
+      );
     }
     setLoading(false);
   };
 
   const recordAttendance = async (type) => {
-    if (!selectedDepartment) return alert('Pumili muna ng work branch!');
+    if (!selectedDepartment) {
+      showNotice('Branch Required', 'Please select a work branch before recording attendance.', 'warning');
+      return;
+    }
     const dept = departments.find(d => d.departmentId === selectedDepartment);
     if (!dept) return;
 
@@ -529,7 +553,7 @@ function App() {
     });
 
     if (hasSyncedLog || hasPendingLog) {
-      alert(`NOTICE: Mayroon ka nang recorded ${type} para sa araw na ito.`);
+      showNotice('Attendance Already Recorded', `You already have a recorded ${type} for today.`, 'info');
       return;
     }
 
@@ -544,7 +568,7 @@ function App() {
         pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 10000 });
       } catch (err) {
         setStatus('❌ GPS Error');
-        alert('LOCATION ERROR: Pakibuhay ang GPS sa iyong settings.');
+        showNotice('Location Required', 'Please enable GPS/location services in your settings and try again.', 'warning');
         setLoading(false);
         return;
       }
@@ -555,7 +579,7 @@ function App() {
 
     if (dist > allowedRadius) {
       setStatus('❌ Too Far');
-      alert(`ACCESS DENIED!\n\nNasa ${Math.round(dist)}m ka palayo.\nAllowed Radius: ${allowedRadius}m.`);
+      showNotice('Access Denied', `You are ${Math.round(dist)}m away. Allowed radius is ${allowedRadius}m.`, 'warning');
       setLoading(false);
       return;
     }
@@ -578,7 +602,7 @@ function App() {
       const response = await postJson(`${apiUrl}/mobile/attendance`, logData, { 'x-tenant-id': tenantId });
       if (response.status === 200) {
         setStatus(`${type} Success ✓`);
-        alert(`SUCCESS: Attendance recorded!`);
+        showNotice('Attendance Recorded', 'Your attendance has been successfully recorded.', 'success');
         syncSystemData();
       } else {
         throw new Error('Sync failed');
@@ -589,7 +613,7 @@ function App() {
       localStorage.setItem('pending_logs', JSON.stringify(updatedPending));
       setPendingLogs(updatedPending);
       setStatus('Log Cached ✓');
-      alert(`OFFLINE SUCCESS! Na-save muna sa phone.`);
+      showNotice('Offline Saved', 'Attendance was recorded locally and will sync once the connection is restored.', 'info');
     } finally {
       setLoading(false);
     }
@@ -610,7 +634,7 @@ function App() {
 
     const downloadUrl = resolveUpdateDownloadUrl(updateAvailable, apiUrl);
     if (!downloadUrl) {
-      alert('No update download link is available right now.');
+      showNotice('Update Unavailable', 'No download link is available for this release at the moment.', 'warning');
       return;
     }
 
@@ -628,7 +652,7 @@ function App() {
       }
 
       setUpdateAvailable(null);
-      alert('DOWNLOAD STARTED: Pakicheck ang notification bar mo. Pagkatapos ma-install, buksan ulit ang app para sa fresh update.');
+      showNotice('Download Started', 'The update download has begun. Please check your notification center and reopen the app after installation.', 'success');
     } catch (e) {
       console.warn('[UPDATE] Browser open failed, trying fallback.', e);
       if (typeof window !== 'undefined' && window.open) {
@@ -677,8 +701,20 @@ function App() {
         .mobile-container { max-width: 500px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; width: 100%; position: relative; background: #0f172a; color: white; font-family: 'Inter', system-ui, -apple-system, sans-serif; box-sizing: border-box; }
         .content-area { flex: 1; padding: 20px 15px calc(env(safe-area-inset-bottom, 0px) + 100px) 15px; width: 100%; box-sizing: border-box; }
         .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(15px); padding: 25px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; box-sizing: border-box; }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+        .setup-card { background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98)); border: 1px solid rgba(96, 165, 250, 0.16); box-shadow: 0 35px 80px -30px rgba(15, 23, 42, 0.75); position: relative; overflow: hidden; }
+        .setup-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at top right, rgba(59,130,246,0.18), transparent 42%), radial-gradient(circle at bottom left, rgba(16,185,129,0.12), transparent 30%); pointer-events: none; }
+        .setup-hero { margin-bottom: 30px; position: relative; z-index: 1; }
+        .setup-badge { display: inline-flex; padding: 8px 16px; border-radius: 999px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.18em; margin-bottom: 18px; }
+        .setup-title { font-size: 2.1rem; letter-spacing: 0.02em; margin: 0 0 12px; }
+        .setup-text { color: #cbd5e1; line-height: 1.8; margin-bottom: 24px; max-width: 520px; margin-left: auto; margin-right: auto; }
+        .setup-note { color: #e2e8f0; background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(96, 165, 250, 0.18); border-radius: 24px; padding: 20px 20px; margin-bottom: 24px; font-size: 0.95rem; line-height: 1.7; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+        .setup-status-pill { margin-top: 18px; padding: 12px 16px; border-radius: 16px; border: 1px solid rgba(59, 130, 246, 0.18); background: rgba(59, 130, 246, 0.08); color: #dbeafe; font-size: 0.92rem; text-align: center; }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 800; cursor: pointer; width: 100%; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; position: relative; overflow: hidden; }
+        .btn-primary.loading { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
         .btn-primary:active { transform: scale(0.96); opacity: 0.9; }
+        .input-field { width: 100%; padding: 18px; margin-bottom: 20px; border-radius: 22px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.72); color: white; font-size: 1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
+        .input-field::placeholder { color: rgba(241, 245, 249, 0.5); font-weight: 700; letter-spacing: 0.08em; }
+        .input-field:focus { border-color: #3b82f6; background: rgba(15, 23, 42, 0.88); box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.08); }
         .input-field { width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 20px; border: 2px solid #334155; background: rgba(15, 23, 42, 0.6); color: white; font-size: 1rem; outline: none; box-sizing: border-box; transition: 0.3s; }
         .input-field:focus { border-color: #3b82f6; background: rgba(15, 23, 42, 0.8); }
         .label-visible { color: #94a3b8; font-size: 0.75rem; font-weight: 800; margin-bottom: 12px; display: block; letter-spacing: 1.5px; text-transform: uppercase; }
@@ -695,6 +731,9 @@ function App() {
         .nav-item:active { transform: scale(0.92); background: rgba(255,255,255,0.05); }
         .nav-item.active { color: #3b82f6; }
         .nav-item.active span:first-child { transform: translateY(-2px) scale(1.15); filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5)); }
+        .notification-card { background: rgba(15,23,42,0.95); border: 1px solid rgba(59,130,246,0.22); padding: 18px 20px; border-radius: 24px; margin-bottom: 20px; text-align: left; box-shadow: 0 18px 32px rgba(0,0,0,0.22); }
+        .notification-card strong { display: block; margin-bottom: 8px; font-size: 1rem; letter-spacing: 0.04em; }
+        .notification-card p { margin: 0; color: #cbd5e1; line-height: 1.7; }
         .log-card { background: rgba(255,255,255,0.03); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
         .log-table { width: 100%; border-collapse: separate; border-spacing: 0 12px; margin-top: 10px; }
         .log-table th { text-align: center; padding: 0 5px 10px 5px; color: #64748b; font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
@@ -709,28 +748,45 @@ function App() {
         .badge-duty { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
         .update-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.98); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(20px); padding: 25px; }
         .update-card { background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 350px; border-radius: 40px; padding: 40px 30px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .message-overlay { position: fixed; inset: 0; background: rgba(10, 14, 29, 0.9); backdrop-filter: blur(18px); display: flex; align-items: center; justify-content: center; z-index: 10010; padding: 24px; }
+        .message-card { width: min(100%, 420px); background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.92)); border: 1px solid rgba(96, 165, 250, 0.2); border-radius: 28px; box-shadow: 0 24px 80px rgba(0,0,0,0.35); padding: 28px 24px; animation: slideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1); text-align: center; }
+        .message-card h3 { margin: 0 0 14px; font-size: 1.3rem; letter-spacing: 0.03em; color: #f8fafc; }
+        .message-card p { margin: 0 0 22px; color: #cbd5e1; line-height: 1.75; font-size: 0.95rem; }
+        .message-card .message-icon { display: inline-flex; width: 60px; height: 60px; border-radius: 18px; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 16px; background: rgba(59, 130, 246, 0.12); }
+        .message-card button { width: 100%; padding: 16px 0; border-radius: 20px; border: none; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.08em; cursor: pointer; transition: transform 180ms ease, filter 180ms ease; }
+        .message-card button:hover { transform: translateY(-1px); }
+        .message-card button.message-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; }
+        .message-card.message-success .message-icon { background: rgba(16, 185, 129, 0.16); }
+        .message-card.message-warning .message-icon { background: rgba(245, 158, 11, 0.16); }
+        .message-card.message-error .message-icon { background: rgba(239, 68, 68, 0.16); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       `}</style>
 
       {!tenantId ? (
         <div className="content-area" style={{padding: '40px 10px', textAlign: 'center'}}>
-           <div className="glass-card fade-in">
-              <div style={{fontSize: '6rem', marginBottom: '20px'}} className="pulse">🌐</div>
-              <h1 style={{fontSize: '2rem', fontWeight: '900', marginBottom: '10px'}}>Time Attendance</h1>
-              <p style={{color: '#94a3b8', marginBottom: '40px'}}>Enter Company ID para simulan ang terminal.</p>
+           <div className="glass-card setup-card fade-in">
+              <div className="setup-hero">
+                <div className="setup-badge">TERMINAL ACTIVATION</div>
+                <div style={{fontSize: '5.5rem', marginBottom: '20px'}} className="pulse">🌐</div>
+                <h1 className="setup-title">Time Attendance</h1>
+                <p className="setup-text">Enter your Company ID to secure the terminal and initialize the local environment. This protects your device and streamlines onboarding.</p>
+              </div>
+              <div className="setup-note">Tap ACTIVATE TERMINAL to verify your company and establish a secure local lab connection.</div>
               <input
                 name={`tenant_setup_${Math.random().toString(36).substring(7)}`}
                 value={setupId}
                 onChange={e => setSetupId(e.target.value)}
-                placeholder="--- ENTER ID ---"
+                placeholder="Enter your Company ID"
                 className="input-field"
-                style={{textAlign: 'center', fontSize: '1.5rem', fontWeight: '900'}}
+                style={{textAlign: 'center', fontSize: '1.2rem', fontWeight: '700'}}
                 autoComplete="new-password"
                 autoCorrect="off"
                 spellCheck="false"
                 data-lpignore="true"
               />
-              <button onClick={handleSetupTenant} disabled={isSettingUp} className="btn-primary">{isSettingUp ? 'LINKING...' : 'ACTIVATE TERMINAL'}</button>
+              <button type="button" onClick={handleSetupTenant} disabled={isSettingUp} className={`btn-primary ${isSettingUp ? 'loading' : ''}`}>{isSettingUp ? 'CONNECTING TO COMPANY...' : 'ACTIVATE TERMINAL'}</button>
+              {isSettingUp && <div className="setup-status-pill">Establishing a secure connection with your company...</div>}
            </div>
         </div>
       ) : (
@@ -765,6 +821,19 @@ function App() {
             </div>
           )}
 
+          {noticeModal.visible && (
+            <div className="message-overlay fade-in" onClick={hideNotice}>
+              <div className={`message-card message-${noticeModal.type}`} onClick={e => e.stopPropagation()}>
+                <div className="message-icon">
+                  {noticeModal.type === 'success' ? '✅' : noticeModal.type === 'warning' ? '⚠️' : noticeModal.type === '❗'}
+                </div>
+                <h3>{noticeModal.title}</h3>
+                <p>{noticeModal.message}</p>
+                <button type="button" className="message-primary" onClick={hideNotice}>OK</button>
+              </div>
+            </div>
+          )}
+
           <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '15px'}} onDoubleClick={handleUpdateServer}>
               <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Time Attendance Hub</div>
               <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff'}}>{tenantInfo?.companyName?.toUpperCase() || 'OFFICIAL HUB'}</h1>
@@ -772,26 +841,38 @@ function App() {
           </div>
 
           {!loggedIn ? (
-            <div className="glass-card fade-in">
-              <div style={{textAlign: 'center', marginBottom: '40px'}}>
-                 <div style={{fontSize: '5rem', marginBottom: '15px'}} className="pulse">🛡️</div>
-                 <h2>Identity Hub</h2>
-                 <p style={{color: '#94a3b8'}}>Verification Required</p>
+            <div className="auth-shell fade-in">
+              <div className="auth-card">
+                <div className="auth-hero">
+                  <div className="auth-icon pulse">🛡️</div>
+                  <div className="auth-badge">SECURE ACCESS</div>
+                  <h2>Identity Hub</h2>
+                  <p>Use your registered employee ID to continue with a smooth, secure sign in.</p>
+                </div>
+
+                <div className="auth-field">
+                  <span className="label-visible">EMPLOYEE ID</span>
+                  <input
+                    name={`emp_id_${Math.random().toString(36).substring(7)}`}
+                    value={employeeId}
+                    onChange={e => setEmployeeId(e.target.value)}
+                    placeholder="--- ENTER ID ---"
+                    className="input-field auth-input"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                  />
+                </div>
+
+                <button onClick={login} disabled={loading} className={`btn-primary ${loading ? 'is-loading' : ''}`}>
+                  {loading ? 'VERIFYING...' : 'SIGN IN'}
+                </button>
+
+                <div className={`auth-status-pill ${loading ? 'is-active' : ''}`}>
+                  {loading ? 'Authenticating your access...' : (status || 'System ready for sign in')}
+                </div>
               </div>
-              <span className="label-visible">EMPLOYEE ID</span>
-              <input
-                name={`emp_id_${Math.random().toString(36).substring(7)}`}
-                value={employeeId}
-                onChange={e => setEmployeeId(e.target.value)}
-                placeholder="--- ENTER ID ---"
-                className="input-field"
-                style={{textAlign: 'center', fontSize: '1.4rem'}}
-                autoComplete="new-password"
-                autoCorrect="off"
-                spellCheck="false"
-                data-lpignore="true"
-              />
-              <button onClick={login} disabled={loading} className="btn-primary">{loading ? 'VERIFYING...' : 'SIGN IN'}</button>
             </div>
           ) : (
             <>
@@ -821,10 +902,40 @@ function App() {
                     </div>
 
                     <span className="label-visible">SELECT WORK LOCATION</span>
-                    <select value={selectedDepartment} onChange={e => setSelectedDepartment(e.target.value)} className="input-field" style={{cursor: 'pointer'}}>
-                      <option value="" style={{color: '#000'}}>-- Select Office/Branch --</option>
-                      {departments.map(d => <option key={d.departmentId} value={d.departmentId} style={{color: '#000'}}>{d.name}</option>)}
-                    </select>
+                    <button type="button" className="branch-select-button" onClick={() => setShowBranchPicker(true)}>
+                      <span>{departments.find(d => d.departmentId === selectedDepartment)?.name || '-- Select Office/Branch --'}</span>
+                      <span className="branch-select-arrow">▾</span>
+                    </button>
+
+                    {showBranchPicker && (
+                      <div className="picker-modal fade-in" onClick={() => setShowBranchPicker(false)}>
+                        <div className="picker-panel" onClick={e => e.stopPropagation()}>
+                          <div className="picker-header">
+                            <div>
+                              <div className="picker-title">Choose Branch</div>
+                              <div className="picker-subtitle">Tap a branch to continue</div>
+                            </div>
+                            <button type="button" className="picker-close" onClick={() => setShowBranchPicker(false)}>✕</button>
+                          </div>
+                          <div className="picker-list">
+                            {departments.map(d => (
+                              <button
+                                key={d.departmentId}
+                                type="button"
+                                className={`picker-item ${selectedDepartment === d.departmentId ? 'selected' : ''}`}
+                                onClick={() => {
+                                  setSelectedDepartment(d.departmentId);
+                                  setShowBranchPicker(false);
+                                }}
+                              >
+                                <span>{d.name}</span>
+                                {selectedDepartment === d.departmentId && <span className="picker-item-check">✓</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '10px'}}>
                       <button onClick={() => recordAttendance('IN')} className="btn-primary" style={{background: '#10b981', padding: '30px 10px'}}>
