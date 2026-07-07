@@ -39,18 +39,18 @@ function App() {
   const AVAILABLE_PERMISSIONS = [
     { id: 'dashboard', name: 'Dashboard' },
     { id: 'employees', name: 'Staff Management' },
-    { id: 'org-units', name: 'Org Units' },
-    { id: 'branches', name: 'Branch/Location Setup' },
-    { id: 'assign-branch', name: 'Employee Assignment' },
+    { id: 'org-units', name: 'Departments' },
+    { id: 'branches', name: 'Branches / Locations' },
+    { id: 'assign-branch', name: 'Branch Assignment' },
     { id: 'reports', name: 'Attendance Reports' },
-    { id: 'setup', name: 'System Setup' },
+    { id: 'setup', name: 'System Settings' },
     { id: 'devices', name: 'Device Management' },
-    { id: 'position-titles', name: 'Position Titles' },
+    { id: 'position-titles', name: 'Job Titles' },
     { id: 'schedules', name: 'Schedule Management' },
-    { id: 'announcements', name: 'Company Announcements' },
+    { id: 'announcements', name: 'Announcements' },
     { id: 'leave-management', name: 'Leave Management' },
-    { id: 'payroll-bridge', name: 'Payroll Bridge' },
-    { id: 'subscription-info', name: 'Subscription Info' },
+    { id: 'payroll-bridge', name: 'Payroll Integration' },
+    { id: 'subscription-info', name: 'Subscription Details' },
     { id: 'assign-schedule', name: 'Assign Schedule' }
   ];
   const [status, setStatus] = useState('System Online');
@@ -71,14 +71,13 @@ function App() {
   const [selectedTenant, setSelectedTenant] = useState(null);
   const [tenantSearch, setTenantSearch] = useState('');
   const [globalTenantFilter, setGlobalTenantFilter] = useState('ALL');
+  const [selectedBranchTenant, setSelectedBranchTenant] = useState('');
+  const [selectedDeptTenant, setSelectedDeptTenant] = useState('');
+  const [selectedPositionTenant, setSelectedPositionTenant] = useState('');
 
   // Employee Management States
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
   const [isEditingEmp, setIsEditingEmp] = useState(false);
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
-  const [selectedAssignBranchIds, setSelectedAssignBranchIds] = useState([]);
-  const [assignments, setAssignments] = useState([]);
   const [empId, setEmpId] = useState('');
   const [empName, setEmpName] = useState('');
   const [empJobTitle, setEmpJobTitle] = useState('');
@@ -95,6 +94,8 @@ function App() {
   const [empStatus, setEmpStatus] = useState('Active');
   const [empTenantId, setEmpTenantId] = useState('');
   const [empSchedule, setEmpSchedule] = useState('');
+  const [empSearch, setEmpSearch] = useState('');
+  const [selectedStaffTenant, setSelectedStaffTenant] = useState('');
 
   // Branch/Dept States
   const [deptName, setDeptName] = useState('');
@@ -102,6 +103,7 @@ function App() {
   const [deptLon, setDeptLon] = useState('');
   const [deptRad, setDeptRad] = useState('50');
   const [editingDeptId, setEditingDeptId] = useState(null);
+  const [editingOrgUnitId, setEditingOrgUnitId] = useState(null);
   const [newOrgName, setNewOrgName] = useState('');
 
   // Schedule States
@@ -109,14 +111,19 @@ function App() {
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
   const [gracePeriod, setGracePeriod] = useState('15');
+  const [selectedScheduleTenant, setSelectedScheduleTenant] = useState('ALL');
+  const [selectedAssignScheduleTenant, setSelectedAssignScheduleTenant] = useState('ALL');
+  const [selectedDevicesTenant, setSelectedDevicesTenant] = useState('ALL');
 
   const [newPositionTitle, setNewPositionTitle] = useState('');
+  const [editingPositionTitleId, setEditingPositionTitleId] = useState(null);
 
   // Report States
   const [reportBy, setReportBy] = useState('Branch');
   const [reportSearch, setReportSearch] = useState('');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+  const [selectedReportsTenant, setSelectedReportsTenant] = useState('');
 
   // UI States
   const [isProvisioning, setIsProvisioning] = useState(false);
@@ -128,6 +135,10 @@ function App() {
   const [tempPublicIp, setTempPublicIp] = useState('');
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
+  const [isAssignModalOpenDev, setIsAssignModalOpenDev] = useState(false);
+  const [selectedAssignEmpDev, setSelectedAssignEmpDev] = useState(null);
+  const [selectedAssignBranchesDev, setSelectedAssignBranchesDev] = useState([]);
+  const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('ALL');
   const [activeApiBase, setActiveApiBase] = useState(null);
   const [tunnelBase, setTunnelBase] = useState(null);
   const [saasStatus, setSaasStatus] = useState('Connecting...');
@@ -173,7 +184,7 @@ function App() {
   const loadInitialData = async () => {
     if (!activeApiBase) return;
     try {
-      const [u, l, e, d, da, o, pt, s, a, v] = await Promise.all([
+      const [u, l, e, d, da, o, pt, s, v] = await Promise.all([
         fetch(`${activeApiBase}/master/users`).then(r => r.json()),
         fetch(`${activeApiBase}/master/logs`).then(r => r.json()),
         fetch(`${activeApiBase}/master/employees`).then(r => r.json()),
@@ -182,62 +193,46 @@ function App() {
         fetch(`${activeApiBase}/master/org-units`).then(r => r.json()),
         fetch(`${activeApiBase}/master/position-titles`).then(r => r.json()),
         fetch(`${activeApiBase}/master/schedules`).then(r => r.json()),
-        fetch(`${activeApiBase}/master/assignments`).then(r => r.json()),
         fetch(`${activeApiBase}/app-version`).then(r => r.json())
       ]);
-      setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []); setAssignments(a || []);
+      setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []);
       if (v && v.version) setAppVersion(v.version);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
     } catch (e) { setStatus('Sync Error'); }
   };
 
-  const getAssignedDepartmentIds = (emp) => {
-    const assignment = assignments.find(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
-    if (!assignment) return [];
-    if (Array.isArray(assignment.departmentIds)) return assignment.departmentIds.filter(Boolean);
-    if (assignment.departmentId) return [assignment.departmentId];
-    return [];
-  };
-
-  const toggleAssignBranchSelection = (departmentId) => {
-    setSelectedAssignBranchIds(prev =>
-      prev.includes(departmentId)
-        ? prev.filter(id => id !== departmentId)
-        : [...prev, departmentId]
-    );
-  };
-
-  const saveAssignment = async () => {
-    if (!selectedAssignEmp) return;
-    if (selectedAssignBranchIds.length === 0) return alert('Select at least one branch');
-    setProcessing(true);
-    setProcessingMsg('Saving branch access...');
-    try {
-      const res = await fetch(`${activeApiBase}/assignments?tenantId=${selectedAssignEmp.tenantId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedAssignEmp.tenantId },
-        body: JSON.stringify({ employeeId: selectedAssignEmp.employeeId, departmentIds: selectedAssignBranchIds })
-      });
-      if (res.ok) {
-        setStatus('Branch access updated ✓');
-        setIsAssignModalOpen(false);
-        await loadInitialData();
-      } else {
-        alert('Failed to update branch access');
-      }
-    } catch (e) { alert('Connection error'); }
-    finally { setProcessing(false); }
-  };
-
   const handleDevLogin = async () => {
     setStatus('Logging in...');
     try {
-      const res = await fetch(`${API_BASE}/auth/dev-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: devUser, password: devPass }) });
-      const data = await res.json();
-      if (data.success) { setIsDevLoggedIn(true); setCurrentUser(data.user); sessionStorage.setItem('dev_logged_in', 'true'); sessionStorage.setItem('dev_user_data', JSON.stringify(data.user)); setStatus(`Welcome back!`); }
-      else alert(data.error || 'Invalid Credentials!');
-    } catch (e) { setStatus('Login Error'); }
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: devUser, password: devPass })
+      });
+      let data;
+      try {
+        data = await res.json();
+      } catch (err) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      if (res.ok && data.success) {
+        setIsDevLoggedIn(true);
+        setCurrentUser(data.user);
+        sessionStorage.setItem('dev_logged_in', 'true');
+        sessionStorage.setItem('dev_user_data', JSON.stringify(data.user));
+        setStatus('Welcome back!');
+      } else {
+        const message = data.error || data.message || 'Invalid Credentials or Dev Login Disabled';
+        alert(message);
+        setStatus(`Login failed: ${message}`);
+      }
+    } catch (e) {
+      setStatus('Login Error');
+      alert(`Dev login failed: ${e.message || e}`);
+    }
   };
 
   const handleDevLogout = () => { setIsDevLoggedIn(false); setCurrentUser(null); sessionStorage.removeItem('dev_logged_in'); sessionStorage.removeItem('dev_user_data'); };
@@ -301,6 +296,38 @@ function App() {
       });
       if (res.ok) { loadInitialData(); setStatus(`${target.toUpperCase()} Cleared ✓`); }
     } catch (e) { setStatus('Clear operation failed'); }
+  };
+
+  const handleClearTenantData = async (tenant) => {
+    if (!tenant) return alert('Please select a tenant first.');
+    const tenantId = tenant.tenantId || tenant.username;
+    const tenantName = tenant.companyName || tenantId;
+
+    if (!window.confirm(`WARNING: This will permanently delete all data for ${tenantName}. Continue?`)) return;
+
+    setProcessingMsg(`Clearing all data for ${tenantName}...`);
+    setProcessing(true);
+
+    try {
+      const res = await fetch(`${activeApiBase}/master/clear-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId, target: 'all' })
+      });
+
+      if (res.ok) {
+        loadInitialData();
+        setStatus(`All data cleared for ${tenantName} ✓`);
+        setIsActionMenuOpen(false);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Clear operation failed');
+      }
+    } catch (e) {
+      setStatus('Clear operation failed');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const provisionPortal = async () => {
@@ -467,6 +494,13 @@ function App() {
     setDeptRad(b.radiusMeters.toString());
     // Auto-select tenant if not selected
     if (globalTenantFilter === 'ALL') setGlobalTenantFilter(b.tenantId);
+  };
+
+  const editOrgUnit = (o) => {
+    const orgId = o.orgUnitId || o.id;
+    setSelectedDeptTenant(o.tenantId || o.tenant);
+    setNewOrgName(o.name || '');
+    setEditingOrgUnitId(orgId);
   };
 
   const useCurrentLocation = () => {
@@ -637,7 +671,9 @@ function App() {
 
   const handleInstallLaunchApk = async (tenant) => {
     const apiToUse = tunnelBase || activeApiBase;
-    if (apiToUse.includes('onrender.com') || apiToUse === '/api') {
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.') || window.location.hostname.startsWith('172.');
+
+    if (apiToUse.includes('onrender.com') || (apiToUse === '/api' && !isLocal)) {
        alert("USB Install requires direct laptop connection. Please use your Laptop for this action.");
        return;
     }
@@ -777,8 +813,9 @@ function App() {
   };
 
   const getFilteredLogs = () => {
+    const tenantToUse = selectedReportsTenant || globalTenantFilter;
     return logs.filter(l => {
-      const isTenantMatch = globalTenantFilter === 'ALL' || l.tenantId === globalTenantFilter;
+      const isTenantMatch = tenantToUse === 'ALL' || l.tenantId === tenantToUse;
       const logDate = new Date(l.timestamp);
       const isAfterStart = !reportStartDate || logDate >= new Date(reportStartDate);
       const isBeforeEnd = !reportEndDate || logDate <= new Date(new Date(reportEndDate).setHours(23, 59, 59));
@@ -795,10 +832,11 @@ function App() {
   };
 
   const exportReportExcelFile = () => {
+    const tenantToUse = selectedReportsTenant || globalTenantFilter;
     const data = getFilteredLogs();
     if (data.length === 0) return alert('No data to export');
 
-    const companyName = globalTenantFilter === 'ALL' ? 'Global' : (users.find(u => (u.tenantId || u.username) === globalTenantFilter)?.companyName || 'Report');
+    const companyName = tenantToUse === 'ALL' ? 'Global' : (users.find(u => (u.tenantId || u.username) === tenantToUse)?.companyName || 'Report');
 
     const exportData = data.map(l => {
       const emp = employees.find(e => e.employeeId === l.employeeId && e.tenantId === l.tenantId);
@@ -1086,6 +1124,61 @@ function App() {
         .custom-scroll::-webkit-scrollbar-track { background: transparent; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+        /* From Uiverse.io by zanina-yassine - switch styles */
+        .component-title {
+          width: 100%;
+          position: absolute;
+          z-index: 999;
+          top: 30px;
+          left: 0;
+          padding: 0;
+          margin: 0;
+          font-size: 1rem;
+          font-weight: 700;
+          color: #888;
+          text-align: center;
+        }
+        .container {
+          width: 51px;
+          height: 31px;
+          position: relative;
+          display: inline-block;
+        }
+        .checkbox {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0;
+          cursor: pointer;
+          z-index: 2;
+        }
+        .switch {
+          display: block;
+          width: 100%;
+          height: 100%;
+          background: #e9e9eb;
+          border-radius: 16px;
+          position: relative;
+          transition: background-color .2s ease;
+        }
+        .switch::before {
+          content: "";
+          position: absolute;
+          width: 25px;
+          height: 25px;
+          top: 3px;
+          left: 3px;
+          border-radius: 50%;
+          background: white;
+          transition: transform .2s ease;
+        }
+        .checkbox:checked + .switch {
+          background: #22c55e;
+        }
+        .checkbox:checked + .switch::before {
+          transform: translateX(20px);
+        }
       `}</style>
 
       {/* ACTION PROCESSING OVERLAY */}
@@ -1147,7 +1240,7 @@ function App() {
             <span>📅</span> Assign Schedule
           </MenuItem>
           <MenuItem active={activeTab === 'devices'} onClick={() => {setActiveTab('devices'); setIsMenuOpen(false);}}>
-            <span>📱</span> Registered Devices
+            <span>📱</span> Device Managemnt
           </MenuItem>
 
           <div style={{padding:'20px 25px 10px', fontSize:'0.65rem', color:'#475569', textTransform:'uppercase', letterSpacing:'1px', fontWeight:'bold'}}>Infrastructure</div>
@@ -1285,7 +1378,7 @@ function App() {
             <ModuleCard icon="📊" title="System-Wide Reports" desc="Analytics and attendance logs" color="#10b981" onClick={() => setActiveTab('reports')} />
             <ModuleCard icon="🔗" title="Assign Branch" desc="Map employees to office locations" color="#3b82f6" onClick={() => setActiveTab('assign-branch')} />
             <ModuleCard icon="📅" title="Assign Schedule" desc="Assign work shifts to employees" color="#f59e0b" onClick={() => setActiveTab('assign-schedule')} />
-            <ModuleCard icon="📱" title="Registered Devices" desc="Manage secure device linking" color="#10b981" onClick={() => setActiveTab('devices')} />
+            <ModuleCard icon="📱" title="Device Managemnt" desc="Manage secure device linking" color="#10b981" onClick={() => setActiveTab('devices')} />
             <ModuleCard icon="⏰" title="Schedule Management" desc="Set office hours and shifts" color="#f59e0b" onClick={() => setActiveTab('schedules')} />
           </div>
         </div>
@@ -1407,6 +1500,8 @@ function App() {
                           setProcessing(false);
                         }} className="btn-hover" style={{...addBtn, background:'#ef4444'}}>🗑️ Terminate Tenant</button>
 
+                        <button onClick={() => handleClearTenantData(selectedTenant)} className="btn-hover" style={{...addBtn, background:'#f97316'}}>🧹 Clear Data</button>
+
                         <button onClick={() => handleBuildApk(selectedTenant)} className="btn-hover" style={{...addBtn, background:'#10b981'}}>📦 Build APK</button>
 
                         <button onClick={() => handleInstallLaunchApk(selectedTenant)} className="btn-hover" style={{...addBtn, background:'#f59e0b'}}>🔌 Install & Launch Apk (USB)</button>
@@ -1415,6 +1510,7 @@ function App() {
                           setProcessingMsg('Opening Permission Matrix...');
                           setProcessing(true);
                           setTimeout(() => {
+                            setIsActionMenuOpen(false);
                             setActiveTab('tenant-permissions');
                             setProcessing(false);
                           }, 800);
@@ -1533,14 +1629,27 @@ function App() {
       {activeTab === 'schedules' && (
         <div className="fade-in">
            <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+           <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'20px'}}>
+              <div>
+                <h2 style={{margin:0, color:'white'}}>📅 Global Schedule Assignment</h2>
+                <p style={{color:'#64748b', fontSize:'0.9rem', marginTop:'6px'}}>Assign and view schedules per tenant.</p>
+              </div>
+              <div style={{display:'flex', flexDirection:'column', gap:'6px', width:'260px'}}>
+                <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
+                <select value={selectedScheduleTenant} onChange={e => setSelectedScheduleTenant(e.target.value)} style={{...inputStyle, marginBottom:0, padding:'10px', height:'42px'}}>
+                  <option value="ALL">All Tenants</option>
+                  {users.map(u => (
+                    <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                      {u.companyName} ({u.tenantId || u.username})
+                    </option>
+                  ))}
+                </select>
+              </div>
+           </div>
            <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
                  <h2 style={{marginTop:0}}>Create Schedule</h2>
                  <p style={{color:'#64748b', fontSize:'0.8rem'}}>Assign shift timings to a specific tenant.</p>
-                 <select style={inputStyle} value={selectedScheduleTenant} onChange={e => setSelectedScheduleTenant(e.target.value)}>
-                    <option value="ALL">Select Tenant</option>
-                    {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
-                 </select>
                  <input style={inputStyle} placeholder="Shift Name (e.g. Regular Shift)" value={shiftName} onChange={e => setShiftName(e.target.value)} />
                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
                     <div>
@@ -1573,7 +1682,10 @@ function App() {
                           </tr>
                        </thead>
                        <tbody>
-                          {schedules.filter(s => globalTenantFilter === 'ALL' || s.tenantId === globalTenantFilter).map(s => (
+                          {schedules.filter(s => {
+                            const tenantToUse = selectedScheduleTenant === 'ALL' ? 'ALL' : selectedScheduleTenant;
+                            return tenantToUse === 'ALL' || s.tenantId === tenantToUse;
+                          }).map(s => (
                             <tr key={s.id}>
                                <td>{users.find(u => (u.tenantId || u.username) === s.tenantId)?.companyName || s.tenantId}</td>
                                <td style={{fontWeight:'bold'}}>{s.name}</td>
@@ -1609,24 +1721,31 @@ function App() {
                       <h2 style={{marginTop:0}}>Permissions for {selectedTenant.companyName}</h2>
                       <p style={{color:'#64748b', marginBottom:'30px'}}>Enable or disable modules for this tenant.</p>
                       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'15px'}}>
-                         {AVAILABLE_PERMISSIONS.map(perm => (
-                           <div key={perm.id} onClick={() => updatePermissions(selectedTenant, perm.id)} style={{
-                             padding:'15px', borderRadius:'12px', cursor:'pointer', border:'1px solid #334155',
-                             background: (selectedTenant.permissions || []).includes(perm.id) ? '#10b98122' : '#0f172a',
-                             borderColor: (selectedTenant.permissions || []).includes(perm.id) ? '#10b981' : '#334155',
-                             display:'flex', justifyContent:'space-between', alignItems:'center', transition:'0.2s'
-                           }}>
-                              <span style={{fontWeight:'500'}}>{perm.name}</span>
-                              <div style={{
-                                width:'20px', height:'20px', borderRadius:'6px', border:'2px solid',
-                                borderColor: (selectedTenant.permissions || []).includes(perm.id) ? '#10b981' : '#64748b',
-                                background: (selectedTenant.permissions || []).includes(perm.id) ? '#10b981' : 'transparent',
-                                display:'flex', alignItems:'center', justifyContent:'center'
-                              }}>
-                                 {(selectedTenant.permissions || []).includes(perm.id) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><polyline points="20 6 9 17 4 12"></polyline></svg>}
-                              </div>
-                           </div>
-                         ))}
+                         {AVAILABLE_PERMISSIONS.map(perm => {
+                           const isChecked = (selectedTenant.permissions || []).includes(perm.id);
+                           return (
+                             <label key={perm.id} onClick={() => updatePermissions(selectedTenant, perm.id)} style={{
+                               padding:'15px', borderRadius:'12px', cursor:'pointer', border:'1px solid #334155',
+                               background: isChecked ? '#10b98122' : '#0f172a',
+                               borderColor: isChecked ? '#10b981' : '#334155',
+                               display:'flex', justifyContent:'space-between', alignItems:'center', transition:'0.2s',
+                               gap:'12px'
+                             }}>
+                                <div style={{display:'flex', alignItems:'center', gap:'12px'}}>
+                                  <span style={{fontWeight:'500'}}>{perm.name}</span>
+                                </div>
+                                <div className="container">
+                                  <input
+                                    type="checkbox"
+                                    className="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => updatePermissions(selectedTenant, perm.id)}
+                                  />
+                                  <span className="switch"></span>
+                                </div>
+                             </label>
+                           );
+                         })}
                       </div>
                    </div>
                  ) : <div style={{textAlign:'center', padding:'50px', opacity:0.5}}>Select a tenant to manage their permissions</div>}
@@ -1641,9 +1760,21 @@ function App() {
           <div className="card">
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', borderBottom:'1px solid #334155', paddingBottom:'20px'}}>
             <h2 style={{margin:0, color: 'white'}}>👥 Global Staff Management</h2>
-            <div style={{display:'flex', gap:'10px'}}>
+            <div style={{display:'flex', gap:'10px', alignItems:'center', flexWrap:'wrap'}}>
               <button onClick={exportEmployeesExcel} style={{...smallBtn, background:'#10b981'}}>📥 Export Excel</button>
               <button onClick={prepareNewEmployee} style={{...smallBtn, background:'#3b82f6'}}>+ Add New Employee</button>
+              <select
+                value={selectedStaffTenant}
+                onChange={e => setSelectedStaffTenant(e.target.value)}
+                style={{...inputStyle, marginBottom:0, width:'220px', padding:'10px', color:'#f8fafc'}}
+              >
+                <option value="">Select Tenant</option>
+                {users.map(u => (
+                  <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                    {u.companyName} ({u.tenantId || u.username})
+                  </option>
+                ))}
+              </select>
               <input
                 placeholder="🔍 Search name or ID..."
                 style={{...inputStyle, marginBottom:0, width:'250px', padding:'10px'}}
@@ -1652,67 +1783,73 @@ function App() {
               />
             </div>
           </div>
-          <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto'}}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Tenant</th>
-                  <th>Employee ID</th>
-                  <th>Full Name</th>
-                  <th>Job Title</th>
-                  <th>Department</th>
-                  <th>Assigned Branch</th>
-                  <th>Gender</th>
-                  <th>Nationality</th>
-                  <th>Birth Date</th>
-                  <th>Email Address</th>
-                  <th>Mobile Number</th>
-                  <th>Joining Date</th>
-                  <th>Termination Date</th>
-                  <th>Termination Note</th>
-                  <th>Status</th>
-                  <th style={{textAlign:'center'}}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees
-                  .filter(e => {
-                    const s = empSearch.toLowerCase();
-                    const tenantMatch = globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter;
-                    return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
-                  })
-                  .map((e, idx) => (
-                  <tr key={idx}>
-                    <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                    <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
-                    <td style={{fontWeight:'bold', color: 'white'}}>{e.name}</td>
-                    <td>{e.jobTitle || '-'}</td>
-                    <td>{e.department || '-'}</td>
-                    <td>{e.branchName || '-'}</td>
-                    <td>{e.gender || '-'}</td>
-                    <td>{e.nationality || '-'}</td>
-                    <td>{e.birthDate || '-'}</td>
-                    <td>{e.email || '-'}</td>
-                    <td>{e.mobile || '-'}</td>
-                    <td>{e.joiningDate || '-'}</td>
-                    <td>{e.terminationDate || '-'}</td>
-                    <td>{e.terminationNote || '-'}</td>
-                    <td>
-                      <span style={{
-                        background: (e.status === 'Terminated' || e.status === 'Inactive') ? '#ef444422' : '#10b98122',
-                        color: (e.status === 'Terminated' || e.status === 'Inactive') ? '#ef4444' : '#10b981',
-                        padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid currentColor'
-                      }}>{e.status}</span>
-                    </td>
-                    <td style={{textAlign:'center', display:'flex', gap:'5px', justifyContent:'center'}}>
-                      <button onClick={() => prepareEditEmployee(e)} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
-                      <button onClick={() => deleteEmployee(e.employeeId, e.tenantId)} style={{...smallBtn, background:'#ef4444'}}>Delete</button>
-                    </td>
+          {!selectedStaffTenant ? (
+            <div style={{padding:'40px', textAlign:'center', color:'#64748b', border:'1px dashed #334155', borderRadius:'15px', marginTop:'20px'}}>
+              Select a tenant to view staff data.
+            </div>
+          ) : (
+            <div style={{maxHeight:'60vh', overflowY:'auto', overflowX:'auto', marginTop:'20px'}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tenant</th>
+                    <th>Employee ID</th>
+                    <th>Full Name</th>
+                    <th>Job Title</th>
+                    <th>Department</th>
+                    <th>Assigned Branch</th>
+                    <th>Gender</th>
+                    <th>Nationality</th>
+                    <th>Birth Date</th>
+                    <th>Email Address</th>
+                    <th>Mobile Number</th>
+                    <th>Joining Date</th>
+                    <th>Termination Date</th>
+                    <th>Termination Note</th>
+                    <th>Status</th>
+                    <th style={{textAlign:'center'}}>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {employees
+                    .filter(e => {
+                      const s = empSearch.toLowerCase();
+                      const tenantMatch = e.tenantId === selectedStaffTenant;
+                      return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
+                    })
+                    .map((e, idx) => (
+                    <tr key={idx}>
+                      <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                      <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                      <td style={{fontWeight:'bold', color: 'white'}}>{e.name}</td>
+                      <td>{e.jobTitle || '-'}</td>
+                      <td>{e.department || '-'}</td>
+                      <td>{e.branchName || '-'}</td>
+                      <td>{e.gender || '-'}</td>
+                      <td>{e.nationality || '-'}</td>
+                      <td>{e.birthDate || '-'}</td>
+                      <td>{e.email || '-'}</td>
+                      <td>{e.mobile || '-'}</td>
+                      <td>{e.joiningDate || '-'}</td>
+                      <td>{e.terminationDate || '-'}</td>
+                      <td>{e.terminationNote || '-'}</td>
+                      <td>
+                        <span style={{
+                          background: (e.status === 'Terminated' || e.status === 'Inactive') ? '#ef444422' : '#10b98122',
+                          color: (e.status === 'Terminated' || e.status === 'Inactive') ? '#ef4444' : '#10b981',
+                          padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid currentColor'
+                        }}>{e.status}</span>
+                      </td>
+                      <td style={{textAlign:'center', display:'flex', gap:'5px', justifyContent:'center'}}>
+                        <button onClick={() => prepareEditEmployee(e)} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
+                        <button onClick={() => deleteEmployee(e.employeeId, e.tenantId)} style={{...smallBtn, background:'#ef4444'}}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {isAddEmpModalOpen && (
@@ -1851,9 +1988,20 @@ function App() {
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
                  <h2 style={{marginTop:0}}>📍 Global Branch Setup</h2>
                  <p style={{color:'#64748b', fontSize:'0.8rem'}}>Configure geofence for selected tenant.</p>
-                 <div style={{background: '#0f172a', padding: '10px', borderRadius: '10px', marginBottom: '15px', border: '1px solid #334155'}}>
-                   <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: 'bold'}}>ACTIVE TENANT (FILTER)</div>
-                   <div style={{fontWeight: 'bold'}}>{globalTenantFilter === 'ALL' ? '⚠️ PLEASE SELECT A TENANT IN HEADER' : (users.find(u => (u.tenantId || u.username) === globalTenantFilter)?.companyName || globalTenantFilter)}</div>
+                 <div style={{display:'grid', gridTemplateColumns:'1fr', gap:'12px', marginBottom:'15px'}}>
+                   <label style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold'}}>Tenant</label>
+                   <select
+                     value={selectedBranchTenant}
+                     onChange={e => setSelectedBranchTenant(e.target.value)}
+                     style={{...inputStyle, width:'100%'}}
+                   >
+                     <option value="">Select Tenant</option>
+                     {users.map(u => (
+                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                         {u.companyName} ({u.tenantId || u.username})
+                       </option>
+                     ))}
+                   </select>
                  </div>
                  <input style={inputStyle} placeholder="Branch Name" value={deptName} onChange={e => setDeptName(e.target.value)} />
                  <button onClick={useCurrentLocation} style={{...smallBtn, width:'100%', marginBottom:'10px', background:'rgba(59, 130, 246, 0.1)', color:'#3b82f6', border:'1px solid #3b82f6'}}>
@@ -1865,7 +2013,7 @@ function App() {
                  </div>
                  <input style={inputStyle} placeholder="Radius (Meters)" type="number" value={deptRad} onChange={e => setDeptRad(e.target.value)} />
                  <button onClick={async () => {
-                    if(!deptName || globalTenantFilter === 'ALL') return alert('Fill all fields and select a tenant in Global Filter');
+                    if(!deptName || !selectedBranchTenant) return alert('Fill all fields and select a tenant.');
                     setProcessing(true);
                     setProcessingMsg(editingDeptId ? 'Updating Branch...' : 'Saving Branch...');
                     try {
@@ -1874,7 +2022,7 @@ function App() {
                         pinLatitude: parseFloat(deptLat),
                         pinLongitude: parseFloat(deptLon),
                         radiusMeters: parseInt(deptRad),
-                        tenantId: globalTenantFilter
+                        tenantId: selectedBranchTenant
                       };
 
                       if (!editingDeptId) {
@@ -1882,14 +2030,14 @@ function App() {
                       }
 
                       const url = editingDeptId
-                        ? `${activeApiBase}/departments/${editingDeptId}?tenantId=${globalTenantFilter}`
-                        : `${activeApiBase}/departments?tenantId=${globalTenantFilter}`;
+                        ? `${activeApiBase}/departments/${editingDeptId}?tenantId=${selectedBranchTenant}`
+                        : `${activeApiBase}/departments?tenantId=${selectedBranchTenant}`;
 
                       const method = editingDeptId ? 'PUT' : 'POST';
 
                       const res = await fetch(url, {
                         method: method,
-                        headers: { 'Content-Type': 'application/json', 'x-tenant-id': globalTenantFilter },
+                        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedBranchTenant },
                         body: JSON.stringify(payload)
                       });
 
@@ -1930,7 +2078,7 @@ function App() {
                           </tr>
                        </thead>
                        <tbody>
-                          {departments.filter(d => globalTenantFilter === 'ALL' || d.tenantId === globalTenantFilter).map((d, idx) => (
+                          {selectedBranchTenant ? departments.filter(d => d.tenantId === selectedBranchTenant).map((d, idx) => (
                             <tr key={d.departmentId || idx}>
                                <td>{users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId}</td>
                                <td style={{fontWeight:'bold'}}>{d.name}</td>
@@ -1962,7 +2110,11 @@ function App() {
                                   }} style={{...smallBtn, background:'#ef4444'}}>Del</button>
                                </div></td>
                             </tr>
-                          ))}
+                          )) : (
+                            <tr>
+                              <td colSpan="5" style={{padding:'40px', color:'#64748b', textAlign:'center'}}>Select a tenant to view branches.</td>
+                            </tr>
+                          )}
                        </tbody>
                     </table>
                  </div>
@@ -1978,20 +2130,43 @@ function App() {
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
                  <h2 style={{marginTop:0}}>🏢 Dept. Management</h2>
                  <p style={{color:'#64748b', fontSize:'0.8rem'}}>Create organizational units.</p>
-                 <div style={{background: '#0f172a', padding: '10px', borderRadius: '10px', marginBottom: '15px', border: '1px solid #334155'}}>
-                   <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: 'bold'}}>ACTIVE TENANT (FILTER)</div>
-                   <div style={{fontWeight: 'bold'}}>{globalTenantFilter === 'ALL' ? '⚠️ PLEASE SELECT A TENANT IN HEADER' : (users.find(u => (u.tenantId || u.username) === globalTenantFilter)?.companyName || globalTenantFilter)}</div>
+                 <div style={{display:'grid', gridTemplateColumns:'1fr', gap:'12px', marginBottom:'15px'}}>
+                   <label style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold'}}>Tenant</label>
+                   <select
+                     value={selectedDeptTenant}
+                     onChange={e => setSelectedDeptTenant(e.target.value)}
+                     style={{...inputStyle, width:'100%'}}
+                   >
+                     <option value="">Select Tenant</option>
+                     {users.map(u => (
+                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                         {u.companyName} ({u.tenantId || u.username})
+                       </option>
+                     ))}
+                   </select>
                  </div>
                  <input style={inputStyle} placeholder="Department Name (e.g. IT Dept)" value={newOrgName} onChange={e => setNewOrgName(e.target.value)} />
                  <button onClick={async () => {
-                    if(!newOrgName || globalTenantFilter === 'ALL') return alert('Fill all fields and select a specific tenant');
-                    const res = await fetch(`${activeApiBase}/org-units?tenantId=${globalTenantFilter}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'x-tenant-id': globalTenantFilter },
+                    if(!newOrgName || !selectedDeptTenant) return alert('Fill all fields and select a tenant');
+                    const url = editingOrgUnitId
+                      ? `${activeApiBase}/org-units/${editingOrgUnitId}?tenantId=${selectedDeptTenant}`
+                      : `${activeApiBase}/org-units?tenantId=${selectedDeptTenant}`;
+                    const res = await fetch(url, {
+                      method: editingOrgUnitId ? 'PUT' : 'POST',
+                      headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedDeptTenant },
                       body: JSON.stringify({ name: newOrgName })
                     });
-                    if(res.ok) { setNewOrgName(''); loadInitialData(); setStatus('Dept. Created ✓'); }
-                 }} style={{...addBtn, width:'100%'}}>Create Dept</button>
+                    if(res.ok) {
+                      setNewOrgName('');
+                      setEditingOrgUnitId(null);
+                      loadInitialData();
+                      setStatus(editingOrgUnitId ? 'Dept. Updated ✓' : 'Dept. Created ✓');
+                    }
+                 }} style={{...addBtn, width:'100%'}}>{editingOrgUnitId ? 'Update Dept' : 'Create Dept'}</button>
+                 {editingOrgUnitId && (
+                   <button onClick={() => { setEditingOrgUnitId(null); setNewOrgName(''); }}
+                     style={{...smallBtn, width:'100%', marginTop:'10px', background:'transparent', border:'1px solid #334155'}}>Cancel Edit</button>
+                 )}
               </div>
 
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
@@ -2004,17 +2179,29 @@ function App() {
                           <tr><th>Tenant</th><th>Department Name</th><th>Action</th></tr>
                        </thead>
                        <tbody>
-                          {orgUnits.filter(o => globalTenantFilter === 'ALL' || o.tenantId === globalTenantFilter).map(o => (
-                            <tr key={o.id}>
-                               <td>{users.find(u => (u.tenantId || u.username) === o.tenantId)?.companyName || o.tenantId}</td>
-                               <td style={{fontWeight:'bold'}}>{o.name}</td>
-                               <td><button onClick={async () => {
-                                  if(!confirm('Delete?')) return;
-                                  await fetch(`${activeApiBase}/org-units/${o.id}?tenantId=${o.tenantId}`, { method: 'DELETE', headers: { 'x-tenant-id': o.tenantId } });
-                                  loadInitialData();
-                               }} style={{...smallBtn, background:'#ef4444'}}>Del</button></td>
+                          {selectedDeptTenant ? orgUnits.filter(o => o.tenantId === selectedDeptTenant).map(o => {
+                            const orgId = o.orgUnitId || o.id;
+                            return (
+                              <tr key={orgId}>
+                                 <td>{users.find(u => (u.tenantId || u.username) === o.tenantId)?.companyName || o.tenantId}</td>
+                                 <td style={{fontWeight:'bold'}}>{o.name}</td>
+                                 <td>
+                                   <div style={{display:'flex', gap:'5px'}}>
+                                     <button onClick={() => editOrgUnit(o)} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
+                                     <button onClick={async () => {
+                                       if(!confirm('Delete?')) return;
+                                       await fetch(`${activeApiBase}/org-units/${orgId}?tenantId=${o.tenantId}`, { method: 'DELETE', headers: { 'x-tenant-id': o.tenantId } });
+                                       loadInitialData();
+                                     }} style={{...smallBtn, background:'#ef4444'}}>Del</button>
+                                   </div>
+                                 </td>
+                              </tr>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan="3" style={{padding:'40px', color:'#64748b', textAlign:'center'}}>Select a tenant to view departments.</td>
                             </tr>
-                          ))}
+                          )}
                        </tbody>
                     </table>
                  </div>
@@ -2030,20 +2217,43 @@ function App() {
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
                  <h2 style={{marginTop:0}}>💼 Position Management</h2>
                  <p style={{color:'#64748b', fontSize:'0.8rem'}}>Define job titles for staff.</p>
-                 <div style={{background: '#0f172a', padding: '10px', borderRadius: '10px', marginBottom: '15px', border: '1px solid #334155'}}>
-                   <div style={{fontSize: '0.65rem', color: '#3b82f6', fontWeight: 'bold'}}>ACTIVE TENANT (FILTER)</div>
-                   <div style={{fontWeight: 'bold'}}>{globalTenantFilter === 'ALL' ? '⚠️ PLEASE SELECT A TENANT IN HEADER' : (users.find(u => (u.tenantId || u.username) === globalTenantFilter)?.companyName || globalTenantFilter)}</div>
+                 <div style={{display:'grid', gridTemplateColumns:'1fr', gap:'10px', marginBottom:'15px'}}>
+                   <label style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold'}}>Tenant</label>
+                   <select
+                     value={selectedPositionTenant}
+                     onChange={e => setSelectedPositionTenant(e.target.value)}
+                     style={{...inputStyle, width:'100%'}}
+                   >
+                     <option value="">Select Tenant</option>
+                     {users.map(u => (
+                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                         {u.companyName} ({u.tenantId || u.username})
+                       </option>
+                     ))}
+                   </select>
                  </div>
                  <input style={inputStyle} placeholder="Position Title (e.g. Manager)" value={newPositionTitle} onChange={e => setNewPositionTitle(e.target.value)} />
                  <button onClick={async () => {
-                    if(!newPositionTitle || globalTenantFilter === 'ALL') return alert('Fill all fields and select a specific tenant');
-                    const res = await fetch(`${activeApiBase}/position-titles?tenantId=${globalTenantFilter}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'x-tenant-id': globalTenantFilter },
+                    if(!newPositionTitle || !selectedPositionTenant) return alert('Fill all fields and select a tenant');
+                    const method = editingPositionTitleId ? 'PUT' : 'POST';
+                    const url = editingPositionTitleId
+                      ? `${activeApiBase}/position-titles/${editingPositionTitleId}?tenantId=${selectedPositionTenant}`
+                      : `${activeApiBase}/position-titles?tenantId=${selectedPositionTenant}`;
+                    const res = await fetch(url, {
+                      method,
+                      headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedPositionTenant },
                       body: JSON.stringify({ name: newPositionTitle })
                     });
-                    if(res.ok) { setNewPositionTitle(''); loadInitialData(); setStatus('Position Saved ✓'); }
-                 }} style={{...addBtn, width:'100%'}}>Save Position</button>
+                    if(res.ok) {
+                      setNewPositionTitle('');
+                      setEditingPositionTitleId(null);
+                      loadInitialData();
+                      setStatus(editingPositionTitleId ? 'Position Updated ✓' : 'Position Saved ✓');
+                    }
+                 }} style={{...addBtn, width:'100%'}}>{editingPositionTitleId ? 'Update Position' : 'Save Position'}</button>
+                 {editingPositionTitleId && (
+                   <button onClick={() => { setEditingPositionTitleId(null); setNewPositionTitle(''); setStatus(''); }} style={{...addBtn, width:'100%', marginTop:'12px', background:'#334155'}}>Cancel Edit</button>
+                 )}
               </div>
 
               <div style={{background:'#1e293b', padding:'25px', borderRadius:'15px', border:'1px solid #334155'}}>
@@ -2056,17 +2266,33 @@ function App() {
                           <tr><th>Tenant</th><th>Position Title</th><th>Action</th></tr>
                        </thead>
                        <tbody>
-                          {positionTitles.filter(p => globalTenantFilter === 'ALL' || p.tenantId === globalTenantFilter).map(p => (
-                            <tr key={p.id}>
-                               <td>{users.find(u => (u.tenantId || u.username) === p.tenantId)?.companyName || p.tenantId}</td>
-                               <td style={{fontWeight:'bold'}}>{p.name}</td>
-                               <td><button onClick={async () => {
-                                  if(!confirm('Delete?')) return;
-                                  await fetch(`${activeApiBase}/position-titles/${p.id}?tenantId=${p.tenantId}`, { method: 'DELETE', headers: { 'x-tenant-id': p.tenantId } });
-                                  loadInitialData();
-                               }} style={{...smallBtn, background:'#ef4444'}}>Del</button></td>
+                          {selectedPositionTenant ? positionTitles.filter(p => p.tenantId === selectedPositionTenant).map(p => {
+                            const titleId = p.titleId || p.id;
+                            return (
+                              <tr key={titleId}>
+                                <td>{users.find(u => (u.tenantId || u.username) === p.tenantId)?.companyName || p.tenantId}</td>
+                                <td style={{fontWeight:'bold'}}>{p.name}</td>
+                                <td>
+                                  <div style={{display:'flex', gap:'8px', justifyContent:'flex-end'}}>
+                                    <button onClick={() => {
+                                      setNewPositionTitle(p.name || '');
+                                      setEditingPositionTitleId(titleId);
+                                      setStatus('Editing position...');
+                                    }} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
+                                    <button onClick={async () => {
+                                      if(!confirm('Delete?')) return;
+                                      await fetch(`${activeApiBase}/position-titles/${titleId}?tenantId=${p.tenantId}`, { method: 'DELETE', headers: { 'x-tenant-id': p.tenantId } });
+                                      loadInitialData();
+                                    }} style={{...smallBtn, background:'#ef4444'}}>Del</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan="3" style={{padding:'40px', color:'#64748b', textAlign:'center'}}>Select a tenant to view positions.</td>
                             </tr>
-                          ))}
+                          )}
                        </tbody>
                     </table>
                  </div>
@@ -2088,11 +2314,18 @@ function App() {
             </div>
 
             <div style={{background:'rgba(255,255,255,0.03)', padding:'25px', borderRadius:'16px', marginBottom:'25px', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'20px', border:'1px solid #334155'}}>
-              <div style={{display:'flex', flexDirection:'column', gap:'8px', opacity: globalTenantFilter === 'ALL' ? 1 : 0.5}}>
-                <label style={{color:'#94a3b8', fontSize:'0.7rem', fontWeight:'bold', textTransform:'uppercase'}}>Global Filter Active</label>
-                <div style={{...inputStyle, marginBottom:0, fontWeight:'bold', color:'#3b82f6'}}>
-                  {globalTenantFilter === 'ALL' ? '🌐 ALL TENANTS' : (users.find(u => (u.tenantId || u.username) === globalTenantFilter)?.companyName || globalTenantFilter)}
-                </div>
+              
+
+              <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
+                <label style={{color:'#94a3b8', fontSize:'0.7rem', fontWeight:'bold', textTransform:'uppercase'}}>Tenant</label>
+                <select style={{...inputStyle, marginBottom:0}} value={selectedReportsTenant} onChange={e => setSelectedReportsTenant(e.target.value)}>
+                  <option value="">-- Use Global Filter --</option>
+                  {users.map(u => (
+                    <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                      {u.companyName} ({u.tenantId || u.username})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
@@ -2105,13 +2338,16 @@ function App() {
 
               <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
                 <label style={{color:'#94a3b8', fontSize:'0.7rem', fontWeight:'bold', textTransform:'uppercase'}}>{reportBy === 'Branch' ? 'Select Branch' : `Search ${reportBy}`}</label>
-                {reportBy === 'Branch' ? (
+                    {reportBy === 'Branch' ? (
                   <select style={{...inputStyle, marginBottom:0}} value={reportSearch} onChange={e => setReportSearch(e.target.value)}>
                     <option value="">-- All Branches --</option>
-                    {departments
-                      .filter(d => globalTenantFilter === 'ALL' || d.tenantId === globalTenantFilter)
+                    {(departments || [])
+                      .filter(d => {
+                        const tenantToUse = selectedReportsTenant || globalTenantFilter;
+                        return tenantToUse === 'ALL' || d.tenantId === tenantToUse;
+                      })
                       .map(d => (
-                      <option key={d.id || d.departmentId} value={d.name}>{d.name} {globalTenantFilter === 'ALL' ? `(${users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId})` : ''}</option>
+                      <option key={d.id || d.departmentId} value={d.name}>{d.name} {(selectedReportsTenant || globalTenantFilter) === 'ALL' ? `(${users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId})` : ''}</option>
                     ))}
                   </select>
                 ) : (
@@ -2253,14 +2489,25 @@ function App() {
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
           <div className="card">
-            <h2 style={{marginBottom:'20px', borderBottom:'1px solid #334155', paddingBottom:'20px'}}>📱 Global Device Management</h2>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', borderBottom:'1px solid #334155', paddingBottom:'20px'}}>
+              <h2 style={{margin:0}}>📱 Global Device Management</h2>
+              <div style={{display:'flex', flexDirection:'column', gap:'6px', width:'240px'}}>
+                <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
+                <select value={selectedDevicesTenant} onChange={e => setSelectedDevicesTenant(e.target.value)} style={{...inputStyle, marginBottom:0, padding:'10px', height:'42px'}}>
+                  <option value="ALL">All Tenants</option>
+                  {users.map(u => (
+                    <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName} ({u.tenantId || u.username})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           <div style={{maxHeight:'65vh', overflowY:'auto'}}>
             <table>
               <thead>
                 <tr><th>Tenant</th><th>Employee</th><th>Device Info</th><th>Linked Date</th><th>Action</th></tr>
               </thead>
               <tbody>
-                {employees.filter(e => (globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter) && (e.registeredDeviceId || e.deviceId)).map((e, idx) => (
+                {employees.filter(e => (selectedDevicesTenant === 'ALL' || e.tenantId === selectedDevicesTenant) && (e.registeredDeviceId || e.deviceId)).map((e, idx) => (
                   <tr key={idx}>
                     <td>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
                     <td style={{fontWeight:'bold'}}>{e.name}</td>
@@ -2305,13 +2552,27 @@ function App() {
            <div className="card">
              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', borderBottom:'1px solid #334155', paddingBottom:'20px'}}>
               <h2 style={{margin:0, color: 'white'}}>🔗 Global Branch Assignment</h2>
-              <div style={{display:'flex', gap:'10px'}}>
-                <input
-                  placeholder="🔍 Search name or ID..."
-                  style={{...inputStyle, marginBottom:0, width:'250px', padding:'10px'}}
-                  value={empSearch}
-                  onChange={e => setEmpSearch(e.target.value)}
-                />
+              <div style={{display:'flex', gap:'10px', alignItems:'flex-end'}}>
+                <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
+                  <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
+                  <select value={selectedAssignBranchTenant} onChange={e => setSelectedAssignBranchTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'240px', padding:'10px', height:'42px'}}>
+                    <option value="ALL">All Tenants</option>
+                    {users.map(u => (
+                      <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                        {u.companyName} ({u.tenantId || u.username})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{display:'flex', flexDirection:'column', gap:'6px', width:'250px'}}>
+                  <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Search</label>
+                  <input
+                    placeholder="Name or ID..."
+                    style={{...inputStyle, marginBottom:0, width:'100%', padding:'10px', height:'42px'}}
+                    value={empSearch}
+                    onChange={e => setEmpSearch(e.target.value)}
+                  />
+                </div>
               </div>
            </div>
            <div style={{maxHeight:'65vh', overflowY:'auto'}}>
@@ -2322,7 +2583,8 @@ function App() {
                  <tbody>
                     {employees.filter(e => {
                       const s = empSearch.toLowerCase();
-                      const tenantMatch = globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter;
+                      const tenantToUse = selectedAssignBranchTenant === 'ALL' ? globalTenantFilter : selectedAssignBranchTenant;
+                      const tenantMatch = tenantToUse === 'ALL' || e.tenantId === tenantToUse;
                       return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
                     }).map((e, idx) => (
                       <tr key={idx}>
@@ -2337,12 +2599,22 @@ function App() {
                             )}
                          </td>
                          <td style={{textAlign:'center'}}>
-                            <button
-                              onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranchIds(getAssignedDepartmentIds(e)); setIsAssignModalOpen(true); }}
-                              style={{...smallBtn, background:'#3b82f6', padding:'8px 12px'}}
-                            >
-                              MANAGE ASSIGNMENT
-                            </button>
+                           <button onClick={async () => {
+                             // prepare modal for this employee
+                             try {
+                              const baseApi = activeApiBase || '/api';
+                              const res = await fetch(`${baseApi}/assignments?tenantId=${e.tenantId}`, { headers: { 'x-tenant-id': e.tenantId } });
+                              const allAssigns = await res.json();
+                              const mine = (allAssigns || []).filter(a => a.employeeId === e.employeeId).map(a => a.departmentId);
+                              setSelectedAssignEmpDev(e);
+                              setSelectedAssignBranchesDev(mine);
+                              setIsAssignModalOpenDev(true);
+                             } catch (err) {
+                              setSelectedAssignEmpDev(e);
+                              setSelectedAssignBranchesDev([]);
+                              setIsAssignModalOpenDev(true);
+                             }
+                           }} style={{...smallBtn, background:'#3b82f6', color:'white'}}>MANAGE</button>
                          </td>
                       </tr>
                     ))}
@@ -2353,32 +2625,59 @@ function App() {
       </div>
       )}
 
-      {isAssignModalOpen && selectedAssignEmp && (
-        <div className="modal-overlay">
-          <div className="modal-content fade-in" style={{maxWidth:'560px'}}>
-            <h2 style={{marginTop:0, color:'#3b82f6', fontWeight:'900'}}>🔗 Multi-Branch Access</h2>
-            <div style={{background:'rgba(59, 130, 246, 0.05)', padding:'15px', borderRadius:'15px', marginBottom:'20px', border:'1px solid rgba(59, 130, 246, 0.2)'}}>
-              <p style={{color:'#94a3b8', margin:'0 0 5px 0', fontSize:'0.75rem', fontWeight:'800'}}>CONFIGURING FOR:</p>
-              <h3 style={{margin:0, color:'white', fontSize:'1.1rem', fontWeight:'900'}}>{selectedAssignEmp.name} (ID: {selectedAssignEmp.employeeId})</h3>
+      {/* ASSIGN BRANCH MODAL (DEV) */}
+      {isAssignModalOpenDev && selectedAssignEmpDev && (
+        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(2,6,23,0.85)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center'}}>
+          <div style={{background:'#1e293b', padding: '30px', borderRadius: '18px', width:'520px', boxShadow:'0 25px 50px rgba(0,0,0,0.6)'}}>
+            <h2 style={{margin:0, color:'#3b82f6'}}>🔗 Branch Geofence Assignment</h2>
+            <div style={{background:'rgba(59,130,246,0.05)', padding:'12px', borderRadius:'12px', margin:'12px 0', border:'1px solid rgba(59,130,246,0.12)'}}>
+              <strong style={{color:'#94a3b8', fontSize:'0.75rem'}}>CONFIGURING FOR:</strong>
+              <div style={{color:'white', fontWeight:'900'}}>{selectedAssignEmpDev.name} (ID: {selectedAssignEmpDev.employeeId})</div>
             </div>
-            <div className="checkbox-list">
-              {departments.filter(d => d.tenantId === selectedAssignEmp.tenantId).map(d => (
-                <label key={d.departmentId}>
-                  <input
-                    type="checkbox"
-                    checked={selectedAssignBranchIds.includes(d.departmentId)}
-                    onChange={() => toggleAssignBranchSelection(d.departmentId)}
-                  />
-                  <div style={{display:'flex', flexDirection:'column'}}>
-                    <strong style={{fontSize:'0.95rem'}}>{d.name}</strong>
-                    <span style={{fontSize:'0.75rem', color:'#94a3b8'}}>{d.radiusMeters || 50}m</span>
-                  </div>
-                </label>
-              ))}
+            <div style={{maxHeight:'300px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'8px'}}>
+              {departments.filter(d => d.tenantId === (selectedAssignEmpDev.tenantId || selectedTenant)).map(d => {
+                const checked = selectedAssignBranchesDev.includes(d.departmentId);
+                return (
+                  <label key={d.departmentId} style={{display:'flex', alignItems:'center', gap:'12px', padding:'8px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.03)'}}>
+                    <div className="container">
+                      <input type="checkbox" className="checkbox" checked={checked} onChange={(ev) => {
+                        if (ev.target.checked) setSelectedAssignBranchesDev(prev => Array.from(new Set([...prev, d.departmentId])));
+                        else setSelectedAssignBranchesDev(prev => prev.filter(x => x !== d.departmentId));
+                      }} />
+                      <span className="switch"></span>
+                    </div>
+                    <div style={{display:'flex', flexDirection:'column'}}>
+                      <span style={{fontWeight:'800', color:'white'}}>{d.name}</span>
+                      <span style={{fontSize:'0.75rem', color:'#94a3b8'}}>{d.radiusMeters}m Geofence</span>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
-            <div style={{display:'flex', gap:'12px', marginTop:'22px'}}>
-              <button onClick={saveAssignment} style={{flex:1, padding:'12px 16px', border:'none', borderRadius:'10px', background:'#3b82f6', color:'white', fontWeight:'900', cursor:'pointer'}}>SAVE ACCESS</button>
-              <button onClick={() => setIsAssignModalOpen(false)} style={{padding:'12px 16px', border:'1px solid #334155', borderRadius:'10px', background:'transparent', color:'#94a3b8', cursor:'pointer'}}>CANCEL</button>
+              <div style={{display:'flex', gap:'12px', marginTop:'18px'}}>
+              <button onClick={async () => {
+                try {
+                  const baseApi = activeApiBase || '/api';
+                  await fetch(`${baseApi}/assignments`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedAssignEmpDev.tenantId },
+                    body: JSON.stringify({ employeeId: selectedAssignEmpDev.employeeId, departmentIds: selectedAssignBranchesDev, tenantId: selectedAssignEmpDev.tenantId })
+                  });
+                  // update local employees state so UI reflects toggled branches immediately
+                  setEmployees(prev => prev.map(emp => {
+                    if (emp.employeeId === selectedAssignEmpDev.employeeId) {
+                      const names = (departments || []).filter(d => selectedAssignBranchesDev.includes(d.departmentId)).map(d => d.name);
+                      return { ...emp, assignedBranches: selectedAssignBranchesDev.slice(), branchName: names.length ? names.join(', ') : '' };
+                    }
+                    return emp;
+                  }));
+                  setIsAssignModalOpenDev(false);
+                  setSelectedAssignEmpDev(null);
+                  setSelectedAssignBranchesDev([]);
+                  await loadInitialData();
+                } catch (err) { alert('Failed to save assignments'); }
+              }} style={{flex:1, background:'#3b82f6', color:'white', padding:'12px', borderRadius:'8px', fontWeight:'900'}}>COMMIT ASSIGNMENT</button>
+              <button onClick={() => { setIsAssignModalOpenDev(false); setSelectedAssignEmpDev(null); setSelectedAssignBranchesDev([]); }} style={{flex:0, background:'transparent', border:'1px solid #334155', color:'#94a3b8', padding:'12px', borderRadius:'8px'}}>CANCEL</button>
             </div>
           </div>
         </div>
@@ -2389,8 +2688,20 @@ function App() {
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
           <div className="card">
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', borderBottom:'1px solid #334155', paddingBottom:'20px'}}>
-              <h2 style={{margin:0, color: 'white'}}>📅 Global Schedule Assignment</h2>
-              <div style={{display:'flex', gap:'10px'}}>
+              <div>
+                <h2 style={{margin:0, color: 'white'}}>📅 Global Schedule Assignment</h2>
+                <p style={{margin:0, color:'#64748b', fontSize:'0.85rem'}}>Filter the staff list by tenant before assigning schedules.</p>
+              </div>
+              <div style={{display:'flex', gap:'10px', alignItems:'flex-end', flexWrap:'wrap'}}>
+                <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
+                  <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
+                  <select value={selectedAssignScheduleTenant} onChange={e => setSelectedAssignScheduleTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'220px', padding:'10px', height:'42px'}}>
+                    <option value="ALL">All Tenants</option>
+                    {users.map(u => (
+                      <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName} ({u.tenantId || u.username})</option>
+                    ))}
+                  </select>
+                </div>
                 <input
                   placeholder="🔍 Search name or ID..."
                   style={{...inputStyle, marginBottom:0, width:'250px', padding:'10px'}}
@@ -2407,7 +2718,7 @@ function App() {
                 <tbody>
                   {employees.filter(e => {
                     const s = empSearch.toLowerCase();
-                    const tenantMatch = globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter;
+                    const tenantMatch = selectedAssignScheduleTenant === 'ALL' || e.tenantId === selectedAssignScheduleTenant;
                     return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
                   }).map((e, idx) => (
                     <tr key={idx}>

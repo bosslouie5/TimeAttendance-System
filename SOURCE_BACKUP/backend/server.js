@@ -152,13 +152,14 @@ async function loadData() {
     return d;
   });
 
-  // 2. RULE 7: Automatic Module Injection for all users (Strict Permission Isolation)
+  // 2. RULE 7: Automatic Module Injection for all users (Respect per-tenant overrides)
+  // If a tenant already has an explicit permissions array (even if reduced),
+  // we must respect it so toggles can disable modules. Only seed default
+  // permissions when none are present.
   data.users = (data.users || []).map(u => {
     const currentPerms = u.permissions || [];
-    // Only inject if missing to keep it efficient
-    const missingModules = ALL_MODULES.filter(m => !currentPerms.includes(m));
-    if (missingModules.length > 0) {
-      u.permissions = Array.from(new Set([...ALL_MODULES, ...currentPerms]));
+    if (!currentPerms || currentPerms.length === 0) {
+      u.permissions = Array.from(ALL_MODULES);
       needsFix = true;
     }
     return u;
@@ -327,11 +328,12 @@ app.post('/api/auth/web-login', async (req, res) => {
     const finalTenantId = user.tenantId || user.username;
     console.log(`[AUTH] Login success: ${username} (Tenant: ${finalTenantId})`);
 
-    // AUTO-INJECT NEW MODULES
+    // Respect stored tenant permissions on login. If none exist, fall back
+    // to the full default set so new tenants get full access by default.
     const currentPermissions = user.permissions || [];
-    const updatedPermissions = Array.from(new Set([...ALL_MODULES, ...currentPermissions]));
+    const permissionsToReturn = (currentPermissions && currentPermissions.length > 0) ? currentPermissions : ALL_MODULES;
 
-    res.json({ success: true, user: { ...user, tenantId: finalTenantId, permissions: updatedPermissions } });
+    res.json({ success: true, user: { ...user, tenantId: finalTenantId, permissions: permissionsToReturn } });
   } else {
     console.warn(`[AUTH] Login failed for user: ${username}`);
     res.status(401).json({ error: 'Invalid Credentials' });
@@ -502,13 +504,14 @@ app.get('/api/departments', tenantGuard, async (req, res) => {
 
   // RULE: If employeeId is provided (from Mobile App), filter by assignment only
   if (employeeId) {
-    const assignment = (data.assignments || []).find(a =>
+    const assigns = (data.assignments || []).filter(a =>
       (a.employeeId || "").toString().toLowerCase() === employeeId.toString().toLowerCase() &&
       (a.tenantId || "").toLowerCase() === tenantId.toLowerCase()
     );
 
-    if (assignment) {
-      filtered = filtered.filter(d => d.departmentId === assignment.departmentId);
+    if (assigns.length > 0) {
+      const deptIds = assigns.map(a => a.departmentId);
+      filtered = filtered.filter(d => deptIds.includes(d.departmentId));
     } else {
       // If no assignment, return empty list to prevent unauthorized access to other branches
       filtered = [];
@@ -564,16 +567,33 @@ app.get('/api/org-units', tenantGuard, async (req, res) => {
 app.post('/api/org-units', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.orgUnits) data.orgUnits = [];
-  const newUnit = { ...req.body, tenantId: req.tenantId || 'master', orgUnitId: 'org-' + Date.now() };
+  const newId = `${Date.now()}`;
+  const newUnit = { ...req.body, tenantId: req.tenantId || 'master', id: newId, orgUnitId: newId };
   data.orgUnits.push(newUnit);
   await saveData(data);
   res.json(newUnit);
 });
 
+app.put('/api/org-units/:id', tenantGuard, async (req, res) => {
+  const { id } = req.params;
+  const data = await loadData();
+  const index = (data.orgUnits || []).findIndex(o =>
+    (o.orgUnitId === id || o.id === id) && o.tenantId === (req.tenantId || 'master')
+  );
+  if (index === -1) {
+    return res.status(404).json({ error: 'Org unit not found' });
+  }
+  data.orgUnits[index] = { ...data.orgUnits[index], ...req.body };
+  await saveData(data);
+  res.json(data.orgUnits[index]);
+});
+
 app.delete('/api/org-units/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
   const data = await loadData();
-  data.orgUnits = (data.orgUnits || []).filter(o => !(o.orgUnitId === id && o.tenantId === (req.tenantId || 'master')));
+  data.orgUnits = (data.orgUnits || []).filter(o =>
+    !((o.orgUnitId === id || o.id === id) && o.tenantId === (req.tenantId || 'master'))
+  );
   await saveData(data);
   res.json({ success: true });
 });
@@ -592,10 +612,28 @@ app.post('/api/position-titles', tenantGuard, async (req, res) => {
   res.json(newTitle);
 });
 
+app.put('/api/position-titles/:id', tenantGuard, async (req, res) => {
+  const { id } = req.params;
+  const data = await loadData();
+  let updated = null;
+  data.positionTitles = (data.positionTitles || []).map(p => {
+    const pid = p.titleId || p.id;
+    if (pid === id && p.tenantId === (req.tenantId || 'master')) {
+      updated = { ...p, ...req.body };
+      return updated;
+    }
+    return p;
+  });
+  if (updated) {
+    await saveData(data);
+    res.json(updated);
+  } else res.status(404).json({ error: 'Not found' });
+});
+
 app.delete('/api/position-titles/:id', tenantGuard, async (req, res) => {
   const { id } = req.params;
   const data = await loadData();
-  data.positionTitles = (data.positionTitles || []).filter(p => !(p.titleId === id && p.tenantId === (req.tenantId || 'master')));
+  data.positionTitles = (data.positionTitles || []).filter(p => !((p.titleId === id || p.id === id) && p.tenantId === (req.tenantId || 'master')));
   await saveData(data);
   res.json({ success: true });
 });
@@ -641,21 +679,31 @@ app.get('/api/assignments', tenantGuard, async (req, res) => {
 app.post('/api/assignments', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.assignments) data.assignments = [];
-  const { employeeId, departmentId } = req.body;
   const tenantId = req.tenantId || 'master';
+  const { employeeId } = req.body;
 
-  // Find existing or add new
-  const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
-  if (index !== -1) {
-    data.assignments[index].departmentId = departmentId;
-  } else {
-    data.assignments.push({ employeeId, departmentId, tenantId });
-  }
+  // Accept either a single departmentId or an array of departmentIds
+  let departmentIds = [];
+  if (Array.isArray(req.body.departmentIds)) departmentIds = req.body.departmentIds;
+  else if (req.body.departmentId) departmentIds = [req.body.departmentId];
 
-  // Also update branchName in employee object for easier access
+  // Remove existing assignments for this employee (for this tenant)
+  data.assignments = (data.assignments || []).filter(a => !(a.employeeId === employeeId && a.tenantId === tenantId));
+
+  // Add new assignments
+  departmentIds.forEach(did => {
+    data.assignments.push({ employeeId, departmentId: did, tenantId });
+  });
+
+  // Update employee.branchName to include all assigned branch names (comma-separated)
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
-  const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
-  if (emp && dept) emp.branchName = dept.name;
+  if (emp) {
+    const names = (departmentIds || []).map(did => {
+      const dep = data.departments.find(d => d.departmentId === did && d.tenantId === tenantId);
+      return dep ? dep.name : null;
+    }).filter(Boolean);
+    emp.branchName = names.length === 0 ? '' : names.join(', ');
+  }
 
   await saveData(data);
   res.json({ success: true });
@@ -723,9 +771,9 @@ app.post('/api/mobile/login', async (req, res) => {
     await saveData(data);
   }
 
-  // Find branch assignment
-  const assign = (data.assignments || []).find(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
-  const branch = assign ? data.departments.find(d => d.departmentId === assign.departmentId) : null;
+  // Find all branch assignments for this employee
+  const assigns = (data.assignments || []).filter(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
+  const branches = assigns.map(a => data.departments.find(d => d.departmentId === a.departmentId)).filter(Boolean);
 
   res.json({
     success: true,
@@ -735,7 +783,7 @@ app.post('/api/mobile/login', async (req, res) => {
       name: emp.name,
       tenantId: emp.tenantId,
       companyName: user.companyName,
-      branch: branch || { name: 'Unassigned', radiusMeters: 50 }
+      branches: branches.length > 0 ? branches : [{ name: 'Unassigned', radiusMeters: 50 }]
     }
   });
 });
@@ -1016,8 +1064,15 @@ app.put('/api/users/:tenantId/permissions', async (req, res) => {
   const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
-    user.permissions = req.body.permissions;
+    const perms = req.body.permissions;
+    console.log(`[PERMS] Update request for tenant ${tenantId}:`, perms);
+    if (!Array.isArray(perms)) {
+      console.warn(`[PERMS] Invalid permissions payload for ${tenantId}`);
+      return res.status(400).json({ error: 'Invalid permissions' });
+    }
+    user.permissions = perms;
     await saveData(data);
+    console.log(`[PERMS] Permissions for ${tenantId} updated and saved.`);
     res.json({ success: true });
   }
   else res.status(404).json({ error: 'Not found' });
@@ -1057,9 +1112,10 @@ app.get('/api/tenant-info/:tenantId', async (req, res) => {
   const data = await loadData();
   const user = data.users.find(u => (u.tenantId || u.username).toLowerCase() === tenantId.toLowerCase());
   if (user) {
-    // AUTO-INJECT NEW MODULES: Ensure every tenant has access to all global modules
+    // Respect stored tenant permissions. If tenant has no explicit permissions
+    // configured, fall back to the default global modules.
     const currentPermissions = user.permissions || [];
-    const updatedPermissions = Array.from(new Set([...ALL_MODULES, ...currentPermissions]));
+    const permissionsToReturn = (currentPermissions && currentPermissions.length > 0) ? currentPermissions : ALL_MODULES;
 
     // Only return non-sensitive public info
     res.json({
@@ -1067,10 +1123,10 @@ app.get('/api/tenant-info/:tenantId', async (req, res) => {
       tenantId: user.tenantId || user.username,
       adminIp: user.adminIp,
       endDate: user.endDate,
-      permissions: updatedPermissions
+      permissions: permissionsToReturn
     });
   } else {
-    res.status(404).json({ error: 'Tenant not found' });
+    res.status(404).json({ error: 'Tenant not found.' });
   }
 });
 
@@ -1219,13 +1275,31 @@ app.post('/api/master/build-and-run-apk', async (req, res) => {
 
   const { tenantId, companyName, publicUrl } = req.body;
   const ip = getNetworkIP();
-  const apiUrl = publicUrl || `http://${ip}:${PORT}/api`;
-  try {
-    // Update app config and strings
-    const configPath = path.join(__dirname, '../mobile-app/src/app_config.json');
-    fs.writeFileSync(configPath, JSON.stringify({ defaultApiUrl: apiUrl, defaultTenantId: tenantId }, null, 2));
 
-    const stringsPath = path.join(__dirname, '../mobile-app/android/app/src/main/res/values/strings.xml');
+  // Resolve absolute API URL for Mobile Device
+  let apiUrl = publicUrl;
+  if (!apiUrl || apiUrl === '/api') {
+      apiUrl = isTestMode ? `http://localhost:4002/api` : `http://${ip}:4001/api`;
+  }
+
+  try {
+    const mobileAppPath = path.join(__dirname, '../mobile-app');
+
+    // Update app config while preserving existing fields (like version)
+    const configPath = path.join(mobileAppPath, 'src/app_config.json');
+    let currentConfig = { version: "1.0.0" };
+    if (fs.existsSync(configPath)) {
+        try { currentConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch(e){}
+    }
+
+    const newConfig = {
+        ...currentConfig,
+        defaultApiUrl: apiUrl,
+        defaultTenantId: tenantId
+    };
+    fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
+
+    const stringsPath = path.join(mobileAppPath, 'android/app/src/main/res/values/strings.xml');
     if (fs.existsSync(stringsPath)) {
       let stringsXml = fs.readFileSync(stringsPath, 'utf8');
       stringsXml = stringsXml.replace(/<string name="app_name">.*?<\/string>/, `<string name="app_name">${companyName}<\/string>`);

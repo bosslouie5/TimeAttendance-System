@@ -33,6 +33,7 @@ function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [orgUnits, setOrgUnits] = useState([]);
   const [logs, setLogs] = useState([]);
   const [positionTitles, setPositionTitles] = useState([]);
@@ -44,7 +45,9 @@ function App() {
 
   // Form States
   const [newOrgName, setNewOrgName] = useState('');
+  const [editingOrgUnitId, setEditingOrgUnitId] = useState(null);
   const [newPositionTitle, setNewPositionTitle] = useState('');
+  const [editingPositionId, setEditingPositionId] = useState(null);
   const [branchName, setBranchName] = useState('');
   const [branchLat, setBranchLat] = useState('');
   const [branchLon, setBranchLon] = useState('');
@@ -56,7 +59,7 @@ function App() {
   const [isEditingEmp, setIsEditingEmp] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
-  const [selectedAssignBranch, setSelectedAssignBranch] = useState('');
+  const [selectedAssignBranches, setSelectedAssignBranches] = useState([]);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
   const [empId, setEmpId] = useState('');
   const [empName, setEmpName] = useState('');
@@ -156,6 +159,10 @@ function App() {
       setLogs(l || []);
       setPositionTitles(pt || []);
       setSchedules(sc || []);
+      try {
+        const a = await requestJson('/assignments');
+        setAssignments(a || []);
+      } catch (err) { setAssignments([]); }
     } catch (err) { console.error('Load failed', err); }
   };
 
@@ -279,21 +286,43 @@ function App() {
     }
   };
 
+  const prepareAssignModal = async (emp) => {
+    setSelectedAssignEmp(emp);
+    try {
+      const allAssignments = await requestJson('/assignments');
+      const myAssigns = (allAssignments || []).filter(a => a.employeeId === emp.employeeId);
+      const ids = myAssigns.map(a => a.departmentId);
+      setSelectedAssignBranches(ids);
+    } catch (e) {
+      setSelectedAssignBranches([]);
+    }
+    setIsAssignModalOpen(true);
+  };
+
   const addOrgUnit = async () => {
     if (!newOrgName) return alert('Enter Department Name');
-    setStatus('Adding Department...');
+    setStatus(editingOrgUnitId ? 'Updating Department...' : 'Adding Department...');
     try {
-      await requestJson('/org-units', {
-        method: 'POST',
+      const url = editingOrgUnitId ? `/org-units/${editingOrgUnitId}` : '/org-units';
+      const method = editingOrgUnitId ? 'PUT' : 'POST';
+
+      await requestJson(url, {
+        method,
         body: JSON.stringify({ name: newOrgName, tenantId: detectedTenantId })
       });
-      setStatus('Department Created! ✓');
+      setStatus(editingOrgUnitId ? 'Department Updated! ✓' : 'Department Created! ✓');
       setNewOrgName('');
+      setEditingOrgUnitId(null);
       loadInitialData();
     } catch (e) {
-      alert('Failed to add department');
-      setStatus('Error adding department');
+      alert(editingOrgUnitId ? 'Failed to update department' : 'Failed to add department');
+      setStatus(editingOrgUnitId ? 'Error updating department' : 'Error adding department');
     }
+  };
+
+  const editOrgUnit = (orgUnit) => {
+    setNewOrgName(orgUnit.name || '');
+    setEditingOrgUnitId(orgUnit.id);
   };
 
   const deleteOrgUnit = async (id) => {
@@ -313,18 +342,21 @@ function App() {
 
   const savePositionTitle = async () => {
     if (!newPositionTitle) return alert('Enter Position Title');
-    setStatus('Adding Position...');
+    setStatus(editingPositionId ? 'Updating Position...' : 'Adding Position...');
     try {
-      await requestJson('/position-titles', {
-        method: 'POST',
-        body: JSON.stringify({ name: newPositionTitle, tenantId: detectedTenantId })
+      const method = editingPositionId ? 'PUT' : 'POST';
+      const path = editingPositionId ? `/position-titles/${editingPositionId}` : '/position-titles';
+      await requestJson(path, {
+        method,
+        body: JSON.stringify({ name: newPositionTitle })
       });
-      setStatus('Position Created! ✓');
+      setStatus(editingPositionId ? 'Position Updated! ✓' : 'Position Created! ✓');
       setNewPositionTitle('');
+      setEditingPositionId(null);
       loadInitialData();
     } catch (e) {
-      alert('Failed to add position');
-      setStatus('Error adding position');
+      alert(editingPositionId ? 'Failed to update position' : 'Failed to add position');
+      setStatus(editingPositionId ? 'Error updating position' : 'Error adding position');
     }
   };
 
@@ -451,23 +483,24 @@ function App() {
   };
 
   const saveAssignment = async () => {
-    if (!selectedAssignBranch) return alert('Select a branch first');
-    setStatus('Assigning branch...');
+    if (!selectedAssignEmp) return alert('No employee selected');
+    setStatus('Assigning branches...');
     try {
       await requestJson('/assignments', {
         method: 'POST',
         body: JSON.stringify({
           employeeId: selectedAssignEmp.employeeId,
-          departmentId: selectedAssignBranch,
+          departmentIds: selectedAssignBranches,
           tenantId: detectedTenantId
         })
       });
-      setStatus('Branch Assigned! ✓');
+      setStatus('Branches Assigned! ✓');
       setIsAssignModalOpen(false);
+      setSelectedAssignBranches([]);
       loadInitialData();
     } catch (e) {
-      alert('Failed to assign branch');
-      setStatus('Error assigning branch');
+      alert('Failed to assign branches');
+      setStatus('Error assigning branches');
     }
   };
 
@@ -813,6 +846,61 @@ function App() {
         .btn-excel { background: #1e8449 !important; color: white !important; border: none !important; padding: 10px 20px !important; border-radius: 8px !important; font-weight: bold !important; cursor: pointer !important; transition: 0.3s; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(2, 6, 23, 0.85); z-index: 2000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
         .modal-content { background: #1e293b; padding: 35px; border-radius: 24px; width: 100%; maxWidth: 750px; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid #334155; }
+        /* From Uiverse.io by zanina-yassine - switch styles */
+        .component-title {
+          width: 100%;
+          position: absolute;
+          z-index: 999;
+          top: 30px;
+          left: 0;
+          padding: 0;
+          margin: 0;
+          font-size: 1rem;
+          font-weight: 700;
+          color: #888;
+          text-align: center;
+        }
+        .container {
+          width: 51px;
+          height: 31px;
+          position: relative;
+          display: inline-block;
+        }
+        .checkbox {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0;
+          cursor: pointer;
+          z-index: 2;
+        }
+        .switch {
+          display: block;
+          width: 100%;
+          height: 100%;
+          background: #e9e9eb;
+          border-radius: 16px;
+          position: relative;
+          transition: background-color .2s ease;
+        }
+        .switch::before {
+          content: "";
+          position: absolute;
+          width: 25px;
+          height: 25px;
+          top: 3px;
+          left: 3px;
+          border-radius: 50%;
+          background: white;
+          transition: transform .2s ease;
+        }
+        .checkbox:checked + .switch {
+          background: #22c55e;
+        }
+        .checkbox:checked + .switch::before {
+          transform: translateX(20px);
+        }
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .form-group { display: flex; flexDirection: column; gap: 8px; }
         .form-group label { color: #94a3b8; fontSize: 0.8rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -855,7 +943,7 @@ function App() {
             {hasPerm('assign-schedule') && <div className="menu-item" onClick={() => { setActiveTab('assign-schedule'); setIsMenuOpen(false); }}>📅 Assign Schedule</div>}
             {hasPerm('branches') && <div className="menu-item" onClick={() => { setActiveTab('branches'); setIsMenuOpen(false); }}>📍 Branch Setup</div>}
             {hasPerm('assign-branch') && <div className="menu-item" onClick={() => { setActiveTab('assign-branch'); setIsMenuOpen(false); }}>🔗 Branch Assignment</div>}
-            {hasPerm('devices') && <div className="menu-item" onClick={() => { setActiveTab('devices'); setIsMenuOpen(false); }}>📱 Registered Devices</div>}
+            {hasPerm('devices') && <div className="menu-item" onClick={() => { setActiveTab('devices'); setIsMenuOpen(false); }}>📱 Device Managemnt</div>}
             {hasPerm('reports') && <div className="menu-item" onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}>📈 Attendance Logs</div>}
             {hasPerm('announcements') && <div className="menu-item" onClick={() => { setActiveTab('announcements'); setIsMenuOpen(false); }}>📢 Announcements</div>}
             {hasPerm('leave-management') && <div className="menu-item" onClick={() => { setActiveTab('leave-management'); setIsMenuOpen(false); }}>⛱️ Leave System</div>}
@@ -906,7 +994,7 @@ function App() {
           {activeTab === 'assign-schedule' && '📅 Assign Schedule'}
           {activeTab === 'branches' && '📍 Branch Locations'}
           {activeTab === 'assign-branch' && '🔗 Branch Assignment'}
-          {activeTab === 'devices' && '📱 Registered Devices'}
+          {activeTab === 'devices' && '📱 Device Managemnt'}
           {activeTab === 'reports' && '📈 Attendance Reports'}
           {activeTab === 'announcements' && '📢 Company Announcements'}
           {activeTab === 'leave-management' && '⛱️ Leave Management'}
@@ -1153,7 +1241,14 @@ function App() {
                   onKeyDown={e => e.key === 'Enter' && addOrgUnit()}
                 />
               </div>
-              <button onClick={addOrgUnit} className="btn-blue" style={{marginTop:'25px', width:'100%', padding: '15px'}}>SAVE DEPARTMENT</button>
+              <button onClick={addOrgUnit} className="btn-blue" style={{marginTop:'25px', width:'100%', padding: '15px'}}>
+                {editingOrgUnitId ? 'UPDATE DEPARTMENT' : 'SAVE DEPARTMENT'}
+              </button>
+              {editingOrgUnitId && (
+                <button onClick={() => { setEditingOrgUnitId(null); setNewOrgName(''); }} className="btn-red" style={{marginTop:'10px', width:'100%', padding:'15px', background:'#334155'}}>
+                  CANCEL EDIT
+                </button>
+              )}
             </div>
 
             {/* LIST TABLE */}
@@ -1169,9 +1264,10 @@ function App() {
                   </thead>
                   <tbody>
                     {orgUnits.map((o, i) => (
-                      <tr key={i}>
+                      <tr key={o.id || i}>
                         <td style={{fontWeight:'900', color:'#3b82f6'}}>{o.name}</td>
                         <td style={{textAlign:'right'}}>
+                          <button onClick={() => editOrgUnit(o)} className="btn-edit" style={{padding: '5px 12px', fontSize: '0.75rem', marginRight:'8px'}}>Edit</button>
                           <button onClick={() => deleteOrgUnit(o.id)} className="btn-red" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Delete</button>
                         </td>
                       </tr>
@@ -1206,7 +1302,10 @@ function App() {
                   onKeyDown={e => e.key === 'Enter' && savePositionTitle()}
                 />
               </div>
-              <button onClick={savePositionTitle} className="btn-blue" style={{marginTop:'25px', width:'100%', padding: '15px'}}>SAVE POSITION TITLE</button>
+              <button onClick={savePositionTitle} className="btn-blue" style={{marginTop:'25px', width:'100%', padding: '15px'}}>{editingPositionId ? 'UPDATE POSITION TITLE' : 'SAVE POSITION TITLE'}</button>
+              {editingPositionId && (
+                <button onClick={() => { setEditingPositionId(null); setNewPositionTitle(''); setStatus(''); }} className="btn-red" style={{marginTop:'12px', width:'100%', padding:'15px'}}>CANCEL EDIT</button>
+              )}
             </div>
 
             {/* LIST TABLE */}
@@ -1221,14 +1320,24 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {positionTitles.map((p, i) => (
-                      <tr key={i}>
-                        <td style={{fontWeight:'900', color:'#60a5fa'}}>{p.name}</td>
-                        <td style={{textAlign:'right'}}>
-                          <button onClick={() => deletePositionTitle(p.id)} className="btn-red" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Delete</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {positionTitles.map((p, i) => {
+                      const titleId = p.titleId || p.id;
+                      return (
+                        <tr key={titleId}>
+                          <td style={{fontWeight:'900', color:'#60a5fa'}}>{p.name}</td>
+                          <td style={{textAlign:'right'}}>
+                            <div style={{display:'flex', justifyContent:'flex-end', gap:'8px'}}>
+                              <button onClick={() => {
+                                setNewPositionTitle(p.name || '');
+                                setEditingPositionId(titleId);
+                                setStatus('Editing position...');
+                              }} className="btn-blue" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Edit</button>
+                              <button onClick={() => deletePositionTitle(titleId)} className="btn-red" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {positionTitles.length === 0 && (
                       <tr><td colSpan="2" style={{textAlign:'center', padding:'50px', color:'#64748b', fontWeight: 'bold'}}>No positions defined yet.</td></tr>
                     )}
@@ -1653,15 +1762,25 @@ function App() {
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
                       <td>
-                        {e.branchName ? (
-                          <span style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)'}}>📍 {e.branchName}</span>
-                        ) : (
-                          <span style={{color:'#64748b', fontSize:'0.8rem', fontStyle: 'italic'}}>No Branch Assigned</span>
-                        )}
+                        {(() => {
+                          const myAssigns = assignments.filter(a => a.employeeId === e.employeeId);
+                          if (myAssigns.length > 0) {
+                            const names = myAssigns.map(a => {
+                              const d = departments.find(dd => dd.departmentId === a.departmentId);
+                              return d ? d.name : a.departmentId;
+                            }).filter(Boolean);
+                            return names.map((n, i) => (
+                              <span key={i} style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)', marginRight:'6px', display:'inline-block'}}>📍 {n}</span>
+                            ));
+                          }
+                          return (
+                            <span style={{color:'#64748b', fontSize:'0.8rem', fontStyle: 'italic'}}>No Branch Assigned</span>
+                          );
+                        })()}
                       </td>
                       <td style={{textAlign:'center'}}>
                         <button
-                          onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranch(''); setIsAssignModalOpen(true); }}
+                          onClick={() => { prepareAssignModal(e); }}
                           className="btn-edit"
                           style={{padding:'10px 20px', borderRadius: '10px'}}
                         >
@@ -1791,17 +1910,35 @@ function App() {
             </div>
 
             <div className="form-group">
-              <label>SELECT OFFICE BRANCH</label>
-              <select
-                value={selectedAssignBranch}
-                onChange={e => setSelectedAssignBranch(e.target.value)}
-                style={{width: '100%', fontSize: '1rem', padding: '15px'}}
-              >
-                <option value="">-- Choose Secure Location --</option>
-                {departments.map(d => (
-                  <option key={d.departmentId} value={d.departmentId}>{d.name} ({d.radiusMeters}m Geofence)</option>
-                ))}
-              </select>
+              <label>SELECT OFFICE BRANCHES (Multiple)</label>
+              <div style={{display:'flex', flexDirection:'column', gap:'8px', maxHeight: '260px', overflowY: 'auto', padding: '8px'}}>
+                {departments.map(d => {
+                  const checked = selectedAssignBranches.includes(d.departmentId);
+                  return (
+                    <label key={d.departmentId} style={{display:'flex', alignItems:'center', gap:'12px', padding:'8px', borderRadius:'8px', border: '1px solid rgba(255,255,255,0.03)'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:'12px'}}>
+                        <div className="container">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={checked}
+                            onChange={(ev) => {
+                              if (ev.target.checked) setSelectedAssignBranches(prev => Array.from(new Set([...prev, d.departmentId])));
+                              else setSelectedAssignBranches(prev => prev.filter(x => x !== d.departmentId));
+                            }}
+                          />
+                          <span className="switch"></span>
+                        </div>
+                      </div>
+                      <div style={{display:'flex', flexDirection:'column'}}>
+                        <span style={{fontWeight:'800', color:'white'}}>{d.name}</span>
+                        <span style={{fontSize:'0.75rem', color:'#94a3b8'}}>{d.radiusMeters}m Geofence</span>
+                      </div>
+                    </label>
+                  );
+                })}
+                {departments.length === 0 && <div style={{color:'#64748b'}}>No branches available.</div>}
+              </div>
             </div>
 
             <div style={{display:'flex', gap:'15px', marginTop:'40px'}}>

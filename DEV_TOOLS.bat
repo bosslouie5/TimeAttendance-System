@@ -30,11 +30,11 @@ echo   [ STATUS ]
 echo   Environment: Developer Lab (Port 4002)
 echo   Backup Checkpoint: !last_backup!
 echo.
-echo   [1] START TEST LAB (Web/API/Tunnel - 4002)
-echo   [2] MOBILE DEV LAB (Mirror + Sync + Run)
-echo   [3] MASTER SYNC    (Full Automation: Build to Deploy)
+echo   [1] START TEST LAB    (Build + Run + Tunnel - 4002)
+echo   [2] MOBILE DEV LAB    (Mirror + Sync + Run)
+echo   [3] MASTER SYNC       (Full Automation: Build to Deploy)
 echo.
-echo   [4] SAFETY BACKUP  (Create Point)
+echo   [4] SAFETY BACKUP     (Create Point)
 echo   [5] REVERT CODE    (Restore Point)
 echo.
 echo   [6] STOP ALL       (Force Kill Processes)
@@ -53,10 +53,19 @@ goto MENU
 
 :START_LAB
 cls
-echo [*] Initializing Port 4002 Lab...
+echo [*] 1/4 Syncing Live Data to Lab...
+if exist "backend\data.json" copy /y "backend\data.json" "backend\data-test.json" >nul
+
+echo [*] 2/4 Rebuilding UI (Lab Mode)...
+pushd web-dev & call npx vite build --outDir dist-test --emptyOutDir & popd
+pushd web-admin & call npx vite build --outDir dist-test --emptyOutDir & popd
+pushd mobile-app & call npx vite build --outDir dist-test --emptyOutDir & popd
+
+echo [*] 3/4 Initializing Port 4002 Lab...
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 "%ADB_EXE%" reverse tcp:4002 tcp:4002
+
 pushd backend
 set SYSTEM_MODE=test
 set "MONGODB_URI="
@@ -66,6 +75,8 @@ if exist "%CLOUDFLARED%" (
     echo [OK] Cloudflare Tunnel Active.
 )
 popd
+
+echo [*] 4/4 Launching Browser...
 echo [OK] Lab running at http://localhost:4002/dev
 ping 127.0.0.1 -n 3 >nul
 start "" "http://localhost:4002/dev"
@@ -73,20 +84,37 @@ goto MENU
 
 :MOBILE_LAB
 cls
-echo [*] Activating Mobile Developer Lab...
+echo [*] Activating Mobile Developer Lab (Port 4002)...
 taskkill /F /IM scrcpy.exe /T >nul 2>&1
 "%ADB_EXE%" kill-server >nul 2>&1
 "%ADB_EXE%" start-server >nul 2>&1
 "%ADB_EXE%" reverse tcp:4002 tcp:4002
+
+:: Inject Local API URL for Lab Build
+set "CONFIG_FILE=mobile-app/src/app_config.json"
+set "BAK_CONFIG=mobile-app/src/app_config.json.bak"
+if exist "%CONFIG_FILE%" (
+    copy /y "%CONFIG_FILE%" "%BAK_CONFIG%" >nul
+    node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='http://localhost:4002/api'; fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
+    echo [OK] Local API URL injected for Lab Build.
+)
+
 if exist "MIRROR_PHONE.bat" start /b "" cmd /c "MIRROR_PHONE.bat"
 pushd mobile-app
-echo [*] Building UI...
+echo [*] Building UI (Lab Mode)...
 call npx vite build --outDir dist-test --emptyOutDir
 echo [*] Syncing Capacitor...
 call npx cap sync android
 echo [*] Launching on Device...
 call npx cap run android
 popd
+
+:: Restore Production URL
+if exist "%BAK_CONFIG%" (
+    move /y "%BAK_CONFIG%" "%CONFIG_FILE%" >nul
+    echo [OK] Production config restored.
+)
+
 pause
 goto MENU
 

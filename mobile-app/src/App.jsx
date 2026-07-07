@@ -284,6 +284,16 @@ function App() {
       if (deptRes.status === 200) {
         localStorage.setItem('all_departments', JSON.stringify(deptRes.data));
         setDepartments(deptRes.data);
+        // Auto-select a branch if only one assigned branch or if cachedEmployee branchName matches
+        try {
+          const current = JSON.parse(localStorage.getItem('all_employees') || '[]').find(e => (e.employeeId || "").toString() === (targetEmpId || "").toString());
+          if (deptRes.data && deptRes.data.length === 1) {
+            setSelectedDepartment(deptRes.data[0].departmentId);
+          } else if (current && current.branchName) {
+            const match = deptRes.data.find(d => d.name === current.branchName);
+            if (match) setSelectedDepartment(match.departmentId);
+          }
+        } catch (e) {}
       }
       if (logRes.status === 200) {
         const myLogs = (logRes.data || []).filter(l =>
@@ -921,7 +931,7 @@ function App() {
                    </div>
 
                    <div style={{textAlign: 'center', marginTop: '30px', color: '#64748b', fontSize: '0.7rem', fontWeight: '900'}}>
-                      {status.toUpperCase()} | V{appConfig.version} | {apiUrl.includes('127.0.0.1') ? 'LAB MODE' : 'CLOUD LIVE'}
+                      {status.toUpperCase()} | V{appConfig.version} | {(apiUrl.includes('127.0.0.1') || apiUrl.includes('localhost:4002')) ? 'LAB MODE' : 'CLOUD LIVE'}
                    </div>
                 </div>
               )}
