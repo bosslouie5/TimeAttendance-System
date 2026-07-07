@@ -2361,15 +2361,18 @@ function App() {
               <p style={{color:'#94a3b8', margin:'0 0 5px 0', fontSize:'0.75rem', fontWeight:'800'}}>CONFIGURING FOR:</p>
               <h3 style={{margin:0, color:'white', fontSize:'1.1rem', fontWeight:'900'}}>{selectedAssignEmp.name} (ID: {selectedAssignEmp.employeeId})</h3>
             </div>
-            <div style={{display:'grid', gap:'10px', maxHeight:'280px', overflowY:'auto', padding:'10px', border:'1px solid #334155', borderRadius:'12px', background:'rgba(15, 23, 42, 0.8)'}}>
+            <div className="checkbox-list">
               {departments.filter(d => d.tenantId === selectedAssignEmp.tenantId).map(d => (
-                <label key={d.departmentId} style={{display:'flex', alignItems:'center', gap:'10px', color:'white', cursor:'pointer', fontSize:'0.95rem'}}>
+                <label key={d.departmentId}>
                   <input
                     type="checkbox"
                     checked={selectedAssignBranchIds.includes(d.departmentId)}
                     onChange={() => toggleAssignBranchSelection(d.departmentId)}
                   />
-                  <span>{d.name} ({d.radiusMeters || 50}m)</span>
+                  <div style={{display:'flex', flexDirection:'column'}}>
+                    <strong style={{fontSize:'0.95rem'}}>{d.name}</strong>
+                    <span style={{fontSize:'0.75rem', color:'#94a3b8'}}>{d.radiusMeters || 50}m</span>
+                  </div>
                 </label>
               ))}
             </div>

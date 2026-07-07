@@ -1812,15 +1812,18 @@ function App() {
 
             <div className="form-group">
               <label>SELECT OFFICE BRANCHES</label>
-              <div style={{display:'grid', gap:'10px', maxHeight:'260px', overflowY:'auto', padding:'10px', border:'1px solid #334155', borderRadius:'12px', background:'rgba(15, 23, 42, 0.8)'}}>
+              <div className="checkbox-list">
                 {departments.map(d => (
-                  <label key={d.departmentId} style={{display:'flex', alignItems:'center', gap:'10px', color:'white', cursor:'pointer', fontSize:'0.95rem'}}>
+                  <label key={d.departmentId}>
                     <input
                       type="checkbox"
                       checked={selectedAssignBranchIds.includes(d.departmentId)}
                       onChange={() => toggleAssignBranchSelection(d.departmentId)}
                     />
-                    <span>{d.name} ({d.radiusMeters || 50}m Geofence)</span>
+                    <div style={{display:'flex', flexDirection:'column'}}>
+                      <strong style={{fontSize:'0.95rem'}}>{d.name}</strong>
+                      <span style={{fontSize:'0.75rem', color:'var(--text-muted)'}}>{d.radiusMeters || 50}m Geofence</span>
+                    </div>
                   </label>
                 ))}
               </div>
