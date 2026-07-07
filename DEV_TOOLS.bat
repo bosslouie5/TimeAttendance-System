@@ -196,17 +196,9 @@ if exist "%PKG_FILE%" (
     echo [OK] package.json updated.
 )
 
-:: Increment Gradle Version Code and update versionName using Node (Safe from BOM/Encoding issues)
+:: Increment Gradle Version Code and update versionName using PowerShell helper
 if exist "%GRADLE_FILE%" (
-    (
-        echo const fs=require('fs');
-        echo let p='!GRADLE_FILE!';
-        echo let c=fs.readFileSync(p,'utf8');
-        echo c=c.replace(/versionCode\s+(\d+)/,(m,v)=^>'versionCode '+(parseInt(v)+1));
-        echo c=c.replace(/versionName\s+"[^"]*"/g,'versionName "!NEW_V!"');
-        echo fs.writeFileSync(p,c,'utf8');
-    ) > "%temp%\update_gradle.js"
-    node "%temp%\update_gradle.js"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "tools\update_android_version.ps1" "%GRADLE_FILE%" "!NEW_V!"
     echo [OK] Gradle Version Code and Name Updated.
 )
 exit /b

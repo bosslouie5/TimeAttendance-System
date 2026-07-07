@@ -7,8 +7,8 @@ android {
         applicationId "com.example.timeattendance"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 33
-        versionName "1.0"
+        versionCode 35
+        versionName "1.0.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -18,7 +18,7 @@ android {
     }
     signingConfigs {
         release {
-            def keystorePath = project.hasProperty('KEYSTORE_FILE') ? KEYSTORE_FILE : 'release-key.jks'
+            def keystorePath = project.hasProperty('KEYSTORE_FILE') ? KEYSTORE_FILE : '../release-key.jks'
             storeFile file(keystorePath)
             storePassword project.hasProperty('KEYSTORE_PASSWORD') ? KEYSTORE_PASSWORD : 'timekeypro'
             keyAlias project.hasProperty('KEY_ALIAS') ? KEY_ALIAS : 'timekeypro'
