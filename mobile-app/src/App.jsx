@@ -969,6 +969,7 @@ function App() {
                         <thead>
                           <tr>
                             <th>Branch</th>
+                            <th>Schedule</th>
                             <th>Time In</th>
                             <th>Time Out</th>
                             <th>Status</th>
@@ -977,11 +978,15 @@ function App() {
                         <tbody>
                           {groupedLogs.map((group, i) => {
                             const status = getGroupStatus(group);
+                            const scheduleText = cachedEmployee?.schedule || 'Regular Shift';
                             return (
                               <tr key={i} className="fade-in" style={{animationDelay: `${i * 0.05}s`}}>
                                 <td>
                                   <span className="branch-name" style={{fontSize: '0.75rem', display: 'block'}}>{group.branch}</span>
                                   <span className="log-date" style={{fontSize: '0.6rem', color: '#64748b'}}>{group.date}</span>
+                                </td>
+                                <td>
+                                   <span className="time-value" style={{color: '#94a3b8'}}>{scheduleText}</span>
                                 </td>
                                 <td>
                                    <span className="time-value" style={{color: group.in ? '#10b981' : '#334155'}}>
