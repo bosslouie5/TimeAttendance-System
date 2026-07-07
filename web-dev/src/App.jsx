@@ -75,6 +75,10 @@ function App() {
   // Employee Management States
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
   const [isEditingEmp, setIsEditingEmp] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
+  const [selectedAssignBranchIds, setSelectedAssignBranchIds] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [empId, setEmpId] = useState('');
   const [empName, setEmpName] = useState('');
   const [empJobTitle, setEmpJobTitle] = useState('');
@@ -169,7 +173,7 @@ function App() {
   const loadInitialData = async () => {
     if (!activeApiBase) return;
     try {
-      const [u, l, e, d, da, o, pt, s, v] = await Promise.all([
+      const [u, l, e, d, da, o, pt, s, a, v] = await Promise.all([
         fetch(`${activeApiBase}/master/users`).then(r => r.json()),
         fetch(`${activeApiBase}/master/logs`).then(r => r.json()),
         fetch(`${activeApiBase}/master/employees`).then(r => r.json()),
@@ -178,13 +182,52 @@ function App() {
         fetch(`${activeApiBase}/master/org-units`).then(r => r.json()),
         fetch(`${activeApiBase}/master/position-titles`).then(r => r.json()),
         fetch(`${activeApiBase}/master/schedules`).then(r => r.json()),
+        fetch(`${activeApiBase}/master/assignments`).then(r => r.json()),
         fetch(`${activeApiBase}/app-version`).then(r => r.json())
       ]);
-      setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []);
+      setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []); setAssignments(a || []);
       if (v && v.version) setAppVersion(v.version);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
     } catch (e) { setStatus('Sync Error'); }
+  };
+
+  const getAssignedDepartmentIds = (emp) => {
+    const assignment = assignments.find(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
+    if (!assignment) return [];
+    if (Array.isArray(assignment.departmentIds)) return assignment.departmentIds.filter(Boolean);
+    if (assignment.departmentId) return [assignment.departmentId];
+    return [];
+  };
+
+  const toggleAssignBranchSelection = (departmentId) => {
+    setSelectedAssignBranchIds(prev =>
+      prev.includes(departmentId)
+        ? prev.filter(id => id !== departmentId)
+        : [...prev, departmentId]
+    );
+  };
+
+  const saveAssignment = async () => {
+    if (!selectedAssignEmp) return;
+    if (selectedAssignBranchIds.length === 0) return alert('Select at least one branch');
+    setProcessing(true);
+    setProcessingMsg('Saving branch access...');
+    try {
+      const res = await fetch(`${activeApiBase}/assignments?tenantId=${selectedAssignEmp.tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedAssignEmp.tenantId },
+        body: JSON.stringify({ employeeId: selectedAssignEmp.employeeId, departmentIds: selectedAssignBranchIds })
+      });
+      if (res.ok) {
+        setStatus('Branch access updated ✓');
+        setIsAssignModalOpen(false);
+        await loadInitialData();
+      } else {
+        alert('Failed to update branch access');
+      }
+    } catch (e) { alert('Connection error'); }
+    finally { setProcessing(false); }
   };
 
   const handleDevLogin = async () => {
@@ -2294,19 +2337,12 @@ function App() {
                             )}
                          </td>
                          <td style={{textAlign:'center'}}>
-                            <select style={{...smallBtn, background:'#0f172a', padding:'8px 12px'}} onChange={async (event) => {
-                               const bId = event.target.value;
-                               if(!bId) return;
-                               await fetch(`${activeApiBase}/assignments?tenantId=${e.tenantId}`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
-                                  body: JSON.stringify({ employeeId: e.employeeId, departmentId: bId })
-                               });
-                               loadInitialData();
-                            }}>
-                               <option value="">Update Assignment...</option>
-                               {departments.filter(d => d.tenantId === e.tenantId).map(d => <option key={d.departmentId} value={d.departmentId}>{d.name}</option>)}
-                            </select>
+                            <button
+                              onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranchIds(getAssignedDepartmentIds(e)); setIsAssignModalOpen(true); }}
+                              style={{...smallBtn, background:'#3b82f6', padding:'8px 12px'}}
+                            >
+                              MANAGE ASSIGNMENT
+                            </button>
                          </td>
                       </tr>
                     ))}
@@ -2315,6 +2351,34 @@ function App() {
            </div>
         </div>
       </div>
+      )}
+
+      {isAssignModalOpen && selectedAssignEmp && (
+        <div className="modal-overlay">
+          <div className="modal-content fade-in" style={{maxWidth:'560px'}}>
+            <h2 style={{marginTop:0, color:'#3b82f6', fontWeight:'900'}}>🔗 Multi-Branch Access</h2>
+            <div style={{background:'rgba(59, 130, 246, 0.05)', padding:'15px', borderRadius:'15px', marginBottom:'20px', border:'1px solid rgba(59, 130, 246, 0.2)'}}>
+              <p style={{color:'#94a3b8', margin:'0 0 5px 0', fontSize:'0.75rem', fontWeight:'800'}}>CONFIGURING FOR:</p>
+              <h3 style={{margin:0, color:'white', fontSize:'1.1rem', fontWeight:'900'}}>{selectedAssignEmp.name} (ID: {selectedAssignEmp.employeeId})</h3>
+            </div>
+            <div style={{display:'grid', gap:'10px', maxHeight:'280px', overflowY:'auto', padding:'10px', border:'1px solid #334155', borderRadius:'12px', background:'rgba(15, 23, 42, 0.8)'}}>
+              {departments.filter(d => d.tenantId === selectedAssignEmp.tenantId).map(d => (
+                <label key={d.departmentId} style={{display:'flex', alignItems:'center', gap:'10px', color:'white', cursor:'pointer', fontSize:'0.95rem'}}>
+                  <input
+                    type="checkbox"
+                    checked={selectedAssignBranchIds.includes(d.departmentId)}
+                    onChange={() => toggleAssignBranchSelection(d.departmentId)}
+                  />
+                  <span>{d.name} ({d.radiusMeters || 50}m)</span>
+                </label>
+              ))}
+            </div>
+            <div style={{display:'flex', gap:'12px', marginTop:'22px'}}>
+              <button onClick={saveAssignment} style={{flex:1, padding:'12px 16px', border:'none', borderRadius:'10px', background:'#3b82f6', color:'white', fontWeight:'900', cursor:'pointer'}}>SAVE ACCESS</button>
+              <button onClick={() => setIsAssignModalOpen(false)} style={{padding:'12px 16px', border:'1px solid #334155', borderRadius:'10px', background:'transparent', color:'#94a3b8', cursor:'pointer'}}>CANCEL</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'assign-schedule' && (

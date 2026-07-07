@@ -269,6 +269,19 @@ const tenantGuard = (req, res, next) => {
   next();
 };
 
+function normalizeAssignedDepartmentIds(assignments, employeeId, tenantId) {
+  const assignment = (assignments || []).find(a =>
+    (a.employeeId || '').toString().toLowerCase() === (employeeId || '').toString().toLowerCase() &&
+    (a.tenantId || '').toString().toLowerCase() === (tenantId || '').toString().toLowerCase()
+  );
+
+  if (!assignment) return [];
+  if (Array.isArray(assignment.departmentIds)) return assignment.departmentIds.filter(Boolean);
+  if (Array.isArray(assignment.departments)) return assignment.departments.filter(Boolean);
+  if (assignment.departmentId) return [assignment.departmentId];
+  return [];
+}
+
 app.use('/portal/:tenantId', express.static(webAdminDist));
 
 // --- API ENDPOINTS ---
@@ -397,6 +410,10 @@ app.get('/api/master/employees', async (req, res) => {
 app.get('/api/master/departments', async (req, res) => {
   const data = await loadData();
   res.json(data.departments);
+});
+app.get('/api/master/assignments', async (req, res) => {
+  const data = await loadData();
+  res.json(data.assignments || []);
 });
 app.get('/api/master/org-units', async (req, res) => {
   const data = await loadData();
@@ -641,21 +658,28 @@ app.get('/api/assignments', tenantGuard, async (req, res) => {
 app.post('/api/assignments', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.assignments) data.assignments = [];
-  const { employeeId, departmentId } = req.body;
+  const { employeeId, departmentId, departmentIds } = req.body;
   const tenantId = req.tenantId || 'master';
+  const selectedIds = (Array.isArray(departmentIds) ? departmentIds : (departmentId ? [departmentId] : [])).filter(Boolean);
 
-  // Find existing or add new
-  const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
-  if (index !== -1) {
-    data.assignments[index].departmentId = departmentId;
-  } else {
-    data.assignments.push({ employeeId, departmentId, tenantId });
+  if (!employeeId || selectedIds.length === 0) {
+    return res.status(400).json({ error: 'Employee and at least one branch are required.' });
   }
 
-  // Also update branchName in employee object for easier access
+  const index = data.assignments.findIndex(a => a.employeeId === employeeId && a.tenantId === tenantId);
+  const normalizedAssignment = { employeeId, tenantId, departmentIds: selectedIds, departmentId: selectedIds[0] };
+
+  if (index !== -1) {
+    data.assignments[index] = { ...data.assignments[index], ...normalizedAssignment };
+  } else {
+    data.assignments.push(normalizedAssignment);
+  }
+
   const emp = data.employees.find(e => e.employeeId === employeeId && e.tenantId === tenantId);
-  const dept = data.departments.find(d => d.departmentId === departmentId && d.tenantId === tenantId);
-  if (emp && dept) emp.branchName = dept.name;
+  const assignedDepartments = (data.departments || []).filter(d => selectedIds.includes(d.departmentId) && d.tenantId === tenantId);
+  if (emp) {
+    emp.branchName = assignedDepartments.map(d => d.name).join(', ') || 'Unassigned';
+  }
 
   await saveData(data);
   res.json({ success: true });
@@ -723,9 +747,9 @@ app.post('/api/mobile/login', async (req, res) => {
     await saveData(data);
   }
 
-  // Find branch assignment
-  const assign = (data.assignments || []).find(a => a.employeeId === emp.employeeId && a.tenantId === emp.tenantId);
-  const branch = assign ? data.departments.find(d => d.departmentId === assign.departmentId) : null;
+  const assignedIds = normalizeAssignedDepartmentIds(data.assignments, emp.employeeId, emp.tenantId);
+  const assignedDepartments = (data.departments || []).filter(d => assignedIds.includes(d.departmentId) && d.tenantId === emp.tenantId);
+  const primaryBranch = assignedDepartments[0] || null;
 
   res.json({
     success: true,
@@ -735,7 +759,8 @@ app.post('/api/mobile/login', async (req, res) => {
       name: emp.name,
       tenantId: emp.tenantId,
       companyName: user.companyName,
-      branch: branch || { name: 'Unassigned', radiusMeters: 50 }
+      branch: primaryBranch || { name: 'Unassigned', radiusMeters: 50 },
+      branches: assignedDepartments.map(d => ({ id: d.departmentId, name: d.name, radiusMeters: d.radiusMeters }))
     }
   });
 });

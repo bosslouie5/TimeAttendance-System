@@ -56,7 +56,8 @@ function App() {
   const [isEditingEmp, setIsEditingEmp] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedAssignEmp, setSelectedAssignEmp] = useState(null);
-  const [selectedAssignBranch, setSelectedAssignBranch] = useState('');
+  const [selectedAssignBranchIds, setSelectedAssignBranchIds] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
   const [empId, setEmpId] = useState('');
   const [empName, setEmpName] = useState('');
@@ -142,13 +143,14 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      const [e, b, o, l, pt, sc] = await Promise.all([
+      const [e, b, o, l, pt, sc, a] = await Promise.all([
         requestJson('/employees'),
         requestJson('/departments'),
         requestJson('/org-units'),
         requestJson('/logs'),
         requestJson('/position-titles'),
-        requestJson('/schedules')
+        requestJson('/schedules'),
+        requestJson('/assignments')
       ]);
       setEmployees(e || []);
       setDepartments(b || []);
@@ -156,7 +158,24 @@ function App() {
       setLogs(l || []);
       setPositionTitles(pt || []);
       setSchedules(sc || []);
+      setAssignments(a || []);
     } catch (err) { console.error('Load failed', err); }
+  };
+
+  const getAssignedDepartmentIds = (emp) => {
+    const assignment = assignments.find(a => a.employeeId === emp.employeeId && a.tenantId === detectedTenantId);
+    if (!assignment) return [];
+    if (Array.isArray(assignment.departmentIds)) return assignment.departmentIds.filter(Boolean);
+    if (assignment.departmentId) return [assignment.departmentId];
+    return [];
+  };
+
+  const toggleAssignBranchSelection = (departmentId) => {
+    setSelectedAssignBranchIds(prev =>
+      prev.includes(departmentId)
+        ? prev.filter(id => id !== departmentId)
+        : [...prev, departmentId]
+    );
   };
 
   const handleLogin = async () => {
@@ -451,23 +470,24 @@ function App() {
   };
 
   const saveAssignment = async () => {
-    if (!selectedAssignBranch) return alert('Select a branch first');
-    setStatus('Assigning branch...');
+    if (!selectedAssignEmp) return;
+    if (selectedAssignBranchIds.length === 0) return alert('Select at least one branch');
+    setStatus('Assigning branches...');
     try {
       await requestJson('/assignments', {
         method: 'POST',
         body: JSON.stringify({
           employeeId: selectedAssignEmp.employeeId,
-          departmentId: selectedAssignBranch,
+          departmentIds: selectedAssignBranchIds,
           tenantId: detectedTenantId
         })
       });
-      setStatus('Branch Assigned! ✓');
+      setStatus('Branches Assigned! ✓');
       setIsAssignModalOpen(false);
       loadInitialData();
     } catch (e) {
-      alert('Failed to assign branch');
-      setStatus('Error assigning branch');
+      alert('Failed to assign branches');
+      setStatus('Error assigning branches');
     }
   };
 
@@ -1661,7 +1681,7 @@ function App() {
                       </td>
                       <td style={{textAlign:'center'}}>
                         <button
-                          onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranch(''); setIsAssignModalOpen(true); }}
+                          onClick={() => { setSelectedAssignEmp(e); setSelectedAssignBranchIds(getAssignedDepartmentIds(e)); setIsAssignModalOpen(true); }}
                           className="btn-edit"
                           style={{padding:'10px 20px', borderRadius: '10px'}}
                         >
@@ -1791,17 +1811,19 @@ function App() {
             </div>
 
             <div className="form-group">
-              <label>SELECT OFFICE BRANCH</label>
-              <select
-                value={selectedAssignBranch}
-                onChange={e => setSelectedAssignBranch(e.target.value)}
-                style={{width: '100%', fontSize: '1rem', padding: '15px'}}
-              >
-                <option value="">-- Choose Secure Location --</option>
+              <label>SELECT OFFICE BRANCHES</label>
+              <div style={{display:'grid', gap:'10px', maxHeight:'260px', overflowY:'auto', padding:'10px', border:'1px solid #334155', borderRadius:'12px', background:'rgba(15, 23, 42, 0.8)'}}>
                 {departments.map(d => (
-                  <option key={d.departmentId} value={d.departmentId}>{d.name} ({d.radiusMeters}m Geofence)</option>
+                  <label key={d.departmentId} style={{display:'flex', alignItems:'center', gap:'10px', color:'white', cursor:'pointer', fontSize:'0.95rem'}}>
+                    <input
+                      type="checkbox"
+                      checked={selectedAssignBranchIds.includes(d.departmentId)}
+                      onChange={() => toggleAssignBranchSelection(d.departmentId)}
+                    />
+                    <span>{d.name} ({d.radiusMeters || 50}m Geofence)</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             <div style={{display:'flex', gap:'15px', marginTop:'40px'}}>
