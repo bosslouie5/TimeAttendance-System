@@ -127,12 +127,12 @@ app.get('/api/master/download-apk/:filename', (req, res) => {
 // --- DATABASE UTILS ---
 async function loadData() {
   const db = await getDb();
-  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [] };
+  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [], leaves: [], announcements: [] };
 
   if (db) {
-    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules'];
+    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements'];
     for (const col of collections) {
-      data[col] = await db.collection(col).find({}).toArray();
+      try { data[col] = await db.collection(col).find({}).toArray(); } catch (e) { data[col] = []; }
     }
   } else if (fs.existsSync(DB_PATH)) {
     try {
@@ -177,10 +177,9 @@ async function loadData() {
 async function saveData(data) {
   const db = await getDb();
   if (db) {
-    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules'];
+    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements'];
     for (const col of collections) {
       if (data[col]) {
-        // Multi-tenant safe: Wipe only if data is complete or handle per-tenant in future
         await db.collection(col).deleteMany({});
         if (data[col].length > 0) await db.collection(col).insertMany(data[col]);
       }
@@ -266,7 +265,7 @@ function matchIp(client, allowed) {
 }
 
 const tenantGuard = (req, res, next) => {
-  const tid = req.headers['x-tenant-id'] || req.query.tenantId;
+  const tid = (req.headers['x-tenant-id'] || req.query.tenantId || req.query.tenant || req.params.tenantId || '').toString().trim();
   req.tenantId = tid;
   next();
 };
@@ -334,7 +333,7 @@ app.post('/api/auth/web-login', async (req, res) => {
     const currentPermissions = user.permissions || [];
     const permissionsToReturn = (currentPermissions && currentPermissions.length > 0) ? currentPermissions : ALL_MODULES;
 
-    res.json({ success: true, user: { ...user, tenantId: finalTenantId, permissions: permissionsToReturn } });
+    res.json({ success: true, user: { ...user, tenantId: finalTenantId, permissions: permissionsToReturn, employeeId: user.employeeId || null } });
   } else {
     console.warn(`[AUTH] Login failed for user: ${username}`);
     res.status(401).json({ error: 'Invalid Credentials' });
@@ -727,6 +726,178 @@ app.get('/api/devices', tenantGuard, async (req, res) => {
   const data = await loadData();
   // Devices are employees with registeredDeviceId
   res.json(data.employees.filter(e => e.tenantId === (req.tenantId || 'master') && (e.registeredDeviceId || e.deviceId)));
+});
+
+// --- HR Leaves API ---
+app.get('/api/hr/leaves', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId || req.query.tenant || 'master';
+  const filtered = (data.leaves || []).filter(l => (tenantId === 'master' || !tenantId) ? true : (l.tenantId === tenantId));
+  res.json(filtered);
+});
+
+app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  if (!data.leaves) data.leaves = [];
+  const tenantId = req.tenantId || req.body.tenantId || 'master';
+  const newLeave = {
+    ...req.body,
+    id: `leave-${Date.now()}`,
+    status: req.body.status || 'Pending',
+    tenantId,
+    reportsTo: req.body.reportsTo || req.body.manager || '',
+    createdAt: new Date().toISOString()
+  };
+  data.leaves.push(newLeave);
+  await saveData(data);
+  res.json(newLeave);
+});
+
+app.put('/api/hr/leaves/:id/status', tenantGuard, async (req, res) => {
+  const { id } = req.params;
+  const { status, approvedBy } = req.body;
+  const data = await loadData();
+  let updated = null;
+  data.leaves = (data.leaves || []).map(l => {
+    if (l.id === id && l.tenantId === (req.tenantId || l.tenantId || 'master')) {
+      updated = {
+        ...l,
+        status,
+        approvedBy: approvedBy || l.approvedBy || 'admin',
+        updatedAt: new Date().toISOString()
+      };
+      return updated;
+    }
+    return l;
+  });
+  if (updated) {
+    await saveData(data);
+    res.json(updated);
+  } else res.status(404).json({ error: 'Leave not found' });
+});
+
+// Get leaves for approval (subordinates' leave requests for this manager)
+app.get('/api/hr/leaves/for-approval/:employeeId', tenantGuard, async (req, res) => {
+  const { employeeId } = req.params;
+  const data = await loadData();
+  const tenantId = req.tenantId || 'master';
+  
+  // Find all employees who report to this manager
+  const subordinates = (data.employees || []).filter(e => 
+    e.reportsTo === employeeId && e.tenantId === tenantId
+  );
+  
+  // Get leaves from subordinates that need approval
+  const subordinateIds = subordinates.map(s => s.employeeId);
+  const leavesForApproval = (data.leaves || []).filter(l => 
+    subordinateIds.includes(l.employeeId) && 
+    l.tenantId === tenantId &&
+    (l.status === 'Pending' || l.status === 'pending')
+  );
+  
+  res.json(leavesForApproval);
+});
+
+// Get subordinates for a specific employee (manager)
+app.get('/api/employees/subordinates/:employeeId', tenantGuard, async (req, res) => {
+  const { employeeId } = req.params;
+  const data = await loadData();
+  const tenantId = req.tenantId || 'master';
+  
+  const subordinates = (data.employees || []).filter(e => 
+    e.reportsTo === employeeId && e.tenantId === tenantId
+  );
+  
+  res.json(subordinates);
+});
+
+// Manager approval of leave request
+app.put('/api/hr/leaves/:id/manager-approve', tenantGuard, async (req, res) => {
+  const { id } = req.params;
+  const { status, managerId, managerName } = req.body;
+  const data = await loadData();
+  let updated = null;
+  
+  data.leaves = (data.leaves || []).map(l => {
+    if (l.id === id && l.tenantId === (req.tenantId || l.tenantId || 'master')) {
+      updated = {
+        ...l,
+        status,
+        approvedBy: managerName || managerId || 'manager',
+        managerId: managerId || '',
+        managerApprovedAt: new Date().toISOString()
+      };
+      return updated;
+    }
+    return l;
+  });
+  
+  if (updated) {
+    await saveData(data);
+    res.json(updated);
+  } else res.status(404).json({ error: 'Leave not found' });
+});
+
+app.get('/api/hr/announcements', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId || req.query.tenant || 'master';
+  const filtered = (data.announcements || []).filter(a => (tenantId === 'master' || !tenantId) ? true : (a.tenantId === tenantId));
+  res.json(filtered);
+});
+
+app.post('/api/hr/announcements', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  if (!data.announcements) data.announcements = [];
+  const tenantId = req.tenantId || req.body.tenantId || 'master';
+  const newAnnouncement = { ...req.body, id: `announcement-${Date.now()}`, tenantId, createdAt: new Date().toISOString() };
+  data.announcements.push(newAnnouncement);
+  await saveData(data);
+  res.json(newAnnouncement);
+});
+
+app.get('/api/tenant-users', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId;
+  const users = (data.users || []).filter(u => (u.tenantId || u.username) === tenantId);
+  res.json(users);
+});
+
+app.post('/api/tenant-users', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId;
+  const existingTenant = data.users.find(u => (u.tenantId || u.username) === tenantId);
+  if (!existingTenant) return res.status(404).json({ error: 'Tenant not found' });
+
+  const username = (req.body.username || '').trim();
+  const password = req.body.password;
+  const displayName = (req.body.displayName || '').trim();
+  const employeeId = (req.body.employeeId || '').trim();
+
+  if (!username || !password || !displayName) {
+    return res.status(400).json({ error: 'Username, password, and display name are required.' });
+  }
+
+  const usernameExists = data.users.some(u => u.username.toLowerCase() === username.toLowerCase() && (u.tenantId || u.username) === tenantId);
+  if (usernameExists) {
+    return res.status(400).json({ error: 'A user with that username already exists for this tenant.' });
+  }
+
+  const newUser = {
+    username,
+    password,
+    displayName,
+    tenantId,
+    employeeId,
+    companyName: existingTenant.companyName,
+    permissions: Array.isArray(req.body.permissions) && req.body.permissions.length > 0 ? req.body.permissions : existingTenant.permissions || ALL_MODULES,
+    adminIp: existingTenant.adminIp,
+    publicIp: existingTenant.publicIp,
+    portalUrl: existingTenant.portalUrl || `http://${getNetworkIP()}:${PORT}/portal/${tenantId}`
+  };
+
+  data.users.push(newUser);
+  await saveData(data);
+  res.json(newUser);
 });
 
 app.post('/api/device/reset', tenantGuard, async (req, res) => {

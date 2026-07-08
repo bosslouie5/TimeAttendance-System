@@ -112,7 +112,7 @@ function App() {
   const [endTime, setEndTime] = useState('17:00');
   const [gracePeriod, setGracePeriod] = useState('15');
   const [selectedScheduleTenant, setSelectedScheduleTenant] = useState('ALL');
-  const [selectedAssignScheduleTenant, setSelectedAssignScheduleTenant] = useState('ALL');
+  const [selectedAssignScheduleTenant, setSelectedAssignScheduleTenant] = useState('');
   const [selectedDevicesTenant, setSelectedDevicesTenant] = useState('ALL');
 
   const [newPositionTitle, setNewPositionTitle] = useState('');
@@ -138,7 +138,7 @@ function App() {
   const [isAssignModalOpenDev, setIsAssignModalOpenDev] = useState(false);
   const [selectedAssignEmpDev, setSelectedAssignEmpDev] = useState(null);
   const [selectedAssignBranchesDev, setSelectedAssignBranchesDev] = useState([]);
-  const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('ALL');
+  const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('');
   const [activeApiBase, setActiveApiBase] = useState(null);
   const [tunnelBase, setTunnelBase] = useState(null);
   const [saasStatus, setSaasStatus] = useState('Connecting...');
@@ -813,9 +813,12 @@ function App() {
   };
 
   const getFilteredLogs = () => {
-    const tenantToUse = selectedReportsTenant || globalTenantFilter;
+    const hasTenantSelection = Boolean(selectedReportsTenant && selectedReportsTenant !== 'ALL');
+    if (!hasTenantSelection) return [];
+
+    const tenantToUse = selectedReportsTenant;
     return logs.filter(l => {
-      const isTenantMatch = tenantToUse === 'ALL' || l.tenantId === tenantToUse;
+      const isTenantMatch = l.tenantId === tenantToUse;
       const logDate = new Date(l.timestamp);
       const isAfterStart = !reportStartDate || logDate >= new Date(reportStartDate);
       const isBeforeEnd = !reportEndDate || logDate <= new Date(new Date(reportEndDate).setHours(23, 59, 59));
@@ -832,7 +835,10 @@ function App() {
   };
 
   const exportReportExcelFile = () => {
-    const tenantToUse = selectedReportsTenant || globalTenantFilter;
+    const hasTenantSelection = Boolean(selectedReportsTenant && selectedReportsTenant !== 'ALL');
+    if (!hasTenantSelection) return alert('Please select a tenant first.');
+
+    const tenantToUse = selectedReportsTenant;
     const data = getFilteredLogs();
     if (data.length === 0) return alert('No data to export');
 
@@ -943,6 +949,9 @@ function App() {
   };
 
   const viewReportPDF = () => {
+    const hasTenantSelection = Boolean(selectedReportsTenant && selectedReportsTenant !== 'ALL');
+    if (!hasTenantSelection) return alert('Please select a tenant first.');
+
     const data = getFilteredLogs();
     if (data.length === 0) return alert('No data to generate PDF');
 
@@ -2319,7 +2328,7 @@ function App() {
               <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
                 <label style={{color:'#94a3b8', fontSize:'0.7rem', fontWeight:'bold', textTransform:'uppercase'}}>Tenant</label>
                 <select style={{...inputStyle, marginBottom:0}} value={selectedReportsTenant} onChange={e => setSelectedReportsTenant(e.target.value)}>
-                  <option value="">-- Use Global Filter --</option>
+                  <option value="">-- Select a tenant --</option>
                   {users.map(u => (
                     <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                       {u.companyName} ({u.tenantId || u.username})
@@ -2343,11 +2352,11 @@ function App() {
                     <option value="">-- All Branches --</option>
                     {(departments || [])
                       .filter(d => {
-                        const tenantToUse = selectedReportsTenant || globalTenantFilter;
-                        return tenantToUse === 'ALL' || d.tenantId === tenantToUse;
+                        const tenantToUse = selectedReportsTenant;
+                        return Boolean(tenantToUse) && d.tenantId === tenantToUse;
                       })
                       .map(d => (
-                      <option key={d.id || d.departmentId} value={d.name}>{d.name} {(selectedReportsTenant || globalTenantFilter) === 'ALL' ? `(${users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId})` : ''}</option>
+                      <option key={d.id || d.departmentId} value={d.name}>{d.name} {selectedReportsTenant ? `(${users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId})` : ''}</option>
                     ))}
                   </select>
                 ) : (
@@ -2383,7 +2392,14 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {getFilteredLogs().length === 0 ? (
+                  {!selectedReportsTenant ? (
+                    <tr>
+                      <td colSpan="10" style={{textAlign:'center', padding:'60px', color:'#64748b', fontWeight: 'bold'}}>
+                        <div style={{fontSize: '3rem', marginBottom: '15px'}}>📈</div>
+                        Select a tenant to view attendance logs.
+                      </td>
+                    </tr>
+                  ) : getFilteredLogs().length === 0 ? (
                     <tr>
                       <td colSpan="10" style={{textAlign:'center', padding:'60px', color:'#64748b', fontWeight: 'bold'}}>
                         <div style={{fontSize: '3rem', marginBottom: '15px'}}>📈</div>
@@ -2502,45 +2518,51 @@ function App() {
               </div>
             </div>
           <div style={{maxHeight:'65vh', overflowY:'auto'}}>
-            <table>
-              <thead>
-                <tr><th>Tenant</th><th>Employee</th><th>Device Info</th><th>Linked Date</th><th>Action</th></tr>
-              </thead>
-              <tbody>
-                {employees.filter(e => (selectedDevicesTenant === 'ALL' || e.tenantId === selectedDevicesTenant) && (e.registeredDeviceId || e.deviceId)).map((e, idx) => (
-                  <tr key={idx}>
-                    <td>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                    <td style={{fontWeight:'bold'}}>{e.name}</td>
-                    <td>
-                      <div style={{fontWeight:'bold', color:'#10b981'}}>{e.registeredDeviceName || 'Mobile Device'}</div>
-                      <div style={{fontSize:'0.6rem', color:'#64748b'}}>{e.registeredDeviceId || e.deviceId}</div>
-                    </td>
-                    <td style={{fontSize:'0.8rem'}}>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : 'N/A'}</td>
-                    <td>
-                      <button onClick={async () => {
-                        if(!confirm(`Are you sure you want to UNLINK the device for ${e.name}?`)) return;
-                        setStatus('Unlinking device...');
-                        try {
-                          const res = await fetch(`${activeApiBase}/device/reset?tenantId=${e.tenantId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
-                            body: JSON.stringify({ employeeId: e.employeeId })
-                          });
-                          if (res.ok) {
-                            setStatus('Device Unlinked ✓');
-                            await loadInitialData();
-                          } else {
-                            alert('Unlink failed');
+            {selectedDevicesTenant === 'ALL' ? (
+              <div style={{padding:'24px', border:'1px dashed #334155', borderRadius:'16px', color:'#64748b', background:'#0f172a'}}>
+                Select a specific tenant to view its linked devices.
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr><th>Tenant</th><th>Employee</th><th>Device Info</th><th>Linked Date</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {employees.filter(e => (selectedDevicesTenant === 'ALL' || e.tenantId === selectedDevicesTenant) && (e.registeredDeviceId || e.deviceId)).map((e, idx) => (
+                    <tr key={idx}>
+                      <td>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                      <td style={{fontWeight:'bold'}}>{e.name}</td>
+                      <td>
+                        <div style={{fontWeight:'bold', color:'#10b981'}}>{e.registeredDeviceName || 'Mobile Device'}</div>
+                        <div style={{fontSize:'0.6rem', color:'#64748b'}}>{e.registeredDeviceId || e.deviceId}</div>
+                      </td>
+                      <td style={{fontSize:'0.8rem'}}>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : 'N/A'}</td>
+                      <td>
+                        <button onClick={async () => {
+                          if(!confirm(`Are you sure you want to UNLINK the device for ${e.name}?`)) return;
+                          setStatus('Unlinking device...');
+                          try {
+                            const res = await fetch(`${activeApiBase}/device/reset?tenantId=${e.tenantId}`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
+                              body: JSON.stringify({ employeeId: e.employeeId })
+                            });
+                            if (res.ok) {
+                              setStatus('Device Unlinked ✓');
+                              await loadInitialData();
+                            } else {
+                              alert('Unlink failed');
+                            }
+                          } catch (err) {
+                            alert('Connection error');
                           }
-                        } catch (err) {
-                          alert('Connection error');
-                        }
-                      }} style={{...smallBtn, background:'#ef4444'}}>Unlink</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        }} style={{...smallBtn, background:'#ef4444'}}>Unlink</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
@@ -2556,7 +2578,7 @@ function App() {
                 <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
                   <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                   <select value={selectedAssignBranchTenant} onChange={e => setSelectedAssignBranchTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'240px', padding:'10px', height:'42px'}}>
-                    <option value="ALL">All Tenants</option>
+                    <option value="">-- Select a tenant --</option>
                     {users.map(u => (
                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                         {u.companyName} ({u.tenantId || u.username})
@@ -2581,43 +2603,65 @@ function App() {
                     <tr><th>Tenant</th><th>ID</th><th>Employee</th><th>Current Branch</th><th style={{textAlign:'center'}}>Action</th></tr>
                  </thead>
                  <tbody>
-                    {employees.filter(e => {
-                      const s = empSearch.toLowerCase();
-                      const tenantToUse = selectedAssignBranchTenant === 'ALL' ? globalTenantFilter : selectedAssignBranchTenant;
-                      const tenantMatch = tenantToUse === 'ALL' || e.tenantId === tenantToUse;
-                      return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
-                    }).map((e, idx) => (
-                      <tr key={idx}>
-                         <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                         <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
-                         <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
-                         <td>
-                            {e.branchName ? (
-                              <span style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)'}}>📍 {e.branchName}</span>
-                            ) : (
-                              <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Branch Assigned</span>
-                            )}
-                         </td>
-                         <td style={{textAlign:'center'}}>
-                           <button onClick={async () => {
-                             // prepare modal for this employee
-                             try {
-                              const baseApi = activeApiBase || '/api';
-                              const res = await fetch(`${baseApi}/assignments?tenantId=${e.tenantId}`, { headers: { 'x-tenant-id': e.tenantId } });
-                              const allAssigns = await res.json();
-                              const mine = (allAssigns || []).filter(a => a.employeeId === e.employeeId).map(a => a.departmentId);
-                              setSelectedAssignEmpDev(e);
-                              setSelectedAssignBranchesDev(mine);
-                              setIsAssignModalOpenDev(true);
-                             } catch (err) {
-                              setSelectedAssignEmpDev(e);
-                              setSelectedAssignBranchesDev([]);
-                              setIsAssignModalOpenDev(true);
-                             }
-                           }} style={{...smallBtn, background:'#3b82f6', color:'white'}}>MANAGE</button>
-                         </td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      if (!selectedAssignBranchTenant) {
+                        return (
+                          <tr>
+                            <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                              Select a tenant to view branch assignment data.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      const filtered = employees.filter(e => {
+                        const s = empSearch.toLowerCase();
+                        const tenantMatch = e.tenantId === selectedAssignBranchTenant;
+                        return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                              No employees found for the selected tenant.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map((e, idx) => (
+                        <tr key={idx}>
+                           <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                           <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                           <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
+                           <td>
+                              {e.branchName ? (
+                                <span style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)'}}>📍 {e.branchName}</span>
+                              ) : (
+                                <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Branch Assigned</span>
+                              )}
+                           </td>
+                           <td style={{textAlign:'center'}}>
+                             <button onClick={async () => {
+                               try {
+                                const baseApi = activeApiBase || '/api';
+                                const res = await fetch(`${baseApi}/assignments?tenantId=${e.tenantId}`, { headers: { 'x-tenant-id': e.tenantId } });
+                                const allAssigns = await res.json();
+                                const mine = (allAssigns || []).filter(a => a.employeeId === e.employeeId).map(a => a.departmentId);
+                                setSelectedAssignEmpDev(e);
+                                setSelectedAssignBranchesDev(mine);
+                                setIsAssignModalOpenDev(true);
+                               } catch (err) {
+                                setSelectedAssignEmpDev(e);
+                                setSelectedAssignBranchesDev([]);
+                                setIsAssignModalOpenDev(true);
+                               }
+                             }} style={{...smallBtn, background:'#3b82f6', color:'white'}}>MANAGE</button>
+                           </td>
+                        </tr>
+                      ));
+                    })()}
                  </tbody>
               </table>
            </div>
@@ -2696,7 +2740,7 @@ function App() {
                 <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
                   <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                   <select value={selectedAssignScheduleTenant} onChange={e => setSelectedAssignScheduleTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'220px', padding:'10px', height:'42px'}}>
-                    <option value="ALL">All Tenants</option>
+                    <option value="">-- Select a tenant --</option>
                     {users.map(u => (
                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName} ({u.tenantId || u.username})</option>
                     ))}
@@ -2716,31 +2760,55 @@ function App() {
                   <tr><th>Tenant</th><th>ID</th><th>Employee</th><th>Assigned Schedule</th><th style={{textAlign:'center'}}>Action</th></tr>
                 </thead>
                 <tbody>
-                  {employees.filter(e => {
-                    const s = empSearch.toLowerCase();
-                    const tenantMatch = selectedAssignScheduleTenant === 'ALL' || e.tenantId === selectedAssignScheduleTenant;
-                    return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
-                  }).map((e, idx) => (
-                    <tr key={idx}>
-                      <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                      <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
-                      <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
-                      <td>
-                        {e.schedule ? (
-                          <span style={{background:'rgba(245, 158, 11, 0.1)', color:'#f59e0b', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(245, 158, 11, 0.3)'}}>⏰ {e.schedule}</span>
-                        ) : (
-                          <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Schedule Assigned</span>
-                        )}
-                      </td>
-                      <td style={{textAlign:'center'}}>
-                        <button onClick={() => {
-                          setSelectedEmpForSchedule(e);
-                          setNewScheduleForEmp(e.schedule || '');
-                          setIsAssignScheduleModalOpen(true);
-                        }} style={{...smallBtn, background:'#3b82f6'}}>Change Schedule</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    if (!selectedAssignScheduleTenant) {
+                      return (
+                        <tr>
+                          <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                            Select a tenant to view assign schedule data.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    const filtered = employees.filter(e => {
+                      const s = empSearch.toLowerCase();
+                      const tenantMatch = e.tenantId === selectedAssignScheduleTenant;
+                      return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                            No employees found for the selected tenant.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filtered.map((e, idx) => (
+                      <tr key={idx}>
+                        <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                        <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                        <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
+                        <td>
+                          {e.schedule ? (
+                            <span style={{background:'rgba(245, 158, 11, 0.1)', color:'#f59e0b', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(245, 158, 11, 0.3)'}}>⏰ {e.schedule}</span>
+                          ) : (
+                            <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Schedule Assigned</span>
+                          )}
+                        </td>
+                        <td style={{textAlign:'center'}}>
+                          <button onClick={() => {
+                            setSelectedEmpForSchedule(e);
+                            setNewScheduleForEmp(e.schedule || '');
+                            setIsAssignScheduleModalOpen(true);
+                          }} style={{...smallBtn, background:'#3b82f6'}}>Change Schedule</button>
+                        </td>
+                      </tr>
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -2786,77 +2854,103 @@ function App() {
       {activeTab === 'account-management' && (
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
-          <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
+          <div style={{display:'grid', gridTemplateColumns:'280px 1fr', gap:'20px'}}>
              <div className="glass-card" style={{padding:'25px', borderRadius:'20px', border:'1px solid #334155', position:'sticky', top:'20px', height:'fit-content'}}>
-                <h2 style={{marginTop:0, display:'flex', alignItems:'center', gap:'12px'}}>
-                  {editingDevUser ? '📝 Edit Dev Account' : '🔑 New Dev Account'}
-                </h2>
-                <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>
-                  {editingDevUser ? `Updating credentials for ${editingDevUser.username}` : 'Create credentials for Dev Portal access.'}
-                </p>
-
-                <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
-                  <div>
-                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>DISPLAY NAME</label>
-                    <input style={{...inputStyle, marginBottom:0}} placeholder="e.g. Admin Juan" value={newDevDisplay} onChange={e => setNewDevDisplay(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>USERNAME</label>
-                    <input style={{...inputStyle, marginBottom:0}} placeholder="Username" value={newDevUser} onChange={e => setNewDevUser(e.target.value)} disabled={!!editingDevUser} />
-                  </div>
-                  <div>
-                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>PASSWORD</label>
-                    <input style={{...inputStyle, marginBottom:0}} type="password" placeholder="Password" value={newDevPass} onChange={e => setNewDevPass(e.target.value)} />
-                  </div>
-
-                  <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
-                    {editingDevUser && (
-                      <button onClick={() => {
-                        setEditingDevUser(null);
-                        setNewDevUser(''); setNewDevPass(''); setNewDevDisplay('');
-                      }} style={{...smallBtn, background:'#334155', flex:1, padding:'15px'}}>Cancel</button>
-                    )}
-                    <button onClick={createDevAccount} className="btn-hover" style={{...addBtn, flex:2, background: editingDevUser ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #2563eb)'}}>
-                      {editingDevUser ? 'Update Account ✓' : 'Create Account'}
-                    </button>
-                  </div>
+                <h3 style={{marginTop:0, marginBottom:'10px'}}>Tenant Directory</h3>
+                <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>Quick access to the tenants linked to this platform.</p>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+                  {users.map((u) => {
+                    const tenantId = u.tenantId || u.username;
+                    const isSelected = (selectedTenant?.tenantId || selectedTenant?.username) === tenantId;
+                    return (
+                      <div key={tenantId} onClick={() => setSelectedTenant(u)} style={{padding:'12px', borderRadius:'12px', background: isSelected ? '#3b82f6' : '#0f172a', border:'1px solid #334155', cursor:'pointer', transition:'all 0.2s ease'}}>
+                        <div style={{fontWeight:'bold', fontSize:'0.9rem'}}>{u.companyName || tenantId}</div>
+                        <div style={{fontSize:'0.7rem', opacity:0.7, marginTop:'4px'}}>{tenantId}</div>
+                      </div>
+                    );
+                  })}
                 </div>
              </div>
 
-             <div className="glass-card" style={{padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
-                <h2 style={{marginTop:0, marginBottom:'25px'}}>Active Dev Accounts</h2>
-                <div style={{maxHeight:'70vh', overflowY:'auto'}} className="custom-scroll">
-                   <table style={{width:'100%', minWidth:'100%'}}>
-                      <thead>
-                         <tr>
-                           <th style={{width:'40%'}}>Display Name</th>
-                           <th style={{width:'30%'}}>Username</th>
-                           <th style={{width:'30%', textAlign:'center'}}>Action</th>
-                         </tr>
-                      </thead>
-                      <tbody>
-                         {devAccounts.map((acc, idx) => (
-                           <tr key={idx} style={{background: editingDevUser?.username === acc.username ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
-                              <td style={{fontWeight:'bold', padding:'20px 12px'}}>
-                                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                                  <div style={{width:'35px', height:'35px', background:'#334155', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.8rem'}}>
-                                    {acc.displayName.charAt(0).toUpperCase()}
-                                  </div>
-                                  {acc.displayName}
-                                </div>
-                              </td>
-                              <td><code style={{background:'#0f172a', padding:'4px 8px', borderRadius:'5px', color:'#3b82f6'}}>{acc.username}</code></td>
-                              <td style={{textAlign:'center'}}>
-                                 <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
-                                   <button onClick={() => prepareEditDev(acc)} className="btn-hover" style={{...smallBtn, background:'#3b82f6', padding:'8px 15px'}}>Edit</button>
-                                   <button onClick={() => deleteDevAccount(acc.username)} className="btn-hover" style={{...smallBtn, background:'#ef444422', color:'#ef4444', border:'1px solid #ef444444', padding:'8px 15px'}}>Remove</button>
-                                 </div>
-                              </td>
+             <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
+               <div className="glass-card" style={{padding:'25px', borderRadius:'20px', border:'1px solid #334155', position:'sticky', top:'20px', height:'fit-content'}}>
+                  <h2 style={{marginTop:0, display:'flex', alignItems:'center', gap:'12px'}}>
+                    {editingDevUser ? '📝 Edit Dev Account' : '🔑 New Dev Account'}
+                  </h2>
+                  <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>
+                    {editingDevUser ? `Updating credentials for ${editingDevUser.username}` : 'Create credentials for Dev Portal access.'}
+                  </p>
+
+                  {selectedTenant && (
+                    <div style={{background:'#3b82f611', border:'1px solid #3b82f644', borderRadius:'12px', padding:'12px', marginBottom:'15px'}}>
+                      <div style={{fontSize:'0.7rem', color:'#60a5fa', fontWeight:'bold', textTransform:'uppercase'}}>Selected Tenant</div>
+                      <div style={{fontWeight:'bold', marginTop:'4px'}}>{selectedTenant.companyName || (selectedTenant.tenantId || selectedTenant.username)}</div>
+                    </div>
+                  )}
+
+                  <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+                    <div>
+                      <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>DISPLAY NAME</label>
+                      <input style={{...inputStyle, marginBottom:0}} placeholder="e.g. Admin Juan" value={newDevDisplay} onChange={e => setNewDevDisplay(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>USERNAME</label>
+                      <input style={{...inputStyle, marginBottom:0}} placeholder="Username" value={newDevUser} onChange={e => setNewDevUser(e.target.value)} disabled={!!editingDevUser} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>PASSWORD</label>
+                      <input style={{...inputStyle, marginBottom:0}} type="password" placeholder="Password" value={newDevPass} onChange={e => setNewDevPass(e.target.value)} />
+                    </div>
+
+                    <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
+                      {editingDevUser && (
+                        <button onClick={() => {
+                          setEditingDevUser(null);
+                          setNewDevUser(''); setNewDevPass(''); setNewDevDisplay('');
+                        }} style={{...smallBtn, background:'#334155', flex:1, padding:'15px'}}>Cancel</button>
+                      )}
+                      <button onClick={createDevAccount} className="btn-hover" style={{...addBtn, flex:2, background: editingDevUser ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #2563eb)'}}>
+                        {editingDevUser ? 'Update Account ✓' : 'Create Account'}
+                      </button>
+                    </div>
+                  </div>
+               </div>
+
+               <div className="glass-card" style={{padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
+                  <h2 style={{marginTop:0, marginBottom:'25px'}}>Active Dev Accounts</h2>
+                  <div style={{maxHeight:'70vh', overflowY:'auto'}} className="custom-scroll">
+                     <table style={{width:'100%', minWidth:'100%'}}>
+                        <thead>
+                           <tr>
+                             <th style={{width:'40%'}}>Display Name</th>
+                             <th style={{width:'30%'}}>Username</th>
+                             <th style={{width:'30%', textAlign:'center'}}>Action</th>
                            </tr>
-                         ))}
-                      </tbody>
-                   </table>
-                </div>
+                        </thead>
+                        <tbody>
+                           {devAccounts.map((acc, idx) => (
+                             <tr key={idx} style={{background: editingDevUser?.username === acc.username ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
+                                <td style={{fontWeight:'bold', padding:'20px 12px'}}>
+                                  <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                                    <div style={{width:'35px', height:'35px', background:'#334155', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.8rem'}}>
+                                      {acc.displayName.charAt(0).toUpperCase()}
+                                    </div>
+                                    {acc.displayName}
+                                  </div>
+                                </td>
+                                <td><code style={{background:'#0f172a', padding:'4px 8px', borderRadius:'5px', color:'#3b82f6'}}>{acc.username}</code></td>
+                                <td style={{textAlign:'center'}}>
+                                   <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
+                                     <button onClick={() => prepareEditDev(acc)} className="btn-hover" style={{...smallBtn, background:'#3b82f6', padding:'8px 15px'}}>Edit</button>
+                                     <button onClick={() => deleteDevAccount(acc.username)} className="btn-hover" style={{...smallBtn, background:'#ef444422', color:'#ef4444', border:'1px solid #ef444444', padding:'8px 15px'}}>Remove</button>
+                                   </div>
+                                </td>
+                             </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
              </div>
           </div>
         </div>

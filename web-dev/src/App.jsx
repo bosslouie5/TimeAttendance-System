@@ -35,6 +35,14 @@ function App() {
   const [systemIp, setSystemIp] = useState('127.0.0.1');
 
   const [appVersion, setAppVersion] = useState('1.0.0');
+  const [leaveRequests, setLeaveRequests] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webdev_hr_leaves') || '[]'); } catch (e) { return []; }
+  });
+  const [hrAnnouncements, setHrAnnouncements] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webdev_hr_announcements') || '[]'); } catch (e) { return []; }
+  });
+  const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' });
 
   const AVAILABLE_PERMISSIONS = [
     { id: 'dashboard', name: 'Dashboard' },
@@ -74,6 +82,14 @@ function App() {
   const [selectedBranchTenant, setSelectedBranchTenant] = useState('');
   const [selectedDeptTenant, setSelectedDeptTenant] = useState('');
   const [selectedPositionTenant, setSelectedPositionTenant] = useState('');
+  const [leavesForApproval, setLeavesForApproval] = useState([]);
+  const [subordinates, setSubordinates] = useState([]);
+  const [isManagerView, setIsManagerView] = useState(false);
+  const [newTenantUser, setNewTenantUser] = useState('');
+  const [newTenantUserPass, setNewTenantUserPass] = useState('');
+  const [newTenantUserDisplay, setNewTenantUserDisplay] = useState('');
+  const [newTenantUserEmployeeId, setNewTenantUserEmployeeId] = useState('');
+  const [tenantUsers, setTenantUsers] = useState([]);
 
   // Employee Management States
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
@@ -112,7 +128,7 @@ function App() {
   const [endTime, setEndTime] = useState('17:00');
   const [gracePeriod, setGracePeriod] = useState('15');
   const [selectedScheduleTenant, setSelectedScheduleTenant] = useState('ALL');
-  const [selectedAssignScheduleTenant, setSelectedAssignScheduleTenant] = useState('ALL');
+  const [selectedAssignScheduleTenant, setSelectedAssignScheduleTenant] = useState('');
   const [selectedDevicesTenant, setSelectedDevicesTenant] = useState('ALL');
 
   const [newPositionTitle, setNewPositionTitle] = useState('');
@@ -138,7 +154,7 @@ function App() {
   const [isAssignModalOpenDev, setIsAssignModalOpenDev] = useState(false);
   const [selectedAssignEmpDev, setSelectedAssignEmpDev] = useState(null);
   const [selectedAssignBranchesDev, setSelectedAssignBranchesDev] = useState([]);
-  const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('ALL');
+  const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('');
   const [activeApiBase, setActiveApiBase] = useState(null);
   const [tunnelBase, setTunnelBase] = useState(null);
   const [saasStatus, setSaasStatus] = useState('Connecting...');
@@ -199,7 +215,224 @@ function App() {
       if (v && v.version) setAppVersion(v.version);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
+
+      // Fetch centralized leaves & announcements (if backend available)
+      try {
+        const tenantQuery = (globalTenantFilter && globalTenantFilter !== 'ALL') ? `?tenant=${encodeURIComponent(globalTenantFilter)}` : '';
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves${tenantQuery}`);
+        if (leavesRes.ok) {
+          const leaves = await leavesRes.json();
+          setLeaveRequests(leaves || []);
+          sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(leaves || []));
+        }
+        const annsRes = await fetch(`${activeApiBase}/hr/announcements${tenantQuery}`);
+        if (annsRes.ok) {
+          const anns = await annsRes.json();
+          setHrAnnouncements(anns || []);
+          sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(anns || []));
+        }
+      } catch (err) {
+        // ignore if API not present or offline
+      }
+
     } catch (e) { setStatus('Sync Error'); }
+  };
+
+  // Poll leaves periodically so web view sees mobile submissions
+  useEffect(() => {
+    if (!activeApiBase) return;
+    const iv = setInterval(() => loadInitialData(), 15000);
+    return () => clearInterval(iv);
+  }, [activeApiBase, globalTenantFilter]);
+
+  useEffect(() => {
+    if (leaveRequests.length === 0) {
+      const seeded = [{
+        id: 'seed-leave-1',
+        employeeId: 'EMP001',
+        employeeName: 'Demo Employee',
+        type: 'Sick Leave',
+        startDate: '2026-07-08',
+        endDate: '2026-07-09',
+        reason: 'Medical checkup',
+        status: 'Pending',
+        tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : 'demo-tenant'
+      }];
+      setLeaveRequests(seeded);
+      sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(seeded));
+    }
+  }, [leaveRequests.length]);
+
+  useEffect(() => {
+    if (hrAnnouncements.length === 0) {
+      const seeded = [{
+        id: 'seed-ann-1',
+        title: 'HR Hub Enabled',
+        message: 'Leave requests and announcements are now available in the web dashboard.',
+        tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : 'demo-tenant'
+      }];
+      setHrAnnouncements(seeded);
+      sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(seeded));
+    }
+  }, [hrAnnouncements.length]);
+
+  const submitLeaveRequest = async (event) => {
+    event.preventDefault();
+    if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason.trim()) {
+      alert('Please fill in the leave details');
+      return;
+    }
+
+    const tenantId = globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || null);
+    if (!tenantId) {
+      alert('Please select a specific tenant before submitting leave requests.');
+      return;
+    }
+
+    const newRequest = {
+      id: `leave-${Date.now()}`,
+      employeeId: currentUser?.username || 'EMP001',
+      employeeName: currentUser?.displayName || 'Demo Employee',
+      type: leaveForm.type,
+      startDate: leaveForm.startDate,
+      endDate: leaveForm.endDate,
+      reason: leaveForm.reason.trim(),
+      reportsTo: leaveForm.reportsTo?.trim() || '',
+      status: 'Pending',
+      tenantId
+    };
+
+    // Try POSTing to backend
+    try {
+      const res = await fetch(`${activeApiBase}/hr/leaves`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, body: JSON.stringify(newRequest) });
+      if (res.ok) {
+        const saved = await res.json();
+        const updated = [saved, ...leaveRequests];
+        setLeaveRequests(updated);
+        sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(updated));
+        setLeaveForm({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
+        setStatus('Leave request submitted ✓');
+        return;
+      }
+    } catch (e) { /* fallback to local */ }
+
+    const updated = [newRequest, ...leaveRequests];
+    setLeaveRequests(updated);
+    sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(updated));
+    setLeaveForm({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
+    setStatus('Leave request saved locally ✓');
+  };
+
+  const updateLeaveRequestStatus = async (id, status) => {
+    const approvedBy = currentUser?.displayName || currentUser?.username || 'Dev Approver';
+    const requestItem = leaveRequests.find(item => item.id === id);
+    const tenantId = requestItem?.tenantId || (globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || null));
+
+    let updatedItem = null;
+    if (tenantId) {
+      try {
+        const res = await fetch(`${activeApiBase}/hr/leaves/${id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+          body: JSON.stringify({ status, approvedBy })
+        });
+        if (res.ok) {
+          updatedItem = await res.json();
+        }
+      } catch (err) {
+        // fallback to local update
+      }
+    }
+
+    const updated = leaveRequests.map(item => item.id === id ? (updatedItem || { ...item, status, approvedBy, updatedAt: new Date().toISOString() }) : item);
+    setLeaveRequests(updated);
+    sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(updated));
+    setStatus(`Leave request ${status.toLowerCase()} ✓`);
+  };
+
+  const addAnnouncement = (event) => {
+    event.preventDefault();
+    if (!announcementForm.title.trim() || !announcementForm.message.trim()) return;
+
+    const newAnnouncement = {
+      id: `ann-${Date.now()}`,
+      title: announcementForm.title.trim(),
+      message: announcementForm.message.trim(),
+      tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || 'demo-tenant')
+    };
+
+    const updated = [newAnnouncement, ...hrAnnouncements];
+    setHrAnnouncements(updated);
+    sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(updated));
+    setAnnouncementForm({ title: '', message: '' });
+    setStatus('Announcement posted ✓');
+  };
+
+  const fetchLeavesForApproval = async (tenantId, employeeId) => {
+    try {
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/hr/leaves/for-approval/${employeeId}`, {
+        headers: { 'x-tenant-id': tenantId }
+      });
+      if (res.ok) {
+        const leaves = await res.json();
+        setLeavesForApproval(leaves || []);
+        setIsManagerView(leaves && leaves.length > 0);
+      }
+      const subRes = await fetch(`${apiBase}/employees/subordinates/${employeeId}`, {
+        headers: { 'x-tenant-id': tenantId }
+      });
+      if (subRes.ok) {
+        const subs = await subRes.json();
+        setSubordinates(subs || []);
+      }
+    } catch (err) { console.log('Leave fetch error:', err); }
+  };
+
+  const approveLeave = async (tenantId, leaveId, status) => {
+    try {
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/hr/leaves/${leaveId}/manager-approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ status, managerId: currentUser?.employeeId, managerName: currentUser?.name || currentUser?.username })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setLeavesForApproval(prev => prev.map(l => l.id === leaveId ? updated : l));
+        setStatus(`Leave ${status.toLowerCase()} ✓`);
+      }
+    } catch (err) { alert('Failed to update leave'); }
+  };
+
+  const createTenantAdminUser = async () => {
+    if (!selectedTenant || !newTenantUser || !newTenantUserPass) {
+      alert('Please select a tenant and fill in all fields');
+      return;
+    }
+    try {
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/tenant-users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedTenant.tenantId },
+        body: JSON.stringify({
+          username: newTenantUser,
+          password: newTenantUserPass,
+          displayName: newTenantUserDisplay || newTenantUser,
+          employeeId: newTenantUserEmployeeId || '',
+          permissions: selectedTenant.permissions || []
+        })
+      });
+      if (res.ok) {
+        alert('Tenant user created! They can now access web-admin.');
+        setNewTenantUser('');
+        setNewTenantUserPass('');
+        setNewTenantUserDisplay('');
+        setNewTenantUserEmployeeId('');
+      } else {
+        alert('Failed to create user');
+      }
+    } catch (err) { alert('Error creating tenant user'); }
   };
 
   const handleDevLogin = async () => {
@@ -813,9 +1046,12 @@ function App() {
   };
 
   const getFilteredLogs = () => {
-    const tenantToUse = selectedReportsTenant || globalTenantFilter;
+    const hasTenantSelection = Boolean(selectedReportsTenant && selectedReportsTenant !== 'ALL');
+    if (!hasTenantSelection) return [];
+
+    const tenantToUse = selectedReportsTenant;
     return logs.filter(l => {
-      const isTenantMatch = tenantToUse === 'ALL' || l.tenantId === tenantToUse;
+      const isTenantMatch = l.tenantId === tenantToUse;
       const logDate = new Date(l.timestamp);
       const isAfterStart = !reportStartDate || logDate >= new Date(reportStartDate);
       const isBeforeEnd = !reportEndDate || logDate <= new Date(new Date(reportEndDate).setHours(23, 59, 59));
@@ -832,7 +1068,10 @@ function App() {
   };
 
   const exportReportExcelFile = () => {
-    const tenantToUse = selectedReportsTenant || globalTenantFilter;
+    const hasTenantSelection = Boolean(selectedReportsTenant && selectedReportsTenant !== 'ALL');
+    if (!hasTenantSelection) return alert('Please select a tenant first.');
+
+    const tenantToUse = selectedReportsTenant;
     const data = getFilteredLogs();
     if (data.length === 0) return alert('No data to export');
 
@@ -943,6 +1182,9 @@ function App() {
   };
 
   const viewReportPDF = () => {
+    const hasTenantSelection = Boolean(selectedReportsTenant && selectedReportsTenant !== 'ALL');
+    if (!hasTenantSelection) return alert('Please select a tenant first.');
+
     const data = getFilteredLogs();
     if (data.length === 0) return alert('No data to generate PDF');
 
@@ -1233,6 +1475,12 @@ function App() {
           <MenuItem active={activeTab === 'employees'} onClick={() => {setActiveTab('employees'); setIsMenuOpen(false);}}>
             <span>👥</span> Staff Management
           </MenuItem>
+          <MenuItem active={activeTab === 'hr-hub'} onClick={() => {setActiveTab('hr-hub'); setIsMenuOpen(false);}}>
+            <span>🧑‍💼</span> HR Hub
+          </MenuItem>
+          <MenuItem active={activeTab === 'leave-requests'} onClick={() => {setActiveTab('leave-requests'); setIsMenuOpen(false);}}>
+            <span>✅</span> Leave Requests
+          </MenuItem>
           <MenuItem active={activeTab === 'assign-branch'} onClick={() => {setActiveTab('assign-branch'); setIsMenuOpen(false);}}>
             <span>🔗</span> Assign Branch
           </MenuItem>
@@ -1371,6 +1619,7 @@ function App() {
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'20px'}}>
             <ModuleCard icon="👥" title="Manage Tenant" desc="Provision portals and track usage" color="#8b5cf6" onClick={() => setActiveTab('tenants')} />
             <ModuleCard icon="👥" title="Staff Management" desc="Global list of registered staff" color="#3b82f6" onClick={() => setActiveTab('employees')} />
+            <ModuleCard icon="🧑‍💼" title="HR Hub" desc="Leave requests, notices, staff snapshot" color="#8b5cf6" onClick={() => setActiveTab('hr-hub')} />
             <ModuleCard icon="📍" title="Branch Setup" desc="Configure geofence office locations" color="#10b981" onClick={() => setActiveTab('branches')} />
             <ModuleCard icon="🏢" title="Dept. Management" desc="Organizational units for each company" color="#3b82f6" onClick={() => setActiveTab('org-departments')} />
             <ModuleCard icon="💼" title="Position Management" desc="Define custom job position titles" color="#60a5fa" onClick={() => setActiveTab('position-titles')} />
@@ -1380,6 +1629,102 @@ function App() {
             <ModuleCard icon="📅" title="Assign Schedule" desc="Assign work shifts to employees" color="#f59e0b" onClick={() => setActiveTab('assign-schedule')} />
             <ModuleCard icon="📱" title="Device Managemnt" desc="Manage secure device linking" color="#10b981" onClick={() => setActiveTab('devices')} />
             <ModuleCard icon="⏰" title="Schedule Management" desc="Set office hours and shifts" color="#f59e0b" onClick={() => setActiveTab('schedules')} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'hr-hub' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div style={{display:'grid', gap:'20px'}}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'15px'}}>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Staff</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#3b82f6', marginTop:'8px'}}>{employees.filter(e => globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter).length}</div>
+              </div>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Pending Leaves</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#f59e0b', marginTop:'8px'}}>{leaveRequests.filter(item => globalTenantFilter === 'ALL' || item.tenantId === globalTenantFilter).filter(item => item.status === 'Pending').length}</div>
+              </div>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Today Logs</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#10b981', marginTop:'8px'}}>{logs.filter(l => (globalTenantFilter === 'ALL' || l.tenantId === globalTenantFilter) && new Date(l.timestamp).toDateString() === new Date().toDateString()).length}</div>
+              </div>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Schedules</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#8b5cf6', marginTop:'8px'}}>{schedules.filter(s => globalTenantFilter === 'ALL' || s.tenantId === globalTenantFilter).length}</div>
+              </div>
+            </div>
+
+            <div style={{display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:'20px'}}>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
+                <h3 style={{marginTop:0, color:'#f8fafc'}}>Leave Requests</h3>
+                <form onSubmit={submitLeaveRequest} style={{display:'grid', gap:'10px', marginBottom:'15px'}}>
+                  <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type:e.target.value})} style={inputStyle}>
+                    <option>Sick Leave</option>
+                    <option>Vacation Leave</option>
+                    <option>Emergency Leave</option>
+                    <option>Personal Leave</option>
+                  </select>
+                  <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate:e.target.value})} style={inputStyle} />
+                  <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({...leaveForm, endDate:e.target.value})} style={inputStyle} />
+                  <textarea rows="3" value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason:e.target.value})} placeholder="Reason" style={{...inputStyle, resize:'vertical'}} />
+                  <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo:e.target.value})} placeholder="Reports To / Manager" style={inputStyle} />
+                  <button type="submit" style={{...smallBtn, background:'#3b82f6'}}>Submit Leave Request</button>
+                </form>
+                <div style={{display:'grid', gap:'10px'}}>
+                  {(leaveRequests.filter(item => globalTenantFilter === 'ALL' || item.tenantId === globalTenantFilter)).slice(0, 5).map(item => (
+                    <div key={item.id} style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'14px', padding:'12px'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', gap:'10px', alignItems:'center'}}>
+                        <div>
+                          <div style={{fontWeight:'800', color:'#f8fafc'}}>{item.employeeName} • {item.type}</div>
+                          <div style={{fontSize:'0.75rem', color:'#64748b'}}>{item.startDate} → {item.endDate}</div>
+                        </div>
+                        <span style={{padding:'4px 8px', borderRadius:'999px', fontSize:'0.7rem', background: item.status === 'Pending' ? '#f59e0422' : item.status === 'Approved' ? '#10b98122' : '#ef444422', color: item.status === 'Pending' ? '#f59e0b' : item.status === 'Approved' ? '#10b981' : '#ef4444'}}>{item.status}</span>
+                      </div>
+                      <div style={{marginTop:'8px', fontSize:'0.8rem', color:'#cbd5e1'}}>{item.reason}</div>
+                      {item.reportsTo && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#94a3b8'}}>Reports To: {item.reportsTo}</div>}
+                      {item.approvedBy && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#94a3b8'}}>Approved by: {item.approvedBy}</div>}
+                      {item.updatedAt && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.75rem', color:'#64748b'}}>Updated: {new Date(item.updatedAt).toLocaleString()}</div>}
+                      {item.status === 'Pending' && (
+                        <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
+                          <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Approve</button>
+                          <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{display:'grid', gap:'20px'}}>
+                <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
+                  <h3 style={{marginTop:0, color:'#f8fafc'}}>Announcements</h3>
+                  <form onSubmit={addAnnouncement} style={{display:'grid', gap:'10px', marginBottom:'12px'}}>
+                    <input value={announcementForm.title} onChange={e => setAnnouncementForm({...announcementForm, title:e.target.value})} placeholder="Title" style={inputStyle} />
+                    <textarea rows="3" value={announcementForm.message} onChange={e => setAnnouncementForm({...announcementForm, message:e.target.value})} placeholder="Message" style={{...inputStyle, resize:'vertical'}} />
+                    <button type="submit" style={{...smallBtn, background:'#8b5cf6'}}>Post Announcement</button>
+                  </form>
+                  <div style={{display:'grid', gap:'10px'}}>
+                    {(hrAnnouncements.filter(item => globalTenantFilter === 'ALL' || item.tenantId === globalTenantFilter)).slice(0, 4).map(item => (
+                      <div key={item.id} style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'14px', padding:'12px'}}>
+                        <div style={{fontWeight:'800', color:'#f8fafc'}}>{item.title}</div>
+                        <div style={{fontSize:'0.8rem', color:'#cbd5e1', marginTop:'6px'}}>{item.message}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
+                  <h3 style={{marginTop:0, color:'#f8fafc'}}>Attendance Snapshot</h3>
+                  <div style={{display:'grid', gap:'8px'}}>
+                    <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Today logs: {logs.filter(l => (globalTenantFilter === 'ALL' || l.tenantId === globalTenantFilter) && new Date(l.timestamp).toDateString() === new Date().toDateString()).length}</div>
+                    <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Registered staff: {employees.filter(e => globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter).length}</div>
+                    <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Active schedules: {schedules.filter(s => globalTenantFilter === 'ALL' || s.tenantId === globalTenantFilter).length}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2301,6 +2646,103 @@ function App() {
         </div>
       )}
 
+      {activeTab === 'leave-requests' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
+            <h2 style={{marginTop:0, color:'white'}}>✅ Leave Requests & Approvals</h2>
+            <p style={{color:'#64748b', marginBottom:'20px'}}>Manage leave requests from your team. Select a tenant to view and approve leaves.</p>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px', marginBottom:'25px'}}>
+              <div className="form-group">
+                <label>SELECT TENANT</label>
+                <select value={selectedTenant?.tenantId || ''} onChange={e => {
+                  const t = users.find(u => (u.tenantId || u.username) === e.target.value);
+                  setSelectedTenant(t);
+                  if (t?.tenantId) {
+                    fetchLeavesForApproval(t.tenantId, t.adminEmployeeId || t.tenantId);
+                  }
+                }} style={{background:'#0f172a', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}}>
+                  <option value="">-- Select a Tenant --</option>
+                  {users.map(u => (
+                    <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                      {u.companyName} ({u.tenantId || u.username})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {selectedTenant && (
+              <>
+                <div style={{background:'#0f172a', padding:'20px', borderRadius:'12px', border:'1px solid #334155', marginBottom:'20px'}}>
+                  <h3 style={{marginTop:0, color:'#3b82f6'}}>{selectedTenant.companyName}</h3>
+                  <p style={{color:'#94a3b8', marginBottom:'15px', fontSize:'0.9rem'}}>Manage tenant-level users and view leave requests for this organization.</p>
+                  
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))', gap:'15px', marginBottom:'20px'}}>
+                    <div className="form-group">
+                      <label>NEW USER USERNAME</label>
+                      <input value={newTenantUser} onChange={e => setNewTenantUser(e.target.value)} placeholder="e.g., manager01" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                    <div className="form-group">
+                      <label>PASSWORD</label>
+                      <input type="password" value={newTenantUserPass} onChange={e => setNewTenantUserPass(e.target.value)} placeholder="••••••••" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                    <div className="form-group">
+                      <label>DISPLAY NAME</label>
+                      <input value={newTenantUserDisplay} onChange={e => setNewTenantUserDisplay(e.target.value)} placeholder="e.g., Manager One" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                    <div className="form-group">
+                      <label>EMPLOYEE ID (auto-map)</label>
+                      <input value={newTenantUserEmployeeId} onChange={e => setNewTenantUserEmployeeId(e.target.value)} placeholder="e.g., 0000" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                  </div>
+                  <button onClick={createTenantAdminUser} style={{background:'#3b82f6', color:'white', padding:'10px 20px', border:'none', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Create Tenant Admin User</button>
+                </div>
+
+                <div style={{marginTop:'25px'}}>
+                  <h3 style={{color:'#10b981', marginBottom:'15px'}}>✅ Pending Leave Approvals</h3>
+                  {leavesForApproval.length === 0 ? (
+                    <div style={{padding:'40px', background:'#0f172a', borderRadius:'12px', textAlign:'center', border:'1px dashed #334155'}}>
+                      <div style={{fontSize:'2rem', marginBottom:'10px'}}>✓</div>
+                      <p style={{color:'#94a3b8'}}>No pending leave requests.</p>
+                    </div>
+                  ) : (
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', borderCollapse:'collapse'}}>
+                        <thead>
+                          <tr style={{borderBottom:'2px solid #334155'}}>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Employee</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Type</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Date Range</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Reason</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leavesForApproval.map(leave => (
+                            <tr key={leave.id} style={{borderBottom:'1px solid #334155'}}>
+                              <td style={{padding:'12px', color:'#cbd5e1'}}>{leave.employeeName} ({leave.employeeId})</td>
+                              <td style={{padding:'12px', color:'#cbd5e1'}}>{leave.leaveType || leave.type}</td>
+                              <td style={{padding:'12px', color:'#cbd5e1'}}>{leave.startDate} → {leave.endDate}</td>
+                              <td style={{padding:'12px', color:'#94a3b8', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis'}}>{leave.reason || '-'}</td>
+                              <td style={{padding:'12px', display:'flex', gap:'8px'}}>
+                                <button onClick={() => approveLeave(selectedTenant.tenantId, leave.id, 'Approved')} style={{background:'#10b981', color:'white', border:'none', padding:'6px 12px', borderRadius:'6px', cursor:'pointer', fontSize:'0.8rem', fontWeight:'bold'}}>Approve</button>
+                                <button onClick={() => approveLeave(selectedTenant.tenantId, leave.id, 'Rejected')} style={{background:'#ef4444', color:'white', border:'none', padding:'6px 12px', borderRadius:'6px', cursor:'pointer', fontSize:'0.8rem', fontWeight:'bold'}}>Reject</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {activeTab === 'reports' && (
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
@@ -2319,7 +2761,7 @@ function App() {
               <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
                 <label style={{color:'#94a3b8', fontSize:'0.7rem', fontWeight:'bold', textTransform:'uppercase'}}>Tenant</label>
                 <select style={{...inputStyle, marginBottom:0}} value={selectedReportsTenant} onChange={e => setSelectedReportsTenant(e.target.value)}>
-                  <option value="">-- Use Global Filter --</option>
+                  <option value="">-- Select a tenant --</option>
                   {users.map(u => (
                     <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                       {u.companyName} ({u.tenantId || u.username})
@@ -2343,11 +2785,11 @@ function App() {
                     <option value="">-- All Branches --</option>
                     {(departments || [])
                       .filter(d => {
-                        const tenantToUse = selectedReportsTenant || globalTenantFilter;
-                        return tenantToUse === 'ALL' || d.tenantId === tenantToUse;
+                        const tenantToUse = selectedReportsTenant;
+                        return Boolean(tenantToUse) && d.tenantId === tenantToUse;
                       })
                       .map(d => (
-                      <option key={d.id || d.departmentId} value={d.name}>{d.name} {(selectedReportsTenant || globalTenantFilter) === 'ALL' ? `(${users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId})` : ''}</option>
+                      <option key={d.id || d.departmentId} value={d.name}>{d.name} {selectedReportsTenant ? `(${users.find(u => (u.tenantId || u.username) === d.tenantId)?.companyName || d.tenantId})` : ''}</option>
                     ))}
                   </select>
                 ) : (
@@ -2383,7 +2825,14 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {getFilteredLogs().length === 0 ? (
+                  {!selectedReportsTenant ? (
+                    <tr>
+                      <td colSpan="10" style={{textAlign:'center', padding:'60px', color:'#64748b', fontWeight: 'bold'}}>
+                        <div style={{fontSize: '3rem', marginBottom: '15px'}}>📈</div>
+                        Select a tenant to view attendance logs.
+                      </td>
+                    </tr>
+                  ) : getFilteredLogs().length === 0 ? (
                     <tr>
                       <td colSpan="10" style={{textAlign:'center', padding:'60px', color:'#64748b', fontWeight: 'bold'}}>
                         <div style={{fontSize: '3rem', marginBottom: '15px'}}>📈</div>
@@ -2502,45 +2951,51 @@ function App() {
               </div>
             </div>
           <div style={{maxHeight:'65vh', overflowY:'auto'}}>
-            <table>
-              <thead>
-                <tr><th>Tenant</th><th>Employee</th><th>Device Info</th><th>Linked Date</th><th>Action</th></tr>
-              </thead>
-              <tbody>
-                {employees.filter(e => (selectedDevicesTenant === 'ALL' || e.tenantId === selectedDevicesTenant) && (e.registeredDeviceId || e.deviceId)).map((e, idx) => (
-                  <tr key={idx}>
-                    <td>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                    <td style={{fontWeight:'bold'}}>{e.name}</td>
-                    <td>
-                      <div style={{fontWeight:'bold', color:'#10b981'}}>{e.registeredDeviceName || 'Mobile Device'}</div>
-                      <div style={{fontSize:'0.6rem', color:'#64748b'}}>{e.registeredDeviceId || e.deviceId}</div>
-                    </td>
-                    <td style={{fontSize:'0.8rem'}}>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : 'N/A'}</td>
-                    <td>
-                      <button onClick={async () => {
-                        if(!confirm(`Are you sure you want to UNLINK the device for ${e.name}?`)) return;
-                        setStatus('Unlinking device...');
-                        try {
-                          const res = await fetch(`${activeApiBase}/device/reset?tenantId=${e.tenantId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
-                            body: JSON.stringify({ employeeId: e.employeeId })
-                          });
-                          if (res.ok) {
-                            setStatus('Device Unlinked ✓');
-                            await loadInitialData();
-                          } else {
-                            alert('Unlink failed');
+            {selectedDevicesTenant === 'ALL' ? (
+              <div style={{padding:'24px', border:'1px dashed #334155', borderRadius:'16px', color:'#64748b', background:'#0f172a'}}>
+                Select a specific tenant to view its linked devices.
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr><th>Tenant</th><th>Employee</th><th>Device Info</th><th>Linked Date</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {employees.filter(e => (selectedDevicesTenant === 'ALL' || e.tenantId === selectedDevicesTenant) && (e.registeredDeviceId || e.deviceId)).map((e, idx) => (
+                    <tr key={idx}>
+                      <td>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                      <td style={{fontWeight:'bold'}}>{e.name}</td>
+                      <td>
+                        <div style={{fontWeight:'bold', color:'#10b981'}}>{e.registeredDeviceName || 'Mobile Device'}</div>
+                        <div style={{fontSize:'0.6rem', color:'#64748b'}}>{e.registeredDeviceId || e.deviceId}</div>
+                      </td>
+                      <td style={{fontSize:'0.8rem'}}>{e.registrationDate ? new Date(e.registrationDate).toLocaleString() : 'N/A'}</td>
+                      <td>
+                        <button onClick={async () => {
+                          if(!confirm(`Are you sure you want to UNLINK the device for ${e.name}?`)) return;
+                          setStatus('Unlinking device...');
+                          try {
+                            const res = await fetch(`${activeApiBase}/device/reset?tenantId=${e.tenantId}`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'x-tenant-id': e.tenantId },
+                              body: JSON.stringify({ employeeId: e.employeeId })
+                            });
+                            if (res.ok) {
+                              setStatus('Device Unlinked ✓');
+                              await loadInitialData();
+                            } else {
+                              alert('Unlink failed');
+                            }
+                          } catch (err) {
+                            alert('Connection error');
                           }
-                        } catch (err) {
-                          alert('Connection error');
-                        }
-                      }} style={{...smallBtn, background:'#ef4444'}}>Unlink</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        }} style={{...smallBtn, background:'#ef4444'}}>Unlink</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
@@ -2556,7 +3011,7 @@ function App() {
                 <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
                   <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                   <select value={selectedAssignBranchTenant} onChange={e => setSelectedAssignBranchTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'240px', padding:'10px', height:'42px'}}>
-                    <option value="ALL">All Tenants</option>
+                    <option value="">-- Select a tenant --</option>
                     {users.map(u => (
                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                         {u.companyName} ({u.tenantId || u.username})
@@ -2581,43 +3036,65 @@ function App() {
                     <tr><th>Tenant</th><th>ID</th><th>Employee</th><th>Current Branch</th><th style={{textAlign:'center'}}>Action</th></tr>
                  </thead>
                  <tbody>
-                    {employees.filter(e => {
-                      const s = empSearch.toLowerCase();
-                      const tenantToUse = selectedAssignBranchTenant === 'ALL' ? globalTenantFilter : selectedAssignBranchTenant;
-                      const tenantMatch = tenantToUse === 'ALL' || e.tenantId === tenantToUse;
-                      return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
-                    }).map((e, idx) => (
-                      <tr key={idx}>
-                         <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                         <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
-                         <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
-                         <td>
-                            {e.branchName ? (
-                              <span style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)'}}>📍 {e.branchName}</span>
-                            ) : (
-                              <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Branch Assigned</span>
-                            )}
-                         </td>
-                         <td style={{textAlign:'center'}}>
-                           <button onClick={async () => {
-                             // prepare modal for this employee
-                             try {
-                              const baseApi = activeApiBase || '/api';
-                              const res = await fetch(`${baseApi}/assignments?tenantId=${e.tenantId}`, { headers: { 'x-tenant-id': e.tenantId } });
-                              const allAssigns = await res.json();
-                              const mine = (allAssigns || []).filter(a => a.employeeId === e.employeeId).map(a => a.departmentId);
-                              setSelectedAssignEmpDev(e);
-                              setSelectedAssignBranchesDev(mine);
-                              setIsAssignModalOpenDev(true);
-                             } catch (err) {
-                              setSelectedAssignEmpDev(e);
-                              setSelectedAssignBranchesDev([]);
-                              setIsAssignModalOpenDev(true);
-                             }
-                           }} style={{...smallBtn, background:'#3b82f6', color:'white'}}>MANAGE</button>
-                         </td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      if (!selectedAssignBranchTenant) {
+                        return (
+                          <tr>
+                            <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                              Select a tenant to view branch assignment data.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      const filtered = employees.filter(e => {
+                        const s = empSearch.toLowerCase();
+                        const tenantMatch = e.tenantId === selectedAssignBranchTenant;
+                        return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                              No employees found for the selected tenant.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map((e, idx) => (
+                        <tr key={idx}>
+                           <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                           <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                           <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
+                           <td>
+                              {e.branchName ? (
+                                <span style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)'}}>📍 {e.branchName}</span>
+                              ) : (
+                                <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Branch Assigned</span>
+                              )}
+                           </td>
+                           <td style={{textAlign:'center'}}>
+                             <button onClick={async () => {
+                               try {
+                                const baseApi = activeApiBase || '/api';
+                                const res = await fetch(`${baseApi}/assignments?tenantId=${e.tenantId}`, { headers: { 'x-tenant-id': e.tenantId } });
+                                const allAssigns = await res.json();
+                                const mine = (allAssigns || []).filter(a => a.employeeId === e.employeeId).map(a => a.departmentId);
+                                setSelectedAssignEmpDev(e);
+                                setSelectedAssignBranchesDev(mine);
+                                setIsAssignModalOpenDev(true);
+                               } catch (err) {
+                                setSelectedAssignEmpDev(e);
+                                setSelectedAssignBranchesDev([]);
+                                setIsAssignModalOpenDev(true);
+                               }
+                             }} style={{...smallBtn, background:'#3b82f6', color:'white'}}>MANAGE</button>
+                           </td>
+                        </tr>
+                      ));
+                    })()}
                  </tbody>
               </table>
            </div>
@@ -2696,7 +3173,7 @@ function App() {
                 <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
                   <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                   <select value={selectedAssignScheduleTenant} onChange={e => setSelectedAssignScheduleTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'220px', padding:'10px', height:'42px'}}>
-                    <option value="ALL">All Tenants</option>
+                    <option value="">-- Select a tenant --</option>
                     {users.map(u => (
                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName} ({u.tenantId || u.username})</option>
                     ))}
@@ -2716,31 +3193,55 @@ function App() {
                   <tr><th>Tenant</th><th>ID</th><th>Employee</th><th>Assigned Schedule</th><th style={{textAlign:'center'}}>Action</th></tr>
                 </thead>
                 <tbody>
-                  {employees.filter(e => {
-                    const s = empSearch.toLowerCase();
-                    const tenantMatch = selectedAssignScheduleTenant === 'ALL' || e.tenantId === selectedAssignScheduleTenant;
-                    return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
-                  }).map((e, idx) => (
-                    <tr key={idx}>
-                      <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
-                      <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
-                      <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
-                      <td>
-                        {e.schedule ? (
-                          <span style={{background:'rgba(245, 158, 11, 0.1)', color:'#f59e0b', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(245, 158, 11, 0.3)'}}>⏰ {e.schedule}</span>
-                        ) : (
-                          <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Schedule Assigned</span>
-                        )}
-                      </td>
-                      <td style={{textAlign:'center'}}>
-                        <button onClick={() => {
-                          setSelectedEmpForSchedule(e);
-                          setNewScheduleForEmp(e.schedule || '');
-                          setIsAssignScheduleModalOpen(true);
-                        }} style={{...smallBtn, background:'#3b82f6'}}>Change Schedule</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    if (!selectedAssignScheduleTenant) {
+                      return (
+                        <tr>
+                          <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                            Select a tenant to view assign schedule data.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    const filtered = employees.filter(e => {
+                      const s = empSearch.toLowerCase();
+                      const tenantMatch = e.tenantId === selectedAssignScheduleTenant;
+                      return tenantMatch && (e.name.toLowerCase().includes(s) || (e.employeeId && e.employeeId.toLowerCase().includes(s)));
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                            No employees found for the selected tenant.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filtered.map((e, idx) => (
+                      <tr key={idx}>
+                        <td style={{fontSize:'0.7rem', color:'#64748b'}}>{users.find(u => (u.tenantId || u.username) === e.tenantId)?.companyName || e.tenantId}</td>
+                        <td style={{fontWeight:'bold', color:'#3b82f6'}}>{e.employeeId}</td>
+                        <td style={{fontWeight:'bold', color:'white'}}>{e.name}</td>
+                        <td>
+                          {e.schedule ? (
+                            <span style={{background:'rgba(245, 158, 11, 0.1)', color:'#f59e0b', padding:'5px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(245, 158, 11, 0.3)'}}>⏰ {e.schedule}</span>
+                          ) : (
+                            <span style={{opacity:0.5, fontStyle:'italic', fontSize:'0.8rem'}}>No Schedule Assigned</span>
+                          )}
+                        </td>
+                        <td style={{textAlign:'center'}}>
+                          <button onClick={() => {
+                            setSelectedEmpForSchedule(e);
+                            setNewScheduleForEmp(e.schedule || '');
+                            setIsAssignScheduleModalOpen(true);
+                          }} style={{...smallBtn, background:'#3b82f6'}}>Change Schedule</button>
+                        </td>
+                      </tr>
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -2786,77 +3287,103 @@ function App() {
       {activeTab === 'account-management' && (
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
-          <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
+          <div style={{display:'grid', gridTemplateColumns:'280px 1fr', gap:'20px'}}>
              <div className="glass-card" style={{padding:'25px', borderRadius:'20px', border:'1px solid #334155', position:'sticky', top:'20px', height:'fit-content'}}>
-                <h2 style={{marginTop:0, display:'flex', alignItems:'center', gap:'12px'}}>
-                  {editingDevUser ? '📝 Edit Dev Account' : '🔑 New Dev Account'}
-                </h2>
-                <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>
-                  {editingDevUser ? `Updating credentials for ${editingDevUser.username}` : 'Create credentials for Dev Portal access.'}
-                </p>
-
-                <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
-                  <div>
-                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>DISPLAY NAME</label>
-                    <input style={{...inputStyle, marginBottom:0}} placeholder="e.g. Admin Juan" value={newDevDisplay} onChange={e => setNewDevDisplay(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>USERNAME</label>
-                    <input style={{...inputStyle, marginBottom:0}} placeholder="Username" value={newDevUser} onChange={e => setNewDevUser(e.target.value)} disabled={!!editingDevUser} />
-                  </div>
-                  <div>
-                    <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>PASSWORD</label>
-                    <input style={{...inputStyle, marginBottom:0}} type="password" placeholder="Password" value={newDevPass} onChange={e => setNewDevPass(e.target.value)} />
-                  </div>
-
-                  <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
-                    {editingDevUser && (
-                      <button onClick={() => {
-                        setEditingDevUser(null);
-                        setNewDevUser(''); setNewDevPass(''); setNewDevDisplay('');
-                      }} style={{...smallBtn, background:'#334155', flex:1, padding:'15px'}}>Cancel</button>
-                    )}
-                    <button onClick={createDevAccount} className="btn-hover" style={{...addBtn, flex:2, background: editingDevUser ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #2563eb)'}}>
-                      {editingDevUser ? 'Update Account ✓' : 'Create Account'}
-                    </button>
-                  </div>
+                <h3 style={{marginTop:0, marginBottom:'10px'}}>Tenant Directory</h3>
+                <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>Quick access to the tenants linked to this platform.</p>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+                  {users.map((u) => {
+                    const tenantId = u.tenantId || u.username;
+                    const isSelected = (selectedTenant?.tenantId || selectedTenant?.username) === tenantId;
+                    return (
+                      <div key={tenantId} onClick={() => setSelectedTenant(u)} style={{padding:'12px', borderRadius:'12px', background: isSelected ? '#3b82f6' : '#0f172a', border:'1px solid #334155', cursor:'pointer', transition:'all 0.2s ease'}}>
+                        <div style={{fontWeight:'bold', fontSize:'0.9rem'}}>{u.companyName || tenantId}</div>
+                        <div style={{fontSize:'0.7rem', opacity:0.7, marginTop:'4px'}}>{tenantId}</div>
+                      </div>
+                    );
+                  })}
                 </div>
              </div>
 
-             <div className="glass-card" style={{padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
-                <h2 style={{marginTop:0, marginBottom:'25px'}}>Active Dev Accounts</h2>
-                <div style={{maxHeight:'70vh', overflowY:'auto'}} className="custom-scroll">
-                   <table style={{width:'100%', minWidth:'100%'}}>
-                      <thead>
-                         <tr>
-                           <th style={{width:'40%'}}>Display Name</th>
-                           <th style={{width:'30%'}}>Username</th>
-                           <th style={{width:'30%', textAlign:'center'}}>Action</th>
-                         </tr>
-                      </thead>
-                      <tbody>
-                         {devAccounts.map((acc, idx) => (
-                           <tr key={idx} style={{background: editingDevUser?.username === acc.username ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
-                              <td style={{fontWeight:'bold', padding:'20px 12px'}}>
-                                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                                  <div style={{width:'35px', height:'35px', background:'#334155', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.8rem'}}>
-                                    {acc.displayName.charAt(0).toUpperCase()}
-                                  </div>
-                                  {acc.displayName}
-                                </div>
-                              </td>
-                              <td><code style={{background:'#0f172a', padding:'4px 8px', borderRadius:'5px', color:'#3b82f6'}}>{acc.username}</code></td>
-                              <td style={{textAlign:'center'}}>
-                                 <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
-                                   <button onClick={() => prepareEditDev(acc)} className="btn-hover" style={{...smallBtn, background:'#3b82f6', padding:'8px 15px'}}>Edit</button>
-                                   <button onClick={() => deleteDevAccount(acc.username)} className="btn-hover" style={{...smallBtn, background:'#ef444422', color:'#ef4444', border:'1px solid #ef444444', padding:'8px 15px'}}>Remove</button>
-                                 </div>
-                              </td>
+             <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
+               <div className="glass-card" style={{padding:'25px', borderRadius:'20px', border:'1px solid #334155', position:'sticky', top:'20px', height:'fit-content'}}>
+                  <h2 style={{marginTop:0, display:'flex', alignItems:'center', gap:'12px'}}>
+                    {editingDevUser ? '📝 Edit Dev Account' : '🔑 New Dev Account'}
+                  </h2>
+                  <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>
+                    {editingDevUser ? `Updating credentials for ${editingDevUser.username}` : 'Create credentials for Dev Portal access.'}
+                  </p>
+
+                  {selectedTenant && (
+                    <div style={{background:'#3b82f611', border:'1px solid #3b82f644', borderRadius:'12px', padding:'12px', marginBottom:'15px'}}>
+                      <div style={{fontSize:'0.7rem', color:'#60a5fa', fontWeight:'bold', textTransform:'uppercase'}}>Selected Tenant</div>
+                      <div style={{fontWeight:'bold', marginTop:'4px'}}>{selectedTenant.companyName || (selectedTenant.tenantId || selectedTenant.username)}</div>
+                    </div>
+                  )}
+
+                  <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+                    <div>
+                      <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>DISPLAY NAME</label>
+                      <input style={{...inputStyle, marginBottom:0}} placeholder="e.g. Admin Juan" value={newDevDisplay} onChange={e => setNewDevDisplay(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>USERNAME</label>
+                      <input style={{...inputStyle, marginBottom:0}} placeholder="Username" value={newDevUser} onChange={e => setNewDevUser(e.target.value)} disabled={!!editingDevUser} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.65rem', color:'#3b82f6', fontWeight:'bold', marginBottom:'5px', display:'block'}}>PASSWORD</label>
+                      <input style={{...inputStyle, marginBottom:0}} type="password" placeholder="Password" value={newDevPass} onChange={e => setNewDevPass(e.target.value)} />
+                    </div>
+
+                    <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
+                      {editingDevUser && (
+                        <button onClick={() => {
+                          setEditingDevUser(null);
+                          setNewDevUser(''); setNewDevPass(''); setNewDevDisplay('');
+                        }} style={{...smallBtn, background:'#334155', flex:1, padding:'15px'}}>Cancel</button>
+                      )}
+                      <button onClick={createDevAccount} className="btn-hover" style={{...addBtn, flex:2, background: editingDevUser ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #2563eb)'}}>
+                        {editingDevUser ? 'Update Account ✓' : 'Create Account'}
+                      </button>
+                    </div>
+                  </div>
+               </div>
+
+               <div className="glass-card" style={{padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
+                  <h2 style={{marginTop:0, marginBottom:'25px'}}>Active Dev Accounts</h2>
+                  <div style={{maxHeight:'70vh', overflowY:'auto'}} className="custom-scroll">
+                     <table style={{width:'100%', minWidth:'100%'}}>
+                        <thead>
+                           <tr>
+                             <th style={{width:'40%'}}>Display Name</th>
+                             <th style={{width:'30%'}}>Username</th>
+                             <th style={{width:'30%', textAlign:'center'}}>Action</th>
                            </tr>
-                         ))}
-                      </tbody>
-                   </table>
-                </div>
+                        </thead>
+                        <tbody>
+                           {devAccounts.map((acc, idx) => (
+                             <tr key={idx} style={{background: editingDevUser?.username === acc.username ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
+                                <td style={{fontWeight:'bold', padding:'20px 12px'}}>
+                                  <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                                    <div style={{width:'35px', height:'35px', background:'#334155', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.8rem'}}>
+                                      {acc.displayName.charAt(0).toUpperCase()}
+                                    </div>
+                                    {acc.displayName}
+                                  </div>
+                                </td>
+                                <td><code style={{background:'#0f172a', padding:'4px 8px', borderRadius:'5px', color:'#3b82f6'}}>{acc.username}</code></td>
+                                <td style={{textAlign:'center'}}>
+                                   <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
+                                     <button onClick={() => prepareEditDev(acc)} className="btn-hover" style={{...smallBtn, background:'#3b82f6', padding:'8px 15px'}}>Edit</button>
+                                     <button onClick={() => deleteDevAccount(acc.username)} className="btn-hover" style={{...smallBtn, background:'#ef444422', color:'#ef4444', border:'1px solid #ef444444', padding:'8px 15px'}}>Remove</button>
+                                   </div>
+                                </td>
+                             </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
              </div>
           </div>
         </div>

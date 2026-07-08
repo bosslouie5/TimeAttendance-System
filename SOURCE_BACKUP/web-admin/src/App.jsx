@@ -948,6 +948,8 @@ function App() {
             {hasPerm('announcements') && <div className="menu-item" onClick={() => { setActiveTab('announcements'); setIsMenuOpen(false); }}>📢 Announcements</div>}
             {hasPerm('leave-management') && <div className="menu-item" onClick={() => { setActiveTab('leave-management'); setIsMenuOpen(false); }}>⛱️ Leave System</div>}
             {hasPerm('payroll-bridge') && <div className="menu-item" onClick={() => { setActiveTab('payroll-bridge'); setIsMenuOpen(false); }}>💰 Payroll Bridge</div>}
+            {hasPerm('setup') && <div className="menu-item" onClick={() => { setActiveTab('system-settings'); setIsMenuOpen(false); }}>⚙️ System Settings</div>}
+            <div className="menu-item" onClick={() => { setActiveTab('account-management'); setIsMenuOpen(false); }}>🔐 Account Management</div>
             <div className="menu-item" style={{color:'#ef4444', borderTop:'1px solid #334155'}} onClick={() => { sessionStorage.removeItem(sessionKey); window.location.reload(); }}>🏃 Session Logout</div>
           </div>
         )}
@@ -999,6 +1001,8 @@ function App() {
           {activeTab === 'announcements' && '📢 Company Announcements'}
           {activeTab === 'leave-management' && '⛱️ Leave Management'}
           {activeTab === 'payroll-bridge' && '💰 Payroll Bridge'}
+          {activeTab === 'system-settings' && '⚙️ System Settings'}
+          {activeTab === 'account-management' && '🔐 Account Management'}
         </span>
         {activeTab !== 'dashboard' && (
            <button onClick={() => setActiveTab('dashboard')} style={{marginLeft:'auto', background:'rgba(59, 130, 246, 0.1)', border:'1px solid #3b82f6', color:'#3b82f6', padding: '5px 15px', borderRadius: '8px', cursor:'pointer', fontWeight:'900', fontSize: '0.75rem'}}>← BACK TO HUB</button>
@@ -1131,6 +1135,64 @@ function App() {
                  <p style={{color:'#64748b'}}>Please contact the system administrator to activate your access modules.</p>
                </div>
              )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'account-management' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
+            <h2 style={{marginTop:0, color:'white'}}>🔐 Account Management</h2>
+            <p style={{color:'#64748b', marginBottom:'25px'}}>Manage the current account profile, portal access, and tenant details from one place.</p>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}}>
+              <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
+                <h3 style={{marginTop:0, color:'#3b82f6'}}>Account Summary</h3>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px', color:'#cbd5e1'}}>
+                  <div><strong>Company:</strong> {tenantDetails?.companyName || user?.companyName || 'Current Tenant'}</div>
+                  <div><strong>Portal ID:</strong> {detectedTenantId || 'Not detected'}</div>
+                  <div><strong>Username:</strong> {user?.username || username || 'N/A'}</div>
+                  <div><strong>Access Level:</strong> {user?.isConsultant ? 'Consultant' : 'Tenant Admin'}</div>
+                </div>
+              </div>
+              <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
+                <h3 style={{marginTop:0, color:'#10b981'}}>Portal Access</h3>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px', color:'#cbd5e1'}}>
+                  <div><strong>Permissions Enabled:</strong> {(user?.permissions || []).length || '0'}</div>
+                  <div><strong>Current Module:</strong> {activeTab}</div>
+                  <div><strong>Connection Mode:</strong> {activeApiBase === '/api' ? 'Local API' : 'Custom API'}</div>
+                  <div style={{color:'#94a3b8', fontSize:'0.85rem'}}>This section keeps the admin account view organized for tenant-level access.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'system-settings' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
+            <h2 style={{marginTop:0, color:'white'}}>⚙️ System Settings</h2>
+            <p style={{color:'#64748b', marginBottom:'25px'}}>Core tenant settings and portal status for the current environment.</p>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}}>
+              <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
+                <h3 style={{marginTop:0, color:'#f59e0b'}}>Portal Configuration</h3>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px', color:'#cbd5e1'}}>
+                  <div><strong>Tenant ID:</strong> {detectedTenantId || 'Not detected'}</div>
+                  <div><strong>Company:</strong> {tenantDetails?.companyName || user?.companyName || 'Current Tenant'}</div>
+                  <div><strong>App Version:</strong> {appVersionInfo?.version || 'N/A'}</div>
+                </div>
+              </div>
+              <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
+                <h3 style={{marginTop:0, color:'#60a5fa'}}>Operational Status</h3>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px', color:'#cbd5e1'}}>
+                  <div><strong>Status:</strong> {status || 'Ready'}</div>
+                  <div><strong>API Base:</strong> {activeApiBase}</div>
+                  <div><strong>Module Access:</strong> {(user?.permissions || []).length || 0} enabled</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

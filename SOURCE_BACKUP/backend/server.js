@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const os = require('os');
 const { execSync, execFileSync } = require('child_process');
 const { MongoClient } = require('mongodb');
+const { validateDeviceBinding } = require('./deviceBinding');
 
 const app = express();
 // --- BRANDING & ENVIRONMENT ---
@@ -759,11 +760,18 @@ app.post('/api/mobile/login', async (req, res) => {
   if (!emp) return res.status(404).json({ error: 'Employee ID not found' });
 
   // Device Locking Logic (Pro Security)
-  const currentDeviceId = emp.registeredDeviceId || emp.deviceId;
-  if (currentDeviceId && currentDeviceId !== deviceId) {
-    return res.status(403).json({ error: 'Device Mismatch: This account is locked to another device.' });
+  const bindingResult = validateDeviceBinding({
+    employee: emp,
+    deviceId,
+    employees: data.employees,
+    tenantId: targetTenantId
+  });
+
+  if (!bindingResult.allowed) {
+    return res.status(403).json({ error: bindingResult.reason || 'Device Mismatch: This account is locked to another device.' });
   }
 
+  const currentDeviceId = emp.registeredDeviceId || emp.deviceId;
   if (!currentDeviceId) {
     emp.registeredDeviceId = deviceId;
     emp.registeredDeviceName = deviceName || 'Mobile Device';
