@@ -127,7 +127,7 @@ app.get('/api/master/download-apk/:filename', (req, res) => {
 // --- DATABASE UTILS ---
 async function loadData() {
   const db = await getDb();
-  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [], leaves: [], announcements: [] };
+  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [], leaves: [], announcements: [], notifications: [] };
 
   if (db) {
     const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements'];
@@ -771,6 +771,35 @@ app.put('/api/hr/leaves/:id/status', tenantGuard, async (req, res) => {
     return l;
   });
   if (updated) {
+    // Create notifications for employee and tenant admins
+    try {
+      if (!data.notifications) data.notifications = [];
+      const tenantId = req.tenantId || updated.tenantId || 'master';
+      const empNote = {
+        id: `note-${Date.now()}-emp`,
+        tenantId,
+        title: `Leave ${updated.status}`,
+        message: `Your leave request (${updated.type}) has been ${updated.status}.`,
+        type: updated.status === 'Approved' ? 'success' : (updated.status === 'Rejected' ? 'warning' : 'info'),
+        targetEmployeeId: updated.employeeId,
+        createdAt: new Date().toISOString()
+      };
+      data.notifications.unshift(empNote);
+
+      const mgrNote = {
+        id: `note-${Date.now()}-mgr`,
+        tenantId,
+        title: `Leave ${updated.status}: ${updated.employeeName}`,
+        message: `${updated.employeeName} (${updated.employeeId}) leave request has been ${updated.status} by ${managerName || managerId}.`,
+        type: 'info',
+        targetEmployeeId: managerId || '',
+        createdAt: new Date().toISOString()
+      };
+      data.notifications.unshift(mgrNote);
+      // persist trimmed list
+      data.notifications = data.notifications.slice(0, 500);
+    } catch (e) { console.error('Notification error', e.message); }
+
     await saveData(data);
     res.json(updated);
   } else res.status(404).json({ error: 'Leave not found' });
@@ -836,6 +865,26 @@ app.put('/api/hr/leaves/:id/manager-approve', tenantGuard, async (req, res) => {
     await saveData(data);
     res.json(updated);
   } else res.status(404).json({ error: 'Leave not found' });
+});
+
+// Notifications API (simple tenant-scoped notifications)
+app.get('/api/hr/notifications', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId || req.query.tenant || 'master';
+  const filtered = (data.notifications || []).filter(n => (tenantId === 'master' || !tenantId) ? true : (n.tenantId === tenantId));
+  res.json(filtered);
+});
+
+app.post('/api/hr/notifications', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  if (!data.notifications) data.notifications = [];
+  const tenantId = req.tenantId || req.body.tenantId || 'master';
+  const newNote = { id: `note-${Date.now()}`, tenantId, title: req.body.title || '', message: req.body.message || '', type: req.body.type || 'info', createdAt: new Date().toISOString(), targetEmployeeId: req.body.targetEmployeeId || '' };
+  data.notifications.unshift(newNote);
+  // Keep notifications length reasonable
+  data.notifications = data.notifications.slice(0, 200);
+  await saveData(data);
+  res.json(newNote);
 });
 
 app.get('/api/hr/announcements', tenantGuard, async (req, res) => {

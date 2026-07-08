@@ -224,6 +224,7 @@ function App() {
       return JSON.parse(localStorage.getItem('hr_notifications') || '[]');
     } catch (e) { return []; }
   });
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
   const [leavesForApproval, setLeavesForApproval] = useState([]);
@@ -769,7 +770,19 @@ function App() {
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,
       reason: leaveForm.reason.trim(),
-      reportsTo: leaveForm.reportsTo?.trim() || '',
+      // Auto-resolve reportsTo from cachedEmployee -> manager mapping when not provided
+      reportsTo: (function(){
+        try {
+          if (leaveForm.reportsTo && leaveForm.reportsTo.trim()) return leaveForm.reportsTo.trim();
+          const emp = cachedEmployee || JSON.parse(localStorage.getItem('all_employees')||'[]').find(e=> (e.employeeId||'').toString()=== (localStorage.getItem('cached_id')||'').toString());
+          if (emp && emp.reportsTo) {
+            const all = JSON.parse(localStorage.getItem('all_employees')||'[]');
+            const mgr = all.find(m=> (m.employeeId||'').toString() === (emp.reportsTo||'').toString());
+            return mgr ? (mgr.name || mgr.employeeId) : emp.reportsTo;
+          }
+        } catch(e){}
+        return '';
+      })(),
       status: 'Pending',
       tenantId: tenantId || localStorage.getItem('tenant_id') || 'unknown'
     };
@@ -798,6 +811,15 @@ function App() {
     const updatedNotifications = [newNotification, ...hrNotifications].slice(0, 8);
     setHrNotifications(updatedNotifications);
     localStorage.setItem('hr_notifications', JSON.stringify(updatedNotifications));
+
+    // Also post a backend notification so admins can poll it
+    try {
+      const apiBase = apiUrl?.replace(/\/api$/, '') || '';
+      if (apiBase && apiBase.startsWith('http')) {
+        const note = { title: 'Leave Submitted', message: `${leaveForm.type} request from ${localStorage.getItem('cached_name') || 'Employee'}`, type: 'info', targetEmployeeId: localStorage.getItem('cached_id') };
+        await postJson(`${apiBase}/api/hr/notifications`, note, { 'x-tenant-id': tenantId || localStorage.getItem('tenant_id') });
+      }
+    } catch (e) { /* ignore */ }
 
     setLeaveForm({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
     showNotice('Leave Request Saved', 'Your leave request is now pending approval.', 'success');
@@ -956,6 +978,24 @@ function App() {
         </div>
       ) : (
         <div className="content-area fade-in">
+            {/* Notifications button */}
+            <div style={{position:'fixed', right:16, top:16, zIndex:1200}}>
+              <div style={{position:'relative'}}>
+                <button onClick={() => setShowNotifPanel(s => !s)} style={{background:'#071027', border:'1px solid rgba(255,255,255,0.06)', color:'white', padding:'10px 12px', borderRadius:12}}>🔔 {hrNotifications?.length || 0}</button>
+                {showNotifPanel && (
+                  <div style={{position:'absolute', right:0, top:44, width:320, maxHeight:420, overflowY:'auto', background:'#061027', border:'1px solid rgba(255,255,255,0.06)', borderRadius:12, padding:12}}>
+                    <div style={{fontWeight:800, marginBottom:8}}>Notifications</div>
+                    {hrNotifications && hrNotifications.length > 0 ? hrNotifications.map(n => (
+                      <div key={n.id} style={{padding:'10px', borderBottom:'1px solid rgba(255,255,255,0.03)'}}>
+                        <div style={{fontWeight:700}}>{n.title}</div>
+                        <div style={{fontSize:12, color:'#9ca3af'}}>{n.message}</div>
+                        <div style={{fontSize:11, color:'#6b7280', marginTop:6}}>{new Date(n.createdAt || n.created || Date.now()).toLocaleString()}</div>
+                      </div>
+                    )) : <div style={{color:'#9ca3af'}}>No notifications</div>}
+                  </div>
+                )}
+              </div>
+            </div>
           {updateAvailable && (
             <div className="update-overlay fade-in">
                <div className="update-card">

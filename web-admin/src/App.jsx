@@ -49,6 +49,9 @@ function App() {
   const [hrAnnouncements, setHrAnnouncements] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('webadmin_hr_announcements') || '[]'); } catch (e) { return []; }
   });
+  const [hrNotifications, setHrNotifications] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webadmin_hr_notifications') || '[]'); } catch (e) { return []; }
+  });
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' });
   const [tenantUsers, setTenantUsers] = useState([]);
@@ -237,6 +240,15 @@ function App() {
           setHrAnnouncements(anns || []);
           sessionStorage.setItem('webadmin_hr_announcements', JSON.stringify(anns || []));
         }
+        // Fetch notifications for admin
+        try {
+          const notesRes = await fetch(`${activeApiBase}/hr/notifications?tenant=${encodeURIComponent(detectedTenantId)}`);
+          if (notesRes.ok) {
+            const notes = await notesRes.json();
+            setHrNotifications(notes || []);
+            sessionStorage.setItem('webadmin_hr_notifications', JSON.stringify(notes || []));
+          }
+        } catch (e) { /* ignore */ }
       } catch (err) { /* ignore when backend not present */ }
 
     } catch (err) { console.error('Load failed', err); }
@@ -512,6 +524,18 @@ function App() {
       alert('Please fill in the leave details');
       return;
     }
+    // Auto-fill reportsTo from employee -> manager mapping when not provided
+    let effectiveReportsTo = leaveForm.reportsTo?.trim() || '';
+    try {
+      if (!effectiveReportsTo) {
+        const empId = user?.employeeId || user?.username;
+        const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === (empId || "").toString());
+        if (myEmp && myEmp.reportsTo) {
+          const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
+          effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+        }
+      }
+    } catch (e) { /* ignore */ }
 
     const newRequest = {
       id: `leave-${Date.now()}`,
@@ -521,7 +545,7 @@ function App() {
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,
       reason: leaveForm.reason.trim(),
-      reportsTo: leaveForm.reportsTo?.trim() || '',
+      reportsTo: effectiveReportsTo,
       status: 'Pending',
       tenantId: detectedTenantId
     };
@@ -1164,6 +1188,23 @@ function App() {
                </span>
             </div>
             {status && <div className="fade-in" style={{position:'absolute', bottom:'-25px', color:'#10b981', fontSize:'0.7rem', fontWeight:'900'}}>{status}</div>}
+          </div>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:12}}>
+          <div style={{position:'relative'}}>
+            <button onClick={() => setShowNotifPanel(s => !s)} style={{background:'#071022', border:'1px solid rgba(255,255,255,0.06)', color:'white', padding:'10px 12px', borderRadius:10, cursor:'pointer'}}>🔔 {hrNotifications?.length || 0}</button>
+            {showNotifPanel && (
+              <div style={{position:'absolute', right:0, top:44, width:420, maxHeight:440, overflowY:'auto', background:'#061027', border:'1px solid rgba(255,255,255,0.06)', borderRadius:12, padding:12, zIndex:1200}}>
+                <div style={{fontWeight:800, marginBottom:8}}>Notifications</div>
+                {hrNotifications && hrNotifications.length > 0 ? hrNotifications.map(n => (
+                  <div key={n.id} style={{padding:'10px', borderBottom:'1px solid rgba(255,255,255,0.03)'}}>
+                    <div style={{fontWeight:700}}>{n.title}</div>
+                    <div style={{fontSize:12, color:'#9ca3af'}}>{n.message}</div>
+                    <div style={{fontSize:11, color:'#6b7280', marginTop:6}}>{new Date(n.createdAt || n.created || Date.now()).toLocaleString()}</div>
+                  </div>
+                )) : <div style={{color:'#9ca3af'}}>No notifications</div>}
+              </div>
+            )}
           </div>
         </div>
 

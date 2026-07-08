@@ -41,6 +41,10 @@ function App() {
   const [hrAnnouncements, setHrAnnouncements] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('webdev_hr_announcements') || '[]'); } catch (e) { return []; }
   });
+  const [hrNotifications, setHrNotifications] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webdev_hr_notifications') || '[]'); } catch (e) { return []; }
+  });
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' });
 
@@ -231,6 +235,15 @@ function App() {
           setHrAnnouncements(anns || []);
           sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(anns || []));
         }
+        // Fetch notifications
+        try {
+          const notesRes = await fetch(`${activeApiBase}/hr/notifications${tenantQuery}`);
+          if (notesRes.ok) {
+            const notes = await notesRes.json();
+            setHrNotifications(notes || []);
+            sessionStorage.setItem('webdev_hr_notifications', JSON.stringify(notes || []));
+          }
+        } catch (e) { /* ignore */ }
       } catch (err) {
         // ignore if API not present or offline
       }
@@ -244,6 +257,17 @@ function App() {
     const iv = setInterval(() => loadInitialData(), 15000);
     return () => clearInterval(iv);
   }, [activeApiBase, globalTenantFilter]);
+
+  // When current user has employeeId, auto-fetch leaves for approval (manager view)
+  useEffect(() => {
+    try {
+      const empId = currentUser?.employeeId || currentUser?.username;
+      const tenantId = globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || null);
+      if (empId && tenantId) {
+        fetchLeavesForApproval(tenantId, empId);
+      }
+    } catch (e) {}
+  }, [currentUser, globalTenantFilter]);
 
   useEffect(() => {
     if (leaveRequests.length === 0) {
@@ -289,6 +313,19 @@ function App() {
       return;
     }
 
+    // Auto-fill reportsTo from employee -> manager mapping when not provided
+    let effectiveReportsTo = leaveForm.reportsTo?.trim() || '';
+    try {
+      if (!effectiveReportsTo) {
+        const empId = currentUser?.employeeId || currentUser?.username;
+        const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === (empId || "").toString());
+        if (myEmp && myEmp.reportsTo) {
+          const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
+          effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+        }
+      }
+    } catch (e) { /* swallow */ }
+
     const newRequest = {
       id: `leave-${Date.now()}`,
       employeeId: currentUser?.username || 'EMP001',
@@ -297,7 +334,7 @@ function App() {
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,
       reason: leaveForm.reason.trim(),
-      reportsTo: leaveForm.reportsTo?.trim() || '',
+      reportsTo: effectiveReportsTo,
       status: 'Pending',
       tenantId
     };
@@ -1300,6 +1337,26 @@ function App() {
 
   return (
     <div style={{fontFamily:'system-ui, sans-serif', background:'#0f172a', color:'white', minHeight:'100vh', padding:'20px'}}>
+      {/* Notifications */}
+      <div style={{position:'fixed', right:20, top:20, zIndex:1200}}>
+        <div style={{position:'relative'}}>
+          <button onClick={() => setShowNotifPanel(s => !s)} style={{background:'#111827', border:'1px solid rgba(255,255,255,0.06)', color:'white', padding:'10px 12px', borderRadius:12, cursor:'pointer'}}>
+            🔔 {hrNotifications?.length || 0}
+          </button>
+          {showNotifPanel && (
+            <div style={{position:'absolute', right:0, top:44, width:360, maxHeight:420, overflowY:'auto', background:'#0b1220', border:'1px solid rgba(255,255,255,0.06)', borderRadius:12, padding:12}}>
+              <div style={{fontWeight:800, marginBottom:8}}>Notifications</div>
+              {hrNotifications && hrNotifications.length > 0 ? hrNotifications.map(n => (
+                <div key={n.id} style={{padding:'10px', borderBottom:'1px solid rgba(255,255,255,0.03)'}}>
+                  <div style={{fontWeight:700}}>{n.title}</div>
+                  <div style={{fontSize:12, color:'#9ca3af'}}>{n.message}</div>
+                  <div style={{fontSize:11, color:'#6b7280', marginTop:6}}>{new Date(n.createdAt || n.created || Date.now()).toLocaleString()}</div>
+                </div>
+              )) : <div style={{color:'#9ca3af'}}>No notifications</div>}
+            </div>
+          )}
+        </div>
+      </div>
       <style>{`
         .fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }

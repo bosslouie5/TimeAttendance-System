@@ -8,7 +8,8 @@
     {
       "employeeId": "TEST001",
       "name": "Test User",
-      "email": ""
+      "email": "",
+      "reportsTo": "60003078"
     },
     {
       "employeeId": "60000903",
