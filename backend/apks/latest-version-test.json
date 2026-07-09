@@ -1,8 +1,8 @@
 {
   "version": "1.1.2",
-  "downloadUrl": "http://localhost:4002/api/master/download-apk/Company_A_Time_Attendance.apk",
+  "downloadUrl": "http://localhost:4002/api/master/download-apk/TimeKey_Pro_Time_Attendance.apk",
   "tenantId": "949230",
-  "companyName": "Company A",
+  "companyName": "TimeKey Pro",
   "releaseDate": "2026-07-07T06:22:40.812Z",
-  "notes": "LAB TEST: Company A"
+  "notes": "LAB TEST: TimeKey Pro"
 }
