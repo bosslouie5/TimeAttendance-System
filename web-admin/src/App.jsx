@@ -32,6 +32,7 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [assignments, setAssignments] = useState([]);
