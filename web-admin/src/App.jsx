@@ -349,6 +349,7 @@ function App() {
     setEmpTermDate('');
     setEmpTermNote('');
     setEmpStatus('Active');
+    setEmpReportsTo('');
     setIsEditingEmp(false);
     setIsAddEmpModalOpen(true);
   };
@@ -1626,6 +1627,7 @@ function App() {
                   <th>Full Name</th>
                   <th>Job Title</th>
                   <th>Department</th>
+                  <th>Reports To</th>
                   <th>Assigned Branch</th>
                   <th>Gender</th>
                   <th>Nationality</th>
@@ -1651,6 +1653,7 @@ function App() {
                     <td style={{fontWeight:'700', color: 'white'}}>{e.name}</td>
                     <td>{e.jobTitle || '-'}</td>
                     <td>{e.department || '-'}</td>
+                    <td>{e.reportsTo ? employees.find(emp => emp.employeeId === e.reportsTo)?.name || e.reportsTo : '-'}</td>
                     <td>
                       {e.branchName ? (
                          <span style={{background:'rgba(59, 130, 246, 0.1)', color:'#60a5fa', padding:'4px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid rgba(59, 130, 246, 0.3)'}}>📍 {e.branchName}</span>

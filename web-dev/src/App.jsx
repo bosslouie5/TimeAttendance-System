@@ -112,6 +112,7 @@ function App() {
   const [empTermDate, setEmpTermDate] = useState('');
   const [empTermNote, setEmpTermNote] = useState('');
   const [empStatus, setEmpStatus] = useState('Active');
+  const [empReportsTo, setEmpReportsTo] = useState('');
   const [empTenantId, setEmpTenantId] = useState('');
   const [empSchedule, setEmpSchedule] = useState('');
   const [empSearch, setEmpSearch] = useState('');
@@ -708,6 +709,7 @@ function App() {
 
   const handleEmpTenantChange = (tenantId) => {
     setEmpTenantId(tenantId);
+    setEmpReportsTo('');
     if (!isEditingEmp) {
       setEmpId(getNextEmployeeId(tenantId));
     }
@@ -728,6 +730,7 @@ function App() {
     setEmpTermNote('');
     setEmpStatus('Active');
     setEmpSchedule('');
+    setEmpReportsTo('');
     const initialTenant = globalTenantFilter === 'ALL' ? '' : globalTenantFilter;
     setEmpTenantId(initialTenant);
     setEmpId(getNextEmployeeId(initialTenant));
@@ -751,6 +754,7 @@ function App() {
     setEmpTermNote(emp.terminationNote || '');
     setEmpStatus(emp.status || 'Active');
     setEmpSchedule(emp.schedule || '');
+    setEmpReportsTo(emp.reportsTo || '');
     setEmpTenantId(emp.tenantId);
     setIsEditingEmp(true);
     setIsAddEmpModalOpen(true);
@@ -822,6 +826,7 @@ function App() {
           terminationNote: empTermNote,
           schedule: empSchedule,
           status: empStatus,
+          reportsTo: empReportsTo,
           tenantId: empTenantId
         })
       });
@@ -2199,6 +2204,7 @@ function App() {
                     <th>Full Name</th>
                     <th>Job Title</th>
                     <th>Department</th>
+                    <th>Reports To</th>
                     <th>Assigned Branch</th>
                     <th>Gender</th>
                     <th>Nationality</th>
@@ -2226,6 +2232,7 @@ function App() {
                       <td style={{fontWeight:'bold', color: 'white'}}>{e.name}</td>
                       <td>{e.jobTitle || '-'}</td>
                       <td>{e.department || '-'}</td>
+                      <td>{e.reportsTo ? employees.find(emp => emp.employeeId === e.reportsTo && emp.tenantId === e.tenantId)?.name || e.reportsTo : '-'}</td>
                       <td>{e.branchName || '-'}</td>
                       <td>{e.gender || '-'}</td>
                       <td>{e.nationality || '-'}</td>
@@ -2313,6 +2320,15 @@ function App() {
                     <select style={{...inputStyle, padding:'8px 12px', marginBottom:0, fontSize:'0.8rem', height:'38px'}} value={empDept} onChange={e => setEmpDept(e.target.value)}>
                       <option value="">Select Branch</option>
                       {departments.filter(d => d.tenantId === empTenantId).map(d => <option key={d.departmentId} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.55rem', color:'#3b82f6', display:'block', marginBottom:'4px', fontWeight:'900', letterSpacing:'0.5px'}}>REPORTS TO (Manager)</label>
+                    <select style={{...inputStyle, padding:'8px 12px', marginBottom:0, fontSize:'0.8rem', height:'38px'}} value={empReportsTo} onChange={e => setEmpReportsTo(e.target.value)}>
+                      <option value="">No Manager</option>
+                      {employees.filter(e => e.tenantId === empTenantId && e.employeeId !== empId).map(e => (
+                        <option key={e.employeeId} value={e.employeeId}>{e.employeeId} - {e.name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
