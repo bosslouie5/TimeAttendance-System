@@ -414,6 +414,16 @@ function App() {
     };
   }, [tenantId, loggedIn, checkConnection, attemptSync, fetchTenantInfo, isServerDown]);
 
+  useEffect(() => {
+    if (activeTab === 'leave-request' && cachedEmployee && cachedEmployee.reportsTo) {
+      const all = JSON.parse(localStorage.getItem('all_employees') || '[]');
+      const mgr = all.find(m => (m.employeeId || '').toString() === (cachedEmployee.reportsTo || '').toString());
+      if (mgr && !leaveForm.reportsTo) {
+        setLeaveForm(prev => ({ ...prev, reportsTo: mgr.name || mgr.employeeId }));
+      }
+    }
+  }, [activeTab, cachedEmployee]);
+
   // OTA Update Logic & Session Preservation
   useEffect(() => {
     // Clean up update flag if it exists (No more clearing of data)
@@ -1347,45 +1357,56 @@ function App() {
 
               {activeTab === 'view-org' && (
                 <div className="fade-in">
-                  <div style={{background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.05)'}}>
-                    <h2 style={{margin: 0, fontSize: '1.2rem'}}>Organization View</h2>
-                    <p style={{color: '#94a3b8', fontSize: '0.8rem', marginTop: '5px'}}>Hierarchy and reporting structure</p>
+                  <div style={{background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '25px 20px', borderRadius: '30px', marginBottom: '25px', border: '1px solid rgba(59, 130, 246, 0.2)', boxShadow: '0 10px 30px rgba(0,0,0,0.3)'}}>
+                    <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '2px', marginBottom: '8px'}}>ORGANIZATION STRUCTURE</div>
+                    <h2 style={{margin: 0, fontSize: '1.5rem', fontWeight: '900', color: '#fff'}}>My Network</h2>
+                    <p style={{color: '#94a3b8', fontSize: '0.85rem', marginTop: '6px', lineHeight: '1.5'}}>Viewing your professional reporting lines and team members.</p>
                   </div>
 
                   {orgData.manager && (
-                    <div className="glass-card" style={{marginBottom: '20px', borderLeft: '4px solid #3b82f6'}}>
-                      <span className="label-visible">DIRECT MANAGER</span>
-                      <div style={{display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px'}}>
-                        <div style={{width: '50px', height: '50px', borderRadius: '15px', background: 'rgba(59, 130, 246, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'}}>👔</div>
+                    <div className="glass-card" style={{marginBottom: '20px', borderLeft: '4px solid #3b82f6', background: 'rgba(30, 41, 59, 0.4)'}}>
+                      <span className="label-visible" style={{color: '#3b82f6'}}>DIRECT MANAGER</span>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '18px', marginTop: '15px'}}>
+                        <div style={{width: '60px', height: '60px', borderRadius: '22px', background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.1))', border: '1px solid rgba(59, 130, 246, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem'}}>👔</div>
                         <div>
-                          <div style={{fontWeight: '900', fontSize: '1.1rem'}}>{orgData.manager.name}</div>
-                          <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{orgData.manager.jobTitle || 'Manager'}</div>
+                          <div style={{fontWeight: '900', fontSize: '1.2rem', color: '#f8fafc'}}>{orgData.manager.name}</div>
+                          <div style={{fontSize: '0.85rem', color: '#94a3b8', marginTop: '2px'}}>{orgData.manager.jobTitle || 'Manager'}</div>
+                          <div style={{display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '8px', padding: '4px 10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', fontSize: '0.7rem', color: '#60a5fa', fontWeight: '700'}}>
+                             <span style={{width: '6px', height: '6px', borderRadius: '50%', background: '#60a5fa'}}></span> Supervisor
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  <div className="glass-card" style={{marginBottom: '20px', borderLeft: '4px solid #10b981'}}>
-                    <span className="label-visible">MY PROFILE</span>
-                    <div style={{display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px'}}>
-                      <div style={{width: '50px', height: '50px', borderRadius: '15px', background: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'}}>👤</div>
+                  <div className="glass-card" style={{marginBottom: '25px', borderLeft: '4px solid #10b981', background: 'rgba(30, 41, 59, 0.6)', transform: 'scale(1.02)', boxShadow: '0 15px 35px rgba(0,0,0,0.2)'}}>
+                    <span className="label-visible" style={{color: '#10b981'}}>MY EMPLOYEE PROFILE</span>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '18px', marginTop: '15px'}}>
+                      <div style={{width: '60px', height: '60px', borderRadius: '22px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.1))', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem'}}>👤</div>
                       <div>
-                        <div style={{fontWeight: '900', fontSize: '1.1rem'}}>{cachedEmployee?.name} (You)</div>
-                        <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{cachedEmployee?.jobTitle}</div>
+                        <div style={{fontWeight: '900', fontSize: '1.2rem', color: '#f8fafc'}}>{cachedEmployee?.name} <span style={{fontSize: '0.8rem', color: '#64748b', fontWeight: '500'}}>(You)</span></div>
+                        <div style={{fontSize: '0.85rem', color: '#94a3b8', marginTop: '2px'}}>{cachedEmployee?.jobTitle}</div>
+                        <div style={{fontSize: '0.75rem', color: '#4ade80', fontWeight: '800', marginTop: '8px'}}>ID: {cachedEmployee?.employeeId}</div>
                       </div>
                     </div>
                   </div>
 
-                  {orgData.teammates.length > 0 && (
-                    <div className="glass-card" style={{marginBottom: '20px'}}>
-                      <span className="label-visible">TEAMMATES</span>
-                      <div style={{display: 'grid', gap: '12px', marginTop: '15px'}}>
-                        {orgData.teammates.map(t => (
-                          <div key={t.employeeId} style={{display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '16px'}}>
-                             <div style={{fontSize: '1.2rem'}}>👥</div>
-                             <div>
-                               <div style={{fontWeight: '700', fontSize: '0.9rem'}}>{t.name}</div>
-                               <div style={{fontSize: '0.7rem', color: '#64748b'}}>{t.jobTitle}</div>
+                  {orgData.subordinates.length > 0 && (
+                    <div style={{marginBottom: '30px'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', padding: '0 5px'}}>
+                        <span className="label-visible" style={{margin: 0, color: '#f59e0b', fontSize: '0.8rem'}}>DIRECT REPORTS ({orgData.subordinates.length})</span>
+                        <div style={{height: '1px', flex: 1, background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.2), transparent)', marginLeft: '15px'}}></div>
+                      </div>
+                      <div style={{display: 'grid', gap: '15px'}}>
+                        {orgData.subordinates.map((s, idx) => (
+                          <div key={s.employeeId} className="fade-in" style={{animationDelay: `${idx * 0.1}s`, display: 'flex', alignItems: 'center', gap: '15px', background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(30, 41, 59, 0.5))', padding: '16px', borderRadius: '20px', border: '1px solid rgba(59, 130, 246, 0.15)', boxShadow: '0 4px 15px rgba(0,0,0,0.1)'}}>
+                             <div style={{width: '45px', height: '45px', borderRadius: '14px', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', border: '1px solid rgba(255,255,255,0.05)'}}>📉</div>
+                             <div style={{flex: 1}}>
+                               <div style={{fontWeight: '800', fontSize: '1rem', color: '#f1f5f9'}}>{s.name}</div>
+                               <div style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px'}}>{s.jobTitle}</div>
+                             </div>
+                             <div style={{textAlign: 'right'}}>
+                               <div style={{fontSize: '0.65rem', color: '#60a5fa', fontWeight: '800', background: 'rgba(59, 130, 246, 0.1)', padding: '4px 8px', borderRadius: '6px'}}>REPORTING</div>
                              </div>
                           </div>
                         ))}
@@ -1393,16 +1414,19 @@ function App() {
                     </div>
                   )}
 
-                  {orgData.subordinates.length > 0 && (
-                    <div className="glass-card">
-                      <span className="label-visible">DIRECT REPORTS</span>
-                      <div style={{display: 'grid', gap: '12px', marginTop: '15px'}}>
-                        {orgData.subordinates.map(s => (
-                          <div key={s.employeeId} style={{display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.1)'}}>
-                             <div style={{fontSize: '1.2rem'}}>📉</div>
+                  {orgData.teammates.length > 0 && (
+                    <div style={{marginBottom: '20px'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', padding: '0 5px'}}>
+                        <span className="label-visible" style={{margin: 0}}>MY TEAMMATES ({orgData.teammates.length})</span>
+                        <div style={{height: '1px', flex: 1, background: 'linear-gradient(90deg, rgba(255, 255, 255, 0.1), transparent)', marginLeft: '15px'}}></div>
+                      </div>
+                      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
+                        {orgData.teammates.map((t, idx) => (
+                          <div key={t.employeeId} className="fade-in" style={{animationDelay: `${idx * 0.05}s`, display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '18px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                             <div style={{fontSize: '1.4rem'}}>👥</div>
                              <div>
-                               <div style={{fontWeight: '700', fontSize: '0.9rem'}}>{s.name}</div>
-                               <div style={{fontSize: '0.7rem', color: '#64748b'}}>{s.jobTitle}</div>
+                               <div style={{fontWeight: '800', fontSize: '0.85rem', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{t.name}</div>
+                               <div style={{fontSize: '0.7rem', color: '#64748b', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{t.jobTitle}</div>
                              </div>
                           </div>
                         ))}
@@ -1411,9 +1435,10 @@ function App() {
                   )}
 
                   {!orgData.manager && orgData.subordinates.length === 0 && orgData.teammates.length === 0 && (
-                    <div style={{textAlign: 'center', padding: '40px 20px', color: '#64748b'}}>
-                       <div style={{fontSize: '3rem', marginBottom: '15px'}}>🏢</div>
-                       <p>Walang nakitang reporting structure para sa account mo.</p>
+                    <div className="glass-card" style={{textAlign: 'center', padding: '60px 20px', color: '#64748b', borderStyle: 'dashed'}}>
+                       <div style={{fontSize: '4rem', marginBottom: '20px'}}>🏢</div>
+                       <h3 style={{color: '#94a3b8', margin: '0 0 10px 0'}}>No Network Found</h3>
+                       <p style={{fontSize: '0.9rem'}}>Walang nakitang reporting structure para sa account mo. Please contact HR if this is an error.</p>
                     </div>
                   )}
                 </div>
