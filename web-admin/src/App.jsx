@@ -42,7 +42,7 @@ function App() {
   const [positionTitles, setPositionTitles] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [tenantDetails, setTenantDetails] = useState(null);
-  const [appVersionInfo, setAppVersionInfo] = useState(null);
+  const [appVersionInfo, setAppVersionInfo] = useState(appConfig);
   const [status, setStatus] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginErrorCode, setLoginErrorCode] = useState('');
@@ -129,30 +129,27 @@ function App() {
   useEffect(() => {
     const checkConnection = () => {
       setActiveApiBase('/api');
-    };
-    checkConnection();
-  }, []);
-
-  useEffect(() => {
-    if (detectedTenantId) {
-      fetch(`${activeApiBase}/tenant-info/${detectedTenantId}`)
-        .then(r => r.json())
-        .then(data => {
-          setTenantDetails(data);
-          if (user && !user.isConsultant && data.permissions) {
-            const updated = { ...user, permissions: data.permissions };
-            setUser(updated);
-            sessionStorage.setItem(sessionKey, JSON.stringify(updated));
-          }
-        })
-        .catch(() => {});
-
-      // Fetch App Version
+      // Fetch App Version (Global)
       fetch(`${activeApiBase}/app-version`)
         .then(r => r.json())
         .then(data => setAppVersionInfo(data))
         .catch(() => {});
-    }
+
+      if (detectedTenantId) {
+        fetch(`${activeApiBase}/tenant-info/${detectedTenantId}`)
+          .then(r => r.json())
+          .then(data => {
+            setTenantDetails(data);
+            if (user && !user.isConsultant && data.permissions) {
+              const updated = { ...user, permissions: data.permissions };
+              setUser(updated);
+              sessionStorage.setItem(sessionKey, JSON.stringify(updated));
+            }
+          })
+          .catch(() => {});
+      }
+    };
+    checkConnection();
   }, [detectedTenantId, activeApiBase]);
 
   useEffect(() => {
@@ -1362,13 +1359,11 @@ function App() {
               LOGOUT
             </button>
           </div>
-          {appVersionInfo && (
-            <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
-              <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || appConfig.version || '1.0.1'}</span>
-              <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
-            </div>
-          )}
+          <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
+            <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
+            APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || appConfig.version}</span>
+            <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
+          </div>
         </div>
       </header>
 

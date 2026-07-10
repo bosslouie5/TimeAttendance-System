@@ -3,10 +3,27 @@ title TIMEKEY MASTER CONTROL v7.0 (PRO)
 setlocal enabledelayedexpansion
 
 :: ==========================================
-:: PORTABLE PATHS CONFIGURATION
+:: PORTABLE PATHS CONFIGURATION (AUTO-DETECT)
 :: ==========================================
 set "ROOT_DIR=%~dp0"
 set "DEV_TOOLS=C:\Users\60003078\Desktop\Advance Software\DEV_TOOLS"
+
+:: Check if DEV_TOOLS is in the parent directory (Relative Path fallback)
+if not exist "%DEV_TOOLS%" (
+    pushd "%ROOT_DIR%.."
+    set "DEV_TOOLS=!CD!\DEV_TOOLS"
+    popd
+)
+
+:: Final check and drive-agnostic logic
+if not exist "%DEV_TOOLS%" (
+    for %%d in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+        if exist "%%d:\Users\60003078\Desktop\Advance Software\DEV_TOOLS" (
+            set "DEV_TOOLS=%%d:\Users\60003078\Desktop\Advance Software\DEV_TOOLS"
+        )
+    )
+)
+
 set "NODE_PATH=%DEV_TOOLS%\node-v20.11.1-win-x64"
 set "GIT_EXE=%DEV_TOOLS%\Git\cmd\git.exe"
 set "ADB_EXE=%DEV_TOOLS%\platform-tools\adb.exe"
@@ -198,7 +215,7 @@ if exist "%GRADLE_FILE%" (
 )
 
 :: Use Node to update JSON files with both Version Name and Version Code
-node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8');"
+node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8'); if (fs.existsSync('backend/apks/latest-version-test.json')) { fs.writeFileSync('backend/apks/latest-version-test.json', JSON.stringify({...v, notes:'BUMPED IN LAB'}, null, 2), 'utf8'); }"
 node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.versionCode='!NEW_VC!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
 if exist "%ADMIN_CONFIG%" (
     node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.versionCode='!NEW_VC!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
@@ -315,8 +332,8 @@ if exist "%APK_SOURCE%" (
     if not exist "..\..\backend\apks" mkdir "..\..\backend\apks"
     copy /y "%APK_SOURCE%" "..\..\backend\apks\TimeKey_Master.apk" >nul
 
-    :: Create latest-version.json for Broadcast
-    node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+    :: Create latest-version.json for Broadcast (Sync both prod and test for safety)
+    node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8'); fs.writeFileSync('../../backend/apks/latest-version-test.json', JSON.stringify(v, null, 2), 'utf8');"
 
     echo [OK] Signed APK created and Synced for OTA updates.
 ) else (
