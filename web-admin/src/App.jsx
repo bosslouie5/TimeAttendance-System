@@ -59,6 +59,9 @@ function App() {
   const [newTenantUser, setNewTenantUser] = useState('');
   const [newTenantUserPass, setNewTenantUserPass] = useState('');
   const [newTenantUserDisplay, setNewTenantUserDisplay] = useState('');
+  const [newTenantEmployeeId, setNewTenantEmployeeId] = useState('');
+  const [isEditingTenantUser, setIsEditingTenantUser] = useState(false);
+  const [editingUsername, setEditingUsername] = useState('');
 
   // Form States
   const [newOrgName, setNewOrgName] = useState('');
@@ -609,25 +612,69 @@ function App() {
     setStatus('Announcement posted ✓');
   };
 
+  const handleEmployeeIdChange = (val) => {
+    setNewTenantEmployeeId(val);
+    const emp = employees.find(e => e.employeeId === val);
+    if (emp) {
+      setNewTenantUserDisplay(emp.name);
+    }
+  };
+
+  const cancelTenantUserEdit = () => {
+    setIsEditingTenantUser(false);
+    setEditingUsername('');
+    setNewTenantUser('');
+    setNewTenantUserPass('');
+    setNewTenantUserDisplay('');
+    setNewTenantEmployeeId('');
+  };
+
   const createTenantUser = async () => {
-    if (!newTenantUser.trim() || !newTenantUserPass || !newTenantUserDisplay.trim()) {
-      return alert('Username, password, and display name are required.');
+    if (!newTenantUser.trim() || (!isEditingTenantUser && !newTenantUserPass) || !newTenantUserDisplay.trim()) {
+      return alert('Username, password (for new), and display name are required.');
     }
-    setStatus('Creating tenant user...');
+
+    setStatus(isEditingTenantUser ? 'Updating tenant user...' : 'Creating tenant user...');
     try {
-      const created = await requestJson('/tenant-users', {
-        method: 'POST',
-        body: JSON.stringify({ username: newTenantUser.trim(), password: newTenantUserPass, displayName: newTenantUserDisplay.trim() })
-      });
-      setTenantUsers([created, ...tenantUsers]);
-      setNewTenantUser('');
-      setNewTenantUserPass('');
-      setNewTenantUserDisplay('');
-      setStatus('Tenant user created ✓');
+      if (isEditingTenantUser) {
+        const updated = await requestJson(`/tenant-users/${editingUsername}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            password: newTenantUserPass,
+            displayName: newTenantUserDisplay.trim(),
+            employeeId: newTenantEmployeeId.trim()
+          })
+        });
+        setTenantUsers(tenantUsers.map(u => u.username === editingUsername ? updated : u));
+        setStatus('Tenant user updated ✓');
+        cancelTenantUserEdit();
+      } else {
+        const created = await requestJson('/tenant-users', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: newTenantUser.trim(),
+            password: newTenantUserPass,
+            displayName: newTenantUserDisplay.trim(),
+            employeeId: newTenantEmployeeId.trim()
+          })
+        });
+        setTenantUsers([created, ...tenantUsers]);
+        cancelTenantUserEdit();
+        setStatus('Tenant user created ✓');
+      }
     } catch (err) {
-      alert(err.message || 'Could not create tenant user');
-      setStatus('Tenant user creation failed');
+      alert(err.message || 'Action failed');
+      setStatus('Tenant user action failed');
     }
+  };
+
+  const startEditTenantUser = (u) => {
+    setIsEditingTenantUser(true);
+    setEditingUsername(u.username);
+    setNewTenantUser(u.username);
+    setNewTenantUserDisplay(u.displayName || '');
+    setNewTenantEmployeeId(u.employeeId || '');
+    setNewTenantUserPass(''); // Clear password field for security
   };
 
   const saveShift = async () => {
@@ -1455,13 +1502,27 @@ function App() {
               </div>
             </div>
             <div style={{background:'#1e293b', padding:'20px', borderRadius:'15px', border:'1px solid #334155', marginTop:'20px'}}>
-              <h3 style={{marginTop:0, color:'#8b5cf6'}}>Tenant User Management</h3>
-              <p style={{color:'#64748b', marginBottom:'15px'}}>Create tenant-scoped admin users for this portal. Tenant users are restricted to the current tenant.</p>
-              <div style={{display:'grid', gap:'10px', marginBottom:'15px'}}>
-                <input value={newTenantUser} onChange={e => setNewTenantUser(e.target.value)} placeholder="Username" style={inputStyle} />
-                <input type="password" value={newTenantUserPass} onChange={e => setNewTenantUserPass(e.target.value)} placeholder="Password" style={inputStyle} />
+              <h3 style={{marginTop:0, color:'#8b5cf6'}}>{isEditingTenantUser ? '✏️ Edit Tenant User' : '👤 Tenant User Management'}</h3>
+              <p style={{color:'#64748b', marginBottom:'15px'}}>
+                {isEditingTenantUser
+                  ? `Updating profile for ${editingUsername}. Username cannot be changed.`
+                  : 'Create tenant-scoped admin users for this portal. Tenant users are restricted to the current tenant.'}
+              </p>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'15px'}}>
+                <div style={{gridColumn:'1 / -1', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
+                   <input value={newTenantEmployeeId} onChange={e => handleEmployeeIdChange(e.target.value)} placeholder="Employee ID (Auto-fills Name)" style={inputStyle} />
+                   <input value={newTenantUser} onChange={e => setNewTenantUser(e.target.value)} placeholder="Username" style={inputStyle} disabled={isEditingTenantUser} />
+                </div>
+                <input type="password" value={newTenantUserPass} onChange={e => setNewTenantUserPass(e.target.value)} placeholder={isEditingTenantUser ? "New Password (Leave blank to keep current)" : "Password"} style={inputStyle} />
                 <input value={newTenantUserDisplay} onChange={e => setNewTenantUserDisplay(e.target.value)} placeholder="Display Name" style={inputStyle} />
-                <button type="button" onClick={createTenantUser} style={{...smallBtn, background:'#3b82f6', width:'fit-content'}}>Create Tenant User</button>
+                <div style={{display:'flex', gap:'10px', gridColumn:'1 / -1'}}>
+                  <button type="button" onClick={createTenantUser} style={{...smallBtn, background: isEditingTenantUser ? '#10b981' : '#3b82f6', width:'fit-content'}}>
+                    {isEditingTenantUser ? 'Update User' : 'Create Tenant User'}
+                  </button>
+                  {isEditingTenantUser && (
+                    <button type="button" onClick={cancelTenantUserEdit} style={{...smallBtn, background:'#475569', width:'fit-content'}}>Cancel</button>
+                  )}
+                </div>
               </div>
               <div style={{background:'#0f172a', borderRadius:'12px', padding:'15px', border:'1px solid #334155'}}>
                 <div style={{fontSize:'0.9rem', color:'#94a3b8', marginBottom:'10px'}}>Existing tenant users</div>
@@ -1469,9 +1530,12 @@ function App() {
                   <div style={{color:'#64748b'}}>No tenant users created yet.</div>
                 ) : (
                   tenantUsers.map(u => (
-                    <div key={u.username} style={{padding:'10px 0', borderBottom:'1px solid #334155'}}>
-                      <div style={{fontWeight:'700', color:'#f8fafc'}}>{u.displayName || u.username}</div>
-                      <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>Username: {u.username}</div>
+                    <div key={u.username} style={{padding:'12px 0', borderBottom:'1px solid #334155', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <div>
+                        <div style={{fontWeight:'700', color:'#f8fafc'}}>{u.displayName || u.username}</div>
+                        <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>Username: {u.username} {u.employeeId && `• ID: ${u.employeeId}`}</div>
+                      </div>
+                      <button onClick={() => startEditTenantUser(u)} style={{...smallBtn, background:'#334155', border:'1px solid #475569', padding:'5px 10px'}}>Edit</button>
                     </div>
                   ))
                 )}

@@ -951,6 +951,38 @@ app.post('/api/tenant-users', tenantGuard, async (req, res) => {
   res.json(newUser);
 });
 
+app.put('/api/tenant-users/:username', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId;
+  const username = req.params.username;
+
+  const userIndex = data.users.findIndex(u =>
+    u.username.toLowerCase() === username.toLowerCase() &&
+    (u.tenantId || u.username) === tenantId
+  );
+
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'User not found for this tenant.' });
+  }
+
+  const { password, displayName, employeeId } = req.body;
+
+  if (password) {
+    data.users[userIndex].password = password;
+  }
+
+  if (displayName) {
+    data.users[userIndex].displayName = displayName.trim();
+  }
+
+  if (employeeId !== undefined) {
+    data.users[userIndex].employeeId = employeeId.trim();
+  }
+
+  await saveData(data);
+  res.json(data.users[userIndex]);
+});
+
 app.post('/api/device/reset', tenantGuard, async (req, res) => {
   const { employeeId } = req.body;
   const data = await loadData();
@@ -1258,6 +1290,38 @@ app.post('/api/users', async (req, res) => {
   data.users.push(newUser);
   await saveData(data);
   res.json(newUser);
+});
+
+app.put('/api/tenant-users/:username', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId;
+  const username = req.params.username;
+
+  const userIndex = data.users.findIndex(u =>
+    u.username.toLowerCase() === username.toLowerCase() &&
+    (u.tenantId || u.username) === tenantId
+  );
+
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'User not found for this tenant.' });
+  }
+
+  const { password, displayName, employeeId } = req.body;
+
+  if (password) {
+    data.users[userIndex].password = password;
+  }
+
+  if (displayName) {
+    data.users[userIndex].displayName = displayName.trim();
+  }
+
+  if (employeeId !== undefined) {
+    data.users[userIndex].employeeId = employeeId.trim();
+  }
+
+  await saveData(data);
+  res.json(data.users[userIndex]);
 });
 
 app.delete('/api/users/:tenantId', async (req, res) => {
