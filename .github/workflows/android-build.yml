@@ -56,8 +56,17 @@ jobs:
       - name: Build Mobile APK (Universal)
         run: |
           cd mobile-app
-          # Apply production config logic
-          node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('src/app_config.json')); c.defaultApiUrl='https://timeattendance-system.onrender.com/api'; c.defaultTenantId='MASTER_UNIVERSAL'; fs.writeFileSync('src/app_config.json', JSON.stringify(c, null, 2));"
+          
+          # Auto-increment versioning based on GitHub Run Number
+          VERSION="1.1.${{ github.run_number }}"
+          VERSION_CODE="${{ github.run_number }}"
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          echo "[VERSIONING] Setting version to $VERSION ($VERSION_CODE)"
+          
+          # Update app_config.json with production settings and NEW version
+          node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('src/app_config.json')); c.defaultApiUrl='https://timeattendance-system.onrender.com/api'; c.defaultTenantId='MASTER_UNIVERSAL'; c.version='$VERSION'; c.versionCode='$VERSION_CODE'; c.buildDate='$BUILD_DATE'; fs.writeFileSync('src/app_config.json', JSON.stringify(c, null, 2));"
+          
           npm run build
           npx cap sync android
           cd android && chmod +x gradlew && ./gradlew clean assembleDebug
@@ -67,6 +76,11 @@ jobs:
           mkdir -p final-deploy/dev
           mkdir -p final-deploy/app
           mkdir -p final-deploy/apks
+          
+          # Generate Update Metadata for Mobile App Sync
+          VERSION="1.1.${{ github.run_number }}"
+          VERSION_CODE="${{ github.run_number }}"
+          echo "{\"version\":\"$VERSION\",\"versionCode\":\"$VERSION_CODE\",\"notes\":\"Production Release Build ${{ github.run_number }}: Optimization and synchronization fix.\",\"downloadUrl\":\"https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk\"}" > final-deploy/apks/latest-version.json
           
           # Verify builds before copying
           if [ -d "web-admin/dist" ]; then cp -r web-admin/dist/* final-deploy/; fi
@@ -80,6 +94,7 @@ jobs:
           
           echo "Last Deploy: $(date)" > final-deploy/version.txt
           echo "Build Version: ${{ github.sha }}" >> final-deploy/version.txt
+          echo "App Version: $VERSION ($VERSION_CODE)" >> final-deploy/version.txt
 
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3

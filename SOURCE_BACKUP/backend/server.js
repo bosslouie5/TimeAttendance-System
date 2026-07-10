@@ -15,7 +15,7 @@ const ALL_MODULES = [
   'dashboard', 'employees', 'org-units', 'branches', 'assign-branch',
   'reports', 'setup', 'devices', 'position-titles', 'schedules',
   'assign-schedule', 'announcements', 'leave-management', 'payroll-bridge',
-  'subscription-info'
+  'subscription-info', 'schedule-adjustments'
 ];
 const brand = JSON.parse(fs.readFileSync(path.join(__dirname, 'brand_config.json'), 'utf8'));
 const isTestMode = process.env.SYSTEM_MODE === 'test';
@@ -127,10 +127,10 @@ app.get('/api/master/download-apk/:filename', (req, res) => {
 // --- DATABASE UTILS ---
 async function loadData() {
   const db = await getDb();
-  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [], leaves: [], announcements: [], notifications: [] };
+  let data = { settings: {}, users: [], employees: [], departments: [], logs: [], orgUnits: [], assignments: [], positionTitles: [], schedules: [], leaves: [], announcements: [], notifications: [], scheduleAdjustments: [] };
 
   if (db) {
-    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements'];
+    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements', 'scheduleAdjustments'];
     for (const col of collections) {
       try { data[col] = await db.collection(col).find({}).toArray(); } catch (e) { data[col] = []; }
     }
@@ -177,7 +177,7 @@ async function loadData() {
 async function saveData(data) {
   const db = await getDb();
   if (db) {
-    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements'];
+    const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements', 'scheduleAdjustments'];
     for (const col of collections) {
       if (data[col]) {
         await db.collection(col).deleteMany({});
@@ -187,6 +187,23 @@ async function saveData(data) {
     return;
   }
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf8');
+}
+
+// --- HIERARCHY UTILS ---
+function getAllSubordinateIds(managerId, employees, tenantId) {
+  const subordinates = employees.filter(e =>
+    e.reportsTo === managerId &&
+    (e.tenantId || '').toLowerCase() === (tenantId || '').toLowerCase()
+  );
+
+  let ids = subordinates.map(s => s.employeeId);
+
+  subordinates.forEach(s => {
+    const subIds = getAllSubordinateIds(s.employeeId, employees, tenantId);
+    ids = [...ids, ...subIds];
+  });
+
+  return ids;
 }
 
 // --- DEV ACCOUNTS UTILS ---
@@ -488,7 +505,17 @@ app.delete('/api/master/dev-accounts/:username', async (req, res) => {
 // --- CORE APP ENDPOINTS ---
 app.get('/api/employees', tenantGuard, async (req, res) => {
   const data = await loadData();
-  res.json(data.employees.filter(e => e.tenantId === (req.tenantId || 'master')));
+  const tenantId = req.tenantId || 'master';
+  const { requestingEmployeeId } = req.query;
+
+  let filtered = data.employees.filter(e => e.tenantId === tenantId);
+
+  if (requestingEmployeeId) {
+    const subordinateIds = getAllSubordinateIds(requestingEmployeeId, data.employees, tenantId);
+    filtered = filtered.filter(e => subordinateIds.includes(e.employeeId) || e.employeeId === requestingEmployeeId);
+  }
+
+  res.json(filtered);
 });
 
 app.post('/api/employees', tenantGuard, async (req, res) => {
@@ -734,7 +761,18 @@ app.post('/api/assignments', tenantGuard, async (req, res) => {
 
 app.get('/api/logs', tenantGuard, async (req, res) => {
   const data = await loadData();
-  res.json(data.logs.filter(l => l.tenantId === (req.tenantId || 'master')));
+  const tenantId = req.tenantId || 'master';
+  const { requestingEmployeeId } = req.query;
+
+  let filtered = data.logs.filter(l => l.tenantId === tenantId);
+
+  if (requestingEmployeeId) {
+    const subordinateIds = getAllSubordinateIds(requestingEmployeeId, data.employees, tenantId);
+    // Include the manager's own logs and their subordinates' logs
+    filtered = filtered.filter(l => subordinateIds.includes(l.employeeId) || l.employeeId === requestingEmployeeId);
+  }
+
+  res.json(filtered);
 });
 
 app.post('/api/logs', tenantGuard, async (req, res) => {
@@ -943,6 +981,77 @@ app.get('/api/hr/announcements', tenantGuard, async (req, res) => {
   const tenantId = req.tenantId || req.query.tenant || 'master';
   const filtered = (data.announcements || []).filter(a => (tenantId === 'master' || !tenantId) ? true : (a.tenantId === tenantId));
   res.json(filtered);
+});
+
+// --- Schedule Adjustment API ---
+app.get('/api/hr/schedule-adjustments', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId || 'master';
+  const { employeeId, requestingEmployeeId } = req.query;
+
+  let filtered = (data.scheduleAdjustments || []).filter(s => s.tenantId === tenantId);
+
+  if (employeeId) {
+    filtered = filtered.filter(s => s.employeeId === employeeId);
+  }
+
+  if (requestingEmployeeId) {
+    const subordinateIds = getAllSubordinateIds(requestingEmployeeId, data.employees, tenantId);
+    filtered = filtered.filter(s => subordinateIds.includes(s.employeeId) || s.requestedBy === requestingEmployeeId);
+  }
+
+  res.json(filtered);
+});
+
+app.post('/api/hr/schedule-adjustments', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  if (!data.scheduleAdjustments) data.scheduleAdjustments = [];
+  const tenantId = req.tenantId || 'master';
+
+  const newAdjustment = {
+    ...req.body,
+    id: `adj-${Date.now()}`,
+    status: 'Pending',
+    tenantId,
+    createdAt: new Date().toISOString()
+  };
+
+  data.scheduleAdjustments.push(newAdjustment);
+  await saveData(data);
+  res.json(newAdjustment);
+});
+
+app.put('/api/hr/schedule-adjustments/:id/status', tenantGuard, async (req, res) => {
+  const { id } = req.params;
+  const { status, approvedBy } = req.body;
+  const data = await loadData();
+  let updated = null;
+
+  data.scheduleAdjustments = (data.scheduleAdjustments || []).map(s => {
+    if (s.id === id && s.tenantId === (req.tenantId || 'master')) {
+      updated = {
+        ...s,
+        status,
+        approvedBy: approvedBy || 'admin',
+        updatedAt: new Date().toISOString()
+      };
+
+      // If approved, update the employee's actual schedule
+      if (status === 'Approved') {
+        const emp = data.employees.find(e => e.employeeId === s.employeeId && e.tenantId === s.tenantId);
+        if (emp) {
+          emp.schedule = s.newSchedule;
+        }
+      }
+      return updated;
+    }
+    return s;
+  });
+
+  if (updated) {
+    await saveData(data);
+    res.json(updated);
+  } else res.status(404).json({ error: 'Adjustment request not found' });
 });
 
 app.post('/api/hr/announcements', tenantGuard, async (req, res) => {

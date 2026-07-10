@@ -440,44 +440,59 @@ function App() {
 
     // WHAT'S NEW LOGIC (One-time prompt after update)
     const checkWhatsNew = async () => {
-      const lastSeen = localStorage.getItem('last_seen_version');
-      const current = appConfig.version;
+      const lastSeenCode = localStorage.getItem('last_seen_version_code');
+      const currentCode = appConfig.versionCode;
 
-      if (lastSeen && lastSeen !== current) {
+      if (lastSeenCode && lastSeenCode !== currentCode) {
          try {
-           const res = await getJson(`${apiUrl}/app-version`);
+           // We fetch the update notes from the metadata source
+           const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
+           const res = await getJson(`${GITHUB_PAGES_URL}/apks/latest-version.json`);
            if (res.ok && res.data) {
              setWhatsNewData(res.data);
              setShowWhatsNew(true);
            }
          } catch (e) {}
       }
-      localStorage.setItem('last_seen_version', current);
+      localStorage.setItem('last_seen_version_code', currentCode);
+      localStorage.setItem('last_seen_version', appConfig.version);
     };
 
     const checkUpdate = async () => {
-      if (!apiUrl || !apiUrl.startsWith('http') || isServerDown) return;
+      // RULE: Only prompt after GitHub Deployment is finished
+      // We check the version metadata hosted on GitHub Pages for perfect sync
+      const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
+      const updateMetadataUrl = `${GITHUB_PAGES_URL}/apks/latest-version.json`;
 
-      const isLabServer = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+      const isLabServer = apiUrl && (apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1') || apiUrl.includes(':4002'));
 
       try {
-        const res = await getJson(`${apiUrl}/app-version`);
+        const res = await getJson(updateMetadataUrl);
+        let latest = null;
+
         if (res.ok && res.data) {
-          const latest = res.data;
+           latest = res.data;
+        } else if (apiUrl && apiUrl.startsWith('http')) {
+           // Fallback to Render API if GitHub Pages metadata is not found
+           const fallbackRes = await getJson(`${apiUrl}/app-version`);
+           if (fallbackRes.ok) latest = fallbackRes.data;
+        }
+
+        if (latest) {
           const currentVer = appConfig.version || '1.0.0';
           const currentCode = parseInt(appConfig.versionCode || 0);
           const latestCode = parseInt(latest.versionCode || 0);
 
           let isNewer = false;
 
-          // 1. Primary Check: versionCode
+          // 1. Primary Check: versionCode (Ensures build accuracy)
           if (latestCode > currentCode) {
              isNewer = true;
           }
 
           // 2. Fallback: Semantic Versioning comparison
           if (!isNewer) {
-            const latestParts = latest.version.split('.').map(v => parseInt(v) || 0);
+            const latestParts = (latest.version || '0.0.0').split('.').map(v => parseInt(v) || 0);
             const currentParts = currentVer.split('.').map(v => parseInt(v) || 0);
             for (let i = 0; i < 3; i++) {
               if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
@@ -485,21 +500,17 @@ function App() {
             }
           }
 
-          // PRO LOGGING: Help developer identify version mismatch in ADB
+          // PRO LOGGING
           console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${latest.version} (${latestCode}) | isNewer: ${isNewer}`);
 
           if (isNewer) {
-            // Lab Security: If in Lab mode, only show update if there's a significant version jump
-            // to avoid loop while coding, or if the user is testing the OTA flow itself.
-            if (isLabServer) {
+            if (isLabServer && !window.location.search.includes('forceUpdate')) {
                console.warn("[OTA-LAB] Update available but suppressed for Lab Server stability.");
-               // We still set it if it's a forced test or different version name
                if (latest.version !== currentVer) setUpdateAvailable(latest);
             } else {
                setUpdateAvailable(latest);
             }
           } else {
-            // CRITICAL FIX: Clear the update state if we are already up to date
             setUpdateAvailable(null);
           }
         }
