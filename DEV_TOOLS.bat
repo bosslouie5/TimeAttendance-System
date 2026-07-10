@@ -123,9 +123,24 @@ if exist "%CONFIG_FILE%" (
 if exist "MIRROR_PHONE.bat" start /b "" cmd /c "MIRROR_PHONE.bat"
 pushd mobile-app
 echo [*] Building UI (Lab Mode)...
-call npx vite build --outDir dist-test --emptyOutDir
+call npx vite build --outDir dist --emptyOutDir
 echo [*] Syncing Capacitor...
 call npx cap sync android
+echo [*] Building Debug APK for Lab OTA testing...
+cd android
+call gradlew.bat assembleDebug
+cd ..
+if exist "android\app\build\outputs\apk\debug\app-debug.apk" (
+    copy /y "android\app\build\outputs\apk\debug\app-debug.apk" "..\backend\apks\TimeKey_Master.apk" >nul
+
+    :: Sync metadata for Lab OTA to match the current build version exactly
+    for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CUR_V=%%v"
+    for /f %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$c = Get-Content 'android\app\build.gradle' -Raw; if ($c -match 'versionCode\s+(\d+)') { $Matches[1] }"') do set "CUR_VC=%%a"
+
+    node -e "const fs=require('fs'); const v={version:'!CUR_V!', versionCode:'!CUR_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'Lab Development Build'}; fs.writeFileSync('../backend/apks/latest-version-test.json', JSON.stringify(v, null, 2), 'utf8');"
+
+    echo [OK] Lab APK and Metadata (!CUR_V! - !CUR_VC!) synced to backend.
+)
 echo [*] Launching on Device...
 call npx cap run android
 popd

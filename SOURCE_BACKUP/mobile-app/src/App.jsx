@@ -454,6 +454,9 @@ function App() {
 
     const checkUpdate = async () => {
       if (!apiUrl || !apiUrl.startsWith('http') || isServerDown) return;
+
+      const isLabServer = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+
       try {
         const res = await getJson(`${apiUrl}/app-version`);
         if (res.ok && res.data) {
@@ -479,11 +482,27 @@ function App() {
             }
           }
 
+          // PRO LOGGING: Help developer identify version mismatch in ADB
+          console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${latest.version} (${latestCode}) | isNewer: ${isNewer}`);
+
           if (isNewer) {
-            setUpdateAvailable(latest);
+            // Lab Security: If in Lab mode, only show update if there's a significant version jump
+            // to avoid loop while coding, or if the user is testing the OTA flow itself.
+            if (isLabServer) {
+               console.warn("[OTA-LAB] Update available but suppressed for Lab Server stability.");
+               // We still set it if it's a forced test or different version name
+               if (latest.version !== currentVer) setUpdateAvailable(latest);
+            } else {
+               setUpdateAvailable(latest);
+            }
+          } else {
+            // CRITICAL FIX: Clear the update state if we are already up to date
+            setUpdateAvailable(null);
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error('[OTA-CHECK] Failed:', err.message);
+      }
     };
 
     checkWhatsNew();
@@ -727,12 +746,20 @@ function App() {
          }
       });
 
-      // 2. Start Download using Filesystem (Native support for large files and progress)
+      // 2. Start Download using Filesystem
       const downloadResult = await Filesystem.downloadFile({
         url: downloadUrl,
         path: fileName,
-        directory: Directory.Cache, // Use Cache for better compatibility with Scoped Storage
+        directory: Directory.External, // Changed to External for better installer access on some Android versions
         progress: true
+      }).catch(async (err) => {
+         console.warn("[UPDATE] External download failed, trying Cache...", err.message);
+         return await Filesystem.downloadFile({
+            url: downloadUrl,
+            path: fileName,
+            directory: Directory.Cache,
+            progress: true
+         });
       });
 
       const path = downloadResult.path;
