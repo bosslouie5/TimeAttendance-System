@@ -43,6 +43,8 @@ function App() {
   const [tenantDetails, setTenantDetails] = useState(null);
   const [appVersionInfo, setAppVersionInfo] = useState(null);
   const [status, setStatus] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginErrorCode, setLoginErrorCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [leaveRequests, setLeaveRequests] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('webadmin_hr_leaves') || '[]'); } catch (e) { return []; }
@@ -273,6 +275,8 @@ function App() {
       return;
     }
     setStatus('Logging in...');
+    setLoginError('');
+    setLoginErrorCode('');
     try {
       const res = await fetch(`${activeApiBase}/auth/web-login`, {
         method: 'POST',
@@ -289,10 +293,14 @@ function App() {
           fetchLeavesForApproval(data.user.employeeId);
         }
       } else {
-        alert(data.error || 'Invalid Credentials');
+        setLoginError(data.message || data.error || 'Invalid Credentials');
+        setLoginErrorCode(data.code || '');
         setStatus('');
       }
-    } catch (e) { alert('Login connection failed'); setStatus(''); }
+    } catch (e) {
+      setLoginError('Connection failed. Please check your internet or server status.');
+      setStatus('');
+    }
   };
 
   const fetchLeavesForApproval = async (employeeId) => {
@@ -1085,10 +1093,56 @@ function App() {
   if (!user) {
     return (
       <div style={{display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a', fontFamily:'sans-serif'}}>
-        <div style={{background:'#1e293b', padding:'40px', borderRadius:'15px', border:'1px solid #334155', width:'100%', maxWidth:'400px', textAlign:'center'}}>
+        <div style={{
+          background:'#1e293b',
+          padding:'40px',
+          borderRadius:'15px',
+          border:'1px solid #334155',
+          width:'100%',
+          maxWidth:'400px',
+          textAlign:'center',
+          boxShadow: loginError ? '0 0 30px rgba(239, 68, 68, 0.2)' : '0 10px 25px rgba(0,0,0,0.2)',
+          animation: loginError ? 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both' : 'none'
+        }}>
+          <style>{`
+            @keyframes shake {
+              10%, 90% { transform: translate3d(-1px, 0, 0); }
+              20%, 80% { transform: translate3d(2px, 0, 0); }
+              30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+              40%, 60% { transform: translate3d(4px, 0, 0); }
+            }
+          `}</style>
           <h1 style={{color:'#3b82f6', marginBottom:'10px', fontWeight: '900'}}>TIMEKEY SYSTEM</h1>
           <p style={{color:'#64748b', marginBottom:'30px', fontWeight: 'bold', letterSpacing: '1px'}}>ADMIN MANAGEMENT PORTAL</p>
           {tenantDetails && <h2 style={{color:'#60a5fa', fontSize:'1.2rem', marginBottom:'25px'}}>{tenantDetails.companyName}</h2>}
+
+          {loginError && (
+            <div style={{
+              background:'rgba(239, 68, 68, 0.1)',
+              border:'1px solid rgba(239, 68, 68, 0.3)',
+              color:'#f87171',
+              padding:'12px',
+              borderRadius:'10px',
+              marginBottom:'20px',
+              fontSize:'0.85rem',
+              fontWeight:'700',
+              textAlign:'left',
+              display:'flex',
+              gap:'10px',
+              alignItems:'flex-start'
+            }}>
+              <span style={{fontSize:'1.2rem'}}>⚠️</span>
+              <div>
+                <div>{loginError}</div>
+                {loginErrorCode === 'IP_BLOCKED' && (
+                  <div style={{marginTop:'5px', fontSize:'0.7rem', color:'#64748b'}}>
+                    Gamitin ang Developer Portal para i-whitelist ang iyong IP.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
             <input
               value={username}
@@ -1330,7 +1384,7 @@ function App() {
           {activeTab === 'leave-management' && '⛱️ Leave Management'}
           {activeTab === 'payroll-bridge' && '💰 Payroll Bridge'}
           {activeTab === 'system-settings' && '⚙️ System Settings'}
-          {activeTab === 'account-management' && '🔐 Account Management'}
+          {activeTab === 'account-management' && (isEditingTenantUser && (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin')) ? '🔐 HR Management' : '🔐 Account Management')}
         </span>
         {activeTab !== 'dashboard' && (
            <button onClick={() => setActiveTab('dashboard')} style={{marginLeft:'auto', background:'rgba(59, 130, 246, 0.1)', border:'1px solid #3b82f6', color:'#3b82f6', padding: '5px 15px', borderRadius: '8px', cursor:'pointer', fontWeight:'900', fontSize: '0.75rem'}}>← BACK TO HUB</button>
@@ -1479,7 +1533,11 @@ function App() {
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
           <div className="card">
-            <h2 style={{marginTop:0, color:'white'}}>🔐 Account Management</h2>
+            <h2 style={{marginTop:0, color:'white'}}>
+              {isEditingTenantUser && (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin'))
+                ? '🔐 HR Management'
+                : '🔐 Account Management'}
+            </h2>
             <p style={{color:'#64748b', marginBottom:'25px'}}>Manage the current account profile, portal access, and tenant details from one place.</p>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}}>
               <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
@@ -1502,10 +1560,16 @@ function App() {
               </div>
             </div>
             <div style={{background:'#1e293b', padding:'20px', borderRadius:'15px', border:'1px solid #334155', marginTop:'20px'}}>
-              <h3 style={{marginTop:0, color:'#8b5cf6'}}>{isEditingTenantUser ? '✏️ Edit Tenant User' : '👤 Tenant User Management'}</h3>
+              <h3 style={{marginTop:0, color:'#8b5cf6'}}>
+                {isEditingTenantUser
+                  ? (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin') ? '✏️ HR Management' : '✏️ Edit Tenant User')
+                  : '👤 Tenant User Management'}
+              </h3>
               <p style={{color:'#64748b', marginBottom:'15px'}}>
                 {isEditingTenantUser
-                  ? `Updating profile for ${editingUsername}. Username cannot be changed.`
+                  ? (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin')
+                      ? `Updating HR Management profile for ${editingUsername}.`
+                      : `Updating profile for ${editingUsername}. Username cannot be changed.`)
                   : 'Create tenant-scoped admin users for this portal. Tenant users are restricted to the current tenant.'}
               </p>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'15px'}}>

@@ -73,7 +73,8 @@ function App() {
     { id: 'leave-management', name: 'Leave Management' },
     { id: 'payroll-bridge', name: 'Payroll Integration' },
     { id: 'subscription-info', name: 'Subscription Details' },
-    { id: 'assign-schedule', name: 'Assign Schedule' }
+    { id: 'assign-schedule', name: 'Assign Schedule' },
+    { id: 'hr-management', name: 'HR Management' }
   ];
   const [status, setStatus] = useState('System Online');
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -3435,10 +3436,16 @@ function App() {
              <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
                <div className="glass-card" style={{padding:'25px', borderRadius:'20px', border:'1px solid #334155', position:'sticky', top:'20px', height:'fit-content'}}>
                   <h2 style={{marginTop:0, display:'flex', alignItems:'center', gap:'12px'}}>
-                    {editingDevUser ? '📝 Edit Dev Account' : '🔑 New Dev Account'}
+                    {editingDevUser
+                      ? (editingDevUser.username.toLowerCase().includes('admin') || editingDevUser.displayName.toLowerCase().includes('admin') ? '📝 HR Management' : '📝 Edit Dev Account')
+                      : '🔑 New Dev Account'}
                   </h2>
                   <p style={{color:'#64748b', fontSize:'0.8rem', marginBottom:'20px'}}>
-                    {editingDevUser ? `Updating credentials for ${editingDevUser.username}` : 'Create credentials for Dev Portal access.'}
+                    {editingDevUser
+                      ? (editingDevUser.username.toLowerCase().includes('admin') || editingDevUser.displayName.toLowerCase().includes('admin')
+                          ? `Updating HR Management profile for ${editingDevUser.username}`
+                          : `Updating credentials for ${editingDevUser.username}`)
+                      : 'Create credentials for Dev Portal access.'}
                   </p>
 
                   {selectedTenant && (

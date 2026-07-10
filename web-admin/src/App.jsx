@@ -1384,7 +1384,7 @@ function App() {
           {activeTab === 'leave-management' && '⛱️ Leave Management'}
           {activeTab === 'payroll-bridge' && '💰 Payroll Bridge'}
           {activeTab === 'system-settings' && '⚙️ System Settings'}
-          {activeTab === 'account-management' && '🔐 Account Management'}
+          {activeTab === 'account-management' && (isEditingTenantUser && (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin')) ? '🔐 HR Management' : '🔐 Account Management')}
         </span>
         {activeTab !== 'dashboard' && (
            <button onClick={() => setActiveTab('dashboard')} style={{marginLeft:'auto', background:'rgba(59, 130, 246, 0.1)', border:'1px solid #3b82f6', color:'#3b82f6', padding: '5px 15px', borderRadius: '8px', cursor:'pointer', fontWeight:'900', fontSize: '0.75rem'}}>← BACK TO HUB</button>
@@ -1533,7 +1533,11 @@ function App() {
         <div className="fade-in">
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
           <div className="card">
-            <h2 style={{marginTop:0, color:'white'}}>🔐 Account Management</h2>
+            <h2 style={{marginTop:0, color:'white'}}>
+              {isEditingTenantUser && (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin'))
+                ? '🔐 HR Management'
+                : '🔐 Account Management'}
+            </h2>
             <p style={{color:'#64748b', marginBottom:'25px'}}>Manage the current account profile, portal access, and tenant details from one place.</p>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}}>
               <div style={{background:'#0f172a', padding:'20px', borderRadius:'15px', border:'1px solid #334155'}}>
@@ -1556,10 +1560,16 @@ function App() {
               </div>
             </div>
             <div style={{background:'#1e293b', padding:'20px', borderRadius:'15px', border:'1px solid #334155', marginTop:'20px'}}>
-              <h3 style={{marginTop:0, color:'#8b5cf6'}}>{isEditingTenantUser ? '✏️ Edit Tenant User' : '👤 Tenant User Management'}</h3>
+              <h3 style={{marginTop:0, color:'#8b5cf6'}}>
+                {isEditingTenantUser
+                  ? (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin') ? '✏️ HR Management' : '✏️ Edit Tenant User')
+                  : '👤 Tenant User Management'}
+              </h3>
               <p style={{color:'#64748b', marginBottom:'15px'}}>
                 {isEditingTenantUser
-                  ? `Updating profile for ${editingUsername}. Username cannot be changed.`
+                  ? (newTenantUser.toLowerCase().includes('admin') || newTenantUserDisplay.toLowerCase().includes('admin')
+                      ? `Updating HR Management profile for ${editingUsername}.`
+                      : `Updating profile for ${editingUsername}. Username cannot be changed.`)
                   : 'Create tenant-scoped admin users for this portal. Tenant users are restricted to the current tenant.'}
               </p>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'15px'}}>

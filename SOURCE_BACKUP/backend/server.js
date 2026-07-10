@@ -313,16 +313,24 @@ app.post('/api/auth/web-login', async (req, res) => {
 
   if (user) {
     // IP GATEKEEPER CHECK FOR REGULAR USERS
-  let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
-  if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+    let clientIp = req.headers['x-forwarded-for'] || req.ip.replace('::ffff:', '');
+    if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
 
-  const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
+    const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.') || clientIp.startsWith('10.') || clientIp.startsWith('172.');
     const allowedIp = user.publicIp || user.adminIp;
-    const isDevBypass = req.body.devMode === true || req.query.devMode === 'true';
+
+    // Pro Developer Bypass: Master accounts are never IP-locked
+    const isMasterDev = devAccounts.some(a => a.username.toLowerCase() === username.toLowerCase());
+    const isDevBypass = req.body.devMode === true || req.query.devMode === 'true' || isMasterDev;
 
     if (!isLocal && !isTestMode && !isDevBypass && allowedIp && !matchIp(clientIp, allowedIp)) {
        console.warn(`[AUTH] Login Blocked: Unauthorized IP ${clientIp} for Tenant ${tenantId}`);
-       return res.status(403).json({ error: 'Access Denied: Please login from the office network.' });
+       return res.status(403).json({
+         error: 'Access Denied: Network Lock Active',
+         message: 'Ang iyong IP (' + clientIp + ') ay hindi rehistrado sa office network ng ' + user.companyName + '.',
+         code: 'IP_BLOCKED',
+         detectedIp: clientIp
+       });
     }
 
     const finalTenantId = user.tenantId || user.username;
