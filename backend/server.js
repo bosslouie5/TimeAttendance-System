@@ -740,7 +740,14 @@ app.get('/api/devices', tenantGuard, async (req, res) => {
 app.get('/api/hr/leaves', tenantGuard, async (req, res) => {
   const data = await loadData();
   const tenantId = req.tenantId || req.query.tenant || 'master';
-  const filtered = (data.leaves || []).filter(l => (tenantId === 'master' || !tenantId) ? true : (l.tenantId === tenantId));
+  const { employeeId } = req.query;
+
+  let filtered = (data.leaves || []).filter(l => (tenantId === 'master' || !tenantId) ? true : (l.tenantId === tenantId));
+
+  if (employeeId) {
+    filtered = filtered.filter(l => (l.employeeId || "").toString() === employeeId.toString());
+  }
+
   res.json(filtered);
 });
 

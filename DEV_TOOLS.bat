@@ -190,9 +190,9 @@ if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 if exist "%GRADLE_FILE%" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "tools\update_android_version.ps1" "%GRADLE_FILE%" "!NEW_V!"
     echo [OK] Gradle Version Code and Name Updated.
-    :: Extract the NEW versionCode that was just incremented
-    for /f "tokens=2" %%a in ('findstr "versionCode" "%GRADLE_FILE%"') do set "NEW_VC=%%a"
-    set "NEW_VC=!NEW_VC: =!"
+    :: Extract the NEW versionCode that was just incremented using PowerShell for reliability
+    for /f %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$c = Get-Content '%GRADLE_FILE%' -Raw; if ($c -match 'versionCode\s+(\d+)') { $Matches[1] }"') do set "NEW_VC=%%a"
+    if "!NEW_VC!"=="" set "NEW_VC=0"
 ) else (
     set "NEW_VC=0"
 )
@@ -265,10 +265,10 @@ if "!INTERNAL_CALL!"=="" (
 :: Ensure NEW_VC is set even if no bump happened in this call (e.g. from Master Sync)
 if "!NEW_VC!"=="" (
     if exist "%GRADLE_FILE%" (
-        for /f "tokens=2" %%a in ('findstr "versionCode" "%GRADLE_FILE%"') do set "NEW_VC=%%a"
-        set "NEW_VC=!NEW_VC: =!"
+        for /f %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$c = Get-Content '%GRADLE_FILE%' -Raw; if ($c -match 'versionCode\s+(\d+)') { $Matches[1] }"') do set "NEW_VC=%%a"
     )
 )
+if "!NEW_VC!"=="" set "NEW_VC=0"
 
 :: If we still don't have NEW_V (unlikely), get it from config
 if "!NEW_V!"=="" (

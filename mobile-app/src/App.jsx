@@ -301,7 +301,7 @@ function App() {
         getJson(`${apiUrl}/employees`, headers),
         getJson(`${apiUrl}/departments?employeeId=${targetEmpId}`, headers),
         getJson(`${apiUrl}/logs`, headers),
-        getJson(`${apiUrl.replace(/\/api$/, '')}/api/hr/leaves?tenant=${encodeURIComponent(targetTenantId)}`, headers)
+        getJson(`${apiUrl.replace(/\/api$/, '')}/api/hr/leaves?tenant=${encodeURIComponent(targetTenantId)}&employeeId=${targetEmpId}`, headers)
       ]);
 
       if (empRes.status === 200) {

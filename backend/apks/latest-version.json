@@ -1,6 +1,7 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
+  "versionCode": " =",
   "downloadUrl": "/api/master/download-apk/TimeKey_Master.apk",
-  "releaseDate": "2026-07-10T20:52:08.734Z",
-  "notes": "System Update v1.0.7"
+  "releaseDate": "2026-07-10T21:04:18.781Z",
+  "notes": "System Update v1.0.8"
 }
