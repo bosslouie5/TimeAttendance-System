@@ -1590,7 +1590,7 @@ function App() {
                               <div style={{fontWeight: '800', color: '#f8fafc', marginBottom: '4px'}}>{leave.employeeName} ({leave.employeeId})</div>
                               <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{leave.leaveType || leave.type}</div>
                             </div>
-                            <span style={{padding: '4px 10px', borderRadius: '999px', fontSize: '0.7rem', background: '#f59e0b22', color: '#f59e0b', fontWeight: '700'}}>Pending</span>
+                            <span style={{padding: '4px 10px', borderRadius: '999px', fontSize: '0.7rem', background: '#f59e0b22', color: '#f59e0b', fontWeight: '700'}}>Level 1 Pending</span>
                           </div>
                           <div style={{fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '8px'}}>
                             📅 {leave.startDate} → {leave.endDate}

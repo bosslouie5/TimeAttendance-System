@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -21,6 +21,16 @@ function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const [users, setUsers] = useState([]);
+  const uniqueTenants = useMemo(() => {
+    const seen = new Set();
+    return users.filter(u => {
+      const tid = u.tenantId || u.username;
+      if (seen.has(tid)) return false;
+      seen.add(tid);
+      return true;
+    });
+  }, [users]);
+
   const [logs, setLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -1806,14 +1816,14 @@ function App() {
                 }} className="btn-hover" style={{...smallBtn, background:'#3b82f6', padding:'10px 18px', borderRadius:'10px'}}>+ Add New Tenant</button>
               </div>
               <div style={{display:'flex', flexDirection:'column', gap:'12px'}}>
-                {users.map(u => (
+                {uniqueTenants.map(u => (
                   <div key={u.tenantId || u.username} onClick={() => {setSelectedTenant(u); setIsProvisioning(false);}} className="tenant-item" style={{
                     padding:'20px', borderRadius:'15px',
-                    background: selectedTenant?.tenantId === (u.tenantId || u.username) ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#0f172a',
+                    background: (selectedTenant?.tenantId || selectedTenant?.username) === (u.tenantId || u.username) ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#0f172a',
                     border: '1px solid',
-                    borderColor: selectedTenant?.tenantId === (u.tenantId || u.username) ? '#60a5fa' : '#334155',
+                    borderColor: (selectedTenant?.tenantId || selectedTenant?.username) === (u.tenantId || u.username) ? '#60a5fa' : '#334155',
                     cursor:'pointer', transition:'all 0.3s ease',
-                    boxShadow: selectedTenant?.tenantId === (u.tenantId || u.username) ? '0 10px 20px rgba(59, 130, 246, 0.3)' : 'none',
+                    boxShadow: (selectedTenant?.tenantId || selectedTenant?.username) === (u.tenantId || u.username) ? '0 10px 20px rgba(59, 130, 246, 0.3)' : 'none',
                     position: 'relative',
                     overflow: 'hidden'
                   }}>
@@ -2020,6 +2030,50 @@ function App() {
                          )}
                       </div>
                    </div>
+
+                   <div style={{marginTop: '30px', borderTop: '1px solid #334155', paddingTop: '30px'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+                         <h3 style={{margin:0, color:'#3b82f6', fontSize:'1rem', display:'flex', alignItems:'center', gap:'10px'}}>
+                            <span style={{fontSize:'1.2rem'}}>👥</span> Authorized Portal Users
+                         </h3>
+                         <span style={{background:'#3b82f622', color:'#3b82f6', padding:'4px 12px', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'bold', border:'1px solid #3b82f644'}}>
+                            {users.filter(u => (u.tenantId || u.username) === (selectedTenant.tenantId || selectedTenant.username)).length} Users
+                         </span>
+                      </div>
+                      <div style={{display:'grid', gap:'10px'}}>
+                         {users.filter(u => (u.tenantId || u.username) === (selectedTenant.tenantId || selectedTenant.username)).map(sub => (
+                            <div key={sub.username} style={{
+                              background:'rgba(255,255,255,0.02)', padding:'15px 20px', borderRadius:'15px',
+                              border:'1px solid #334155', display:'flex', justifyContent:'space-between', alignItems:'center',
+                              transition: 'all 0.3s ease'
+                            }} className="user-list-item">
+                               <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+                                  <div style={{
+                                    width:'40px', height:'40px', background: sub.username === (selectedTenant.tenantId || selectedTenant.username) ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#334155',
+                                    color:'white', borderRadius:'12px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.9rem', fontWeight:'900',
+                                    boxShadow: sub.username === (selectedTenant.tenantId || selectedTenant.username) ? '0 5px 15px rgba(59, 130, 246, 0.4)' : 'none'
+                                  }}>
+                                     {sub.displayName?.charAt(0) || sub.username.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                     <div style={{fontWeight:'bold', fontSize:'0.95rem', color:'#f1f5f9', display:'flex', alignItems:'center', gap:'8px'}}>
+                                        {sub.displayName || sub.username}
+                                        {sub.username === (selectedTenant.tenantId || selectedTenant.username) && <span style={{fontSize:'0.6rem', background:'#10b98122', color:'#10b981', padding:'2px 6px', borderRadius:'4px', border:'1px solid #10b98144'}}>PRIMARY ADMIN</span>}
+                                     </div>
+                                     <div style={{fontSize:'0.75rem', color:'#64748b'}}>Username: <span style={{color:'#94a3b8'}}>{sub.username}</span> {sub.employeeId && <> • Emp ID: <span style={{color:'#94a3b8'}}>{sub.employeeId}</span></>}</div>
+                                  </div>
+                               </div>
+                               <div style={{display:'flex', gap:'8px'}}>
+                                  <button onClick={() => {
+                                    setNewTenantUser(sub.username);
+                                    setNewTenantUserDisplay(sub.displayName);
+                                    setNewTenantUserEmployeeId(sub.employeeId);
+                                  }} style={{...smallBtn, background:'#334155', padding:'8px 15px', borderRadius:'8px', fontSize:'0.7rem'}}>EDIT</button>
+                               </div>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
                 </div>
               ) : (
                 <div style={{textAlign:'center', padding:'100px 50px', opacity:0.3}}>
@@ -2045,7 +2099,7 @@ function App() {
                 <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                 <select value={selectedScheduleTenant} onChange={e => setSelectedScheduleTenant(e.target.value)} style={{...inputStyle, marginBottom:0, padding:'10px', height:'42px'}}>
                   <option value="ALL">All Tenants</option>
-                  {users.map(u => (
+                  {uniqueTenants.map(u => (
                     <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                       {u.companyName} ({u.tenantId || u.username})
                     </option>
@@ -2730,14 +2784,14 @@ function App() {
               <div className="form-group">
                 <label>SELECT TENANT</label>
                 <select value={selectedTenant?.tenantId || ''} onChange={e => {
-                  const t = users.find(u => (u.tenantId || u.username) === e.target.value);
+                  const t = uniqueTenants.find(u => (u.tenantId || u.username) === e.target.value);
                   setSelectedTenant(t);
                   if (t?.tenantId) {
                     fetchLeavesForApproval(t.tenantId, t.adminEmployeeId || t.tenantId);
                   }
                 }} style={{background:'#0f172a', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}}>
                   <option value="">-- Select a Tenant --</option>
-                  {users.map(u => (
+                  {uniqueTenants.map(u => (
                     <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                       {u.companyName} ({u.tenantId || u.username})
                     </option>
@@ -2835,7 +2889,7 @@ function App() {
                 <label style={{color:'#94a3b8', fontSize:'0.7rem', fontWeight:'bold', textTransform:'uppercase'}}>Tenant</label>
                 <select style={{...inputStyle, marginBottom:0}} value={selectedReportsTenant} onChange={e => setSelectedReportsTenant(e.target.value)}>
                   <option value="">-- Select a tenant --</option>
-                  {users.map(u => (
+                  {uniqueTenants.map(u => (
                     <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                       {u.companyName} ({u.tenantId || u.username})
                     </option>
