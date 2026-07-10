@@ -550,6 +550,8 @@ function App() {
       }
     } catch (e) { /* ignore */ }
 
+    if (!effectiveReportsTo) effectiveReportsTo = 'HR Management'; // Rule: Fallback to HR
+
     const newRequest = {
       id: `leave-${Date.now()}`,
       employeeId: user?.username || 'EMP001',
@@ -559,7 +561,7 @@ function App() {
       endDate: leaveForm.endDate,
       reason: leaveForm.reason.trim(),
       reportsTo: effectiveReportsTo,
-      status: 'Pending',
+      status: effectiveReportsTo === 'HR Management' ? 'Pending (Admin)' : 'Pending',
       tenantId: detectedTenantId
     };
 

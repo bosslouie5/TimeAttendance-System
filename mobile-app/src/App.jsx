@@ -834,7 +834,7 @@ function App() {
             return mgr ? (mgr.name || mgr.employeeId) : emp.reportsTo;
           }
         } catch(e){}
-        return '';
+        return 'HR Management'; // Rule: If no reportsTo, direct to HR
       })(),
       status: 'Pending (Manager)',
       tenantId: tenantId || localStorage.getItem('tenant_id') || 'unknown'
@@ -972,11 +972,11 @@ function App() {
         /* Approval Flow Styles */
         .approval-flow { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); }
         .flow-step { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; position: relative; }
-        .flow-dot { width: 10px; height: 10px; border-radius: 50%; background: #334155; transition: 0.3s; z-index: 2; }
+        .flow-dot { width: 22px; height: 22px; border-radius: 50%; background: #334155; transition: 0.3s; z-index: 2; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: white; font-weight: 900; }
         .flow-dot.active { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; }
         .flow-dot.completed { background: #10b981; }
         .flow-dot.rejected { background: #ef4444; }
-        .flow-line { position: absolute; top: 4px; left: 50%; width: 100%; height: 2px; background: #334155; z-index: 1; }
+        .flow-line { position: absolute; top: 11px; left: 50%; width: 100%; height: 2px; background: #334155; z-index: 1; }
         .flow-label { font-size: 0.6rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
         .flow-label.active { color: #3b82f6; }
         .flow-label.completed { color: #10b981; }
@@ -1537,17 +1537,24 @@ function App() {
                                 {/* Approval Flow Tracker */}
                                 <div className="approval-flow">
                                   <div className="flow-step">
-                                    <div className={`flow-dot ${isPendingManager ? 'active' : 'completed'}`}></div>
+                                    <div className={`flow-dot ${isPendingManager ? 'active' : 'completed'}`}>
+                                      {!isPendingManager && '✓'}
+                                    </div>
                                     <div className={`flow-label ${isPendingManager ? 'active' : 'completed'}`}>Manager</div>
                                     <div className={`flow-line ${!isPendingManager ? 'completed' : ''}`}></div>
                                   </div>
                                   <div className="flow-step">
-                                    <div className={`flow-dot ${isPendingAdmin ? 'active' : isApproved ? 'completed' : isRejected && item.statusAt === 'Admin' ? 'rejected' : ''}`}></div>
+                                    <div className={`flow-dot ${isPendingAdmin ? 'active' : isApproved ? 'completed' : isRejected && item.statusAt === 'Admin' ? 'rejected' : ''}`}>
+                                      {isApproved && '✓'}
+                                      {isRejected && item.statusAt === 'Admin' && '✗'}
+                                    </div>
                                     <div className={`flow-label ${isPendingAdmin ? 'active' : isApproved ? 'completed' : ''}`}>Admin</div>
                                     <div className={`flow-line ${isApproved ? 'completed' : ''}`}></div>
                                   </div>
                                   <div className="flow-step">
-                                    <div className={`flow-dot ${isApproved ? 'completed' : ''}`}></div>
+                                    <div className={`flow-dot ${isApproved ? 'completed' : ''}`}>
+                                      {isApproved && '✓'}
+                                    </div>
                                     <div className={`flow-label ${isApproved ? 'completed' : ''}`}>Done</div>
                                   </div>
                                 </div>
