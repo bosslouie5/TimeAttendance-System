@@ -809,16 +809,16 @@ app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
   if (!data.leaves) data.leaves = [];
   const tenantId = req.tenantId || req.body.tenantId || 'master';
 
-  // Logic: If no reportsTo, default to HR Management and skip Manager step
-  const reportsTo = req.body.reportsTo || req.body.manager || '';
-  const isDirectToHR = !reportsTo || reportsTo === 'HR Management';
+  // Logic: If no reportsTo or explicit "HR Management", bypass Manager step
+  const rawReportsTo = (req.body.reportsTo || req.body.manager || '').toString().trim();
+  const isDirectToHR = !rawReportsTo || rawReportsTo.toLowerCase() === 'hr management';
 
   const newLeave = {
     ...req.body,
     id: `leave-${Date.now()}`,
     status: isDirectToHR ? 'Pending (Admin)' : (req.body.status || 'Pending (Manager)'),
     tenantId,
-    reportsTo: isDirectToHR ? 'HR Management' : reportsTo,
+    reportsTo: isDirectToHR ? 'HR Management' : rawReportsTo,
     createdAt: new Date().toISOString()
   };
   data.leaves.push(newLeave);

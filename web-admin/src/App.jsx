@@ -1718,7 +1718,18 @@ function App() {
                 <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate:e.target.value})} style={inputStyle} />
                 <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({...leaveForm, endDate:e.target.value})} style={inputStyle} />
                 <textarea rows="3" value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason:e.target.value})} placeholder="Reason" style={{...inputStyle, resize:'vertical'}} />
-                <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo:e.target.value})} placeholder="Reports To / Manager" style={inputStyle} />
+                <label style={{fontSize:'0.7rem', color:'#64748b', fontWeight:'900', marginBottom:'-5px'}}>APPROVAL PATH</label>
+                <select
+                  value={leaveForm.reportsTo}
+                  onChange={e => setLeaveForm({...leaveForm, reportsTo:e.target.value})}
+                  style={inputStyle}
+                >
+                  <option value="">Auto-detect (Recommended)</option>
+                  <option value="HR Management">Direct to HR Management (Final Approval)</option>
+                  {employees.filter(e => (e.employeeId || "").toString() !== (user.employeeId || "").toString()).map(e => (
+                    <option key={e.employeeId} value={e.employeeId}>{e.name} (Manager)</option>
+                  ))}
+                </select>
                 <button type="submit" style={{...smallBtn, background:'#3b82f6'}}>Submit Leave Request</button>
               </form>
               <div style={{display:'grid', gap:'10px'}}>
@@ -2839,9 +2850,10 @@ function App() {
               </div>
 
               <div className="form-group">
-                <label>REPORTS TO (Employee ID)</label>
+                <label>REPORTS TO (Direct Approval)</label>
                 <select value={empReportsTo} onChange={e => setEmpReportsTo(e.target.value)}>
-                  <option value="">-- No Manager --</option>
+                  <option value="">-- Select Manager --</option>
+                  <option value="HR Management" style={{fontWeight:'bold', color:'#3b82f6'}}>Direct to HR Management (No Manager)</option>
                   {employees.filter(e => e.employeeId !== empId).map(e => (
                     <option key={e.employeeId} value={e.employeeId}>{e.employeeId} - {e.name}</option>
                   ))}
