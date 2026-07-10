@@ -28,6 +28,7 @@ set "NODE_PATH=%DEV_TOOLS%\node-v20.11.1-win-x64"
 set "GIT_EXE=%DEV_TOOLS%\Git\cmd\git.exe"
 set "ADB_EXE=%DEV_TOOLS%\platform-tools\adb.exe"
 set "CLOUDFLARED=%DEV_TOOLS%\cloudflared.exe"
+set "PROD_API_URL=https://timeattendance-system.onrender.com/api"
 
 :: LOCK PATH TO PORTABLE TOOLS ONLY
 set "PATH=%NODE_PATH%;%NODE_PATH%\node_modules\npm\bin;%DEV_TOOLS%\platform-tools;%DEV_TOOLS%\Git\cmd;%PATH%"
@@ -150,21 +151,20 @@ set "INTERNAL_CALL=1"
 echo [*] 1/4 Checking for Version Bump...
 call :VERSION_BUMP_UI
 
-echo [*] 2/4 Rebuilding All Lab Assets with Version !NEW_V!...
-pushd web-dev & call npx vite build --outDir dist-test --emptyOutDir & popd
-pushd web-admin & call npx vite build --outDir dist-test --emptyOutDir & popd
-pushd mobile-app & call npx vite build --outDir dist-test --emptyOutDir & popd
+:: CRITICAL: Inject Production API URL before building for Sync
+set "CONFIG_FILE=mobile-app/src/app_config.json"
+if exist "%CONFIG_FILE%" (
+    node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='%PROD_API_URL%'; fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
+    echo [OK] Production API URL injected: %PROD_API_URL%
+)
 
-echo [*] 3/4 Syncing Lab to Main Folders...
-if exist "web-dev\dist" rd /s /q "web-dev\dist"
-if exist "web-admin\dist" rd /s /q "web-admin\dist"
-if exist "mobile-app\dist" rd /s /q "mobile-app\dist"
+echo [*] 2/4 Rebuilding All Production Assets with Version !NEW_V!...
+pushd web-dev & call npx vite build --outDir dist --emptyOutDir & popd
+pushd web-admin & call npx vite build --outDir dist --emptyOutDir & popd
+pushd mobile-app & call npx vite build --outDir dist --emptyOutDir & popd
 
-if exist "web-dev\dist-test" xcopy /s /i /y "web-dev\dist-test" "web-dev\dist" >nul 2>&1
-if exist "web-admin\dist-test" xcopy /s /i /y "web-admin\dist-test" "web-admin\dist" >nul 2>&1
-if exist "mobile-app\dist-test" xcopy /s /i /y "mobile-app\dist-test" "mobile-app\dist" >nul 2>&1
-
-echo [*] 4/4 Deploying to Cloud (GitHub)...
+echo [*] 3/4 Finalizing Production Assets...
+:: No need to copy from dist-test anymore, we build directly to dist for MASTER SYNC
 "%GIT_EXE%" add .
 :: Force add dist folders because they are in .gitignore
 "%GIT_EXE%" add -f web-dev/dist/
@@ -321,6 +321,11 @@ if not exist "mobile-app\android\release-key.jks" (
 
 :: CRITICAL: If version was bumped or we are in Master Sync, we MUST rebuild and sync web assets to Android
 if "!BUMPED!"=="1" (
+    echo [*] Injecting Production API URL for Signed Build...
+    set "CONFIG_FILE=mobile-app/src/app_config.json"
+    if exist "!CONFIG_FILE!" (
+        node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('!CONFIG_FILE!', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='%PROD_API_URL%'; fs.writeFileSync('!CONFIG_FILE!', JSON.stringify(c, null, 2), 'utf8');"
+    )
     echo [*] Rebuilding Mobile UI for New Version...
     pushd mobile-app & call npx vite build --outDir dist --emptyOutDir & popd
 )

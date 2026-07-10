@@ -153,14 +153,14 @@ async function loadData() {
     return d;
   });
 
-  // 2. RULE 7: Automatic Module Injection for all users (Respect per-tenant overrides)
-  // If a tenant already has an explicit permissions array (even if reduced),
-  // we must respect it so toggles can disable modules. Only seed default
-  // permissions when none are present.
+  // 2. RULE 7: Automatic Module Injection for all users
+  // Ensure every user has ALL current modules in ALL_MODULES
   data.users = (data.users || []).map(u => {
     const currentPerms = u.permissions || [];
-    if (!currentPerms || currentPerms.length === 0) {
-      u.permissions = Array.from(ALL_MODULES);
+    const missingModules = ALL_MODULES.filter(m => !currentPerms.includes(m));
+
+    if (missingModules.length > 0) {
+      u.permissions = [...currentPerms, ...missingModules];
       needsFix = true;
     }
     return u;
