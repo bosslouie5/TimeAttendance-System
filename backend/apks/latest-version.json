@@ -1,8 +1,6 @@
 {
-  "version": "0.5.1",
-  "downloadUrl": "https://bosslouie5.github.io/TimeAttendance-System/apks/TimeKey_Master.apk",
-  "tenantId": "949230",
-  "companyName": "TimeKey Pro",
-  "releaseDate": "2026-07-06T18:39:23.796Z",
-  "notes": "System update for TimeKey Pro"
+  "version": "1.0.4",
+  "downloadUrl": "/api/master/download-apk/TimeKey_Master.apk",
+  "releaseDate": "2026-07-10T18:58:31.385Z",
+  "notes": "System Update v1.0.4"
 }

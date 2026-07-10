@@ -743,7 +743,7 @@ app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
   const newLeave = {
     ...req.body,
     id: `leave-${Date.now()}`,
-    status: req.body.status || 'Pending',
+    status: req.body.status || 'Pending (Manager)',
     tenantId,
     reportsTo: req.body.reportsTo || req.body.manager || '',
     createdAt: new Date().toISOString()
@@ -821,7 +821,7 @@ app.get('/api/hr/leaves/for-approval/:employeeId', tenantGuard, async (req, res)
   const leavesForApproval = (data.leaves || []).filter(l => 
     subordinateIds.includes(l.employeeId) && 
     l.tenantId === tenantId &&
-    (l.status === 'Pending' || l.status === 'pending')
+    (l.status === 'Pending' || l.status === 'Pending (Manager)')
   );
   
   res.json(leavesForApproval);
@@ -849,12 +849,14 @@ app.put('/api/hr/leaves/:id/manager-approve', tenantGuard, async (req, res) => {
   
   data.leaves = (data.leaves || []).map(l => {
     if (l.id === id && l.tenantId === (req.tenantId || l.tenantId || 'master')) {
+      const newStatus = status === 'Approved' ? 'Pending (Admin)' : status;
       updated = {
         ...l,
-        status,
-        approvedBy: managerName || managerId || 'manager',
+        status: newStatus,
+        approvedByManager: managerName || managerId || 'manager',
         managerId: managerId || '',
-        managerApprovedAt: new Date().toISOString()
+        managerApprovedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
       return updated;
     }

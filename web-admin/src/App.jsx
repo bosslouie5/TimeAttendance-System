@@ -1519,7 +1519,7 @@ function App() {
             </div>
             <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'16px', padding:'16px'}}>
               <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Pending Leaves</div>
-              <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#f59e0b', marginTop:'8px'}}>{leaveRequests.filter(item => item.status === 'Pending').length}</div>
+              <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#f59e0b', marginTop:'8px'}}>{leaveRequests.filter(item => item.status.includes('Pending')).length}</div>
             </div>
             <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'16px', padding:'16px'}}>
               <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Logs Today</div>
@@ -1555,17 +1555,21 @@ function App() {
                         <div style={{fontWeight:'800', color:'#f8fafc'}}>{item.employeeName} • {item.type}</div>
                         <div style={{fontSize:'0.75rem', color:'#64748b'}}>{item.startDate} → {item.endDate}</div>
                       </div>
-                      <span style={{padding:'4px 8px', borderRadius:'999px', fontSize:'0.7rem', background: item.status === 'Pending' ? '#f59e0422' : item.status === 'Approved' ? '#10b98122' : '#ef444422', color: item.status === 'Pending' ? '#f59e0b' : item.status === 'Approved' ? '#10b981' : '#ef4444'}}>{item.status}</span>
+                      <span style={{padding:'4px 8px', borderRadius:'999px', fontSize:'0.7rem', background: item.status.includes('Pending') ? '#f59e0422' : item.status === 'Approved' ? '#10b98122' : '#ef444422', color: item.status.includes('Pending') ? '#f59e0b' : item.status === 'Approved' ? '#10b981' : '#ef4444'}}>{item.status}</span>
                     </div>
                     <div style={{marginTop:'8px', fontSize:'0.8rem', color:'#cbd5e1'}}>{item.reason}</div>
                     {item.reportsTo && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#94a3b8'}}>Reports To: {item.reportsTo}</div>}
-                    {item.approvedBy && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#94a3b8'}}>Approved by: {item.approvedBy}</div>}
+                    {item.approvedByManager && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#60a5fa'}}>Approved by Manager: {item.approvedByManager}</div>}
+                    {item.approvedBy && item.status === 'Approved' && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#10b981'}}>Final Approval: {item.approvedBy}</div>}
                     {item.updatedAt && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.75rem', color:'#64748b'}}>Updated: {new Date(item.updatedAt).toLocaleString()}</div>}
-                    {item.status === 'Pending' && (
+                    {item.status === 'Pending (Admin)' && (
                       <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
-                        <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Approve</button>
+                        <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Final Approve</button>
                         <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
                       </div>
+                    )}
+                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && (
+                      <div style={{marginTop:'10px', fontSize:'0.7rem', color:'#f59e0b', fontStyle:'italic'}}>Waiting for Manager Approval...</div>
                     )}
                   </div>
                 ))}
@@ -1593,7 +1597,7 @@ function App() {
                 <h3 style={{marginTop:0, color:'#f8fafc'}}>Admin Snapshot</h3>
                 <div style={{display:'grid', gap:'8px'}}>
                   <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Employees: {employees.length}</div>
-                  <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Leaves pending: {leaveRequests.filter(item => item.status === 'Pending').length}</div>
+                  <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Leaves pending: {leaveRequests.filter(item => item.status.includes('Pending')).length}</div>
                   <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Schedules: {schedules.length}</div>
                 </div>
               </div>

@@ -836,7 +836,7 @@ function App() {
         } catch(e){}
         return '';
       })(),
-      status: 'Pending',
+      status: 'Pending (Manager)',
       tenantId: tenantId || localStorage.getItem('tenant_id') || 'unknown'
     };
 
@@ -910,7 +910,8 @@ function App() {
       const data = await res.json();
       if (res.ok) {
         setLeavesForApproval(prev => prev.map(l => l.id === leaveId ? data : l));
-        showNotice('Leave Updated', `Leave request has been ${status.toLowerCase()}.`, 'success');
+        const nextStep = status === 'Approved' ? 'Submitted to Admin' : 'Rejected';
+        showNotice('Leave Updated', `Leave request has been ${status.toLowerCase()}. ${status === 'Approved' ? 'Wait for Admin approval.' : ''}`, 'success');
         fetchLeavesForApproval();
       }
     } catch (e) { showNotice('Error', 'Failed to update leave request.', 'error'); }
@@ -966,6 +967,20 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
+        .badge-admin { color: #818cf8; background: rgba(129, 140, 248, 0.1); }
+
+        /* Approval Flow Styles */
+        .approval-flow { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); }
+        .flow-step { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; position: relative; }
+        .flow-dot { width: 10px; height: 10px; border-radius: 50%; background: #334155; transition: 0.3s; z-index: 2; }
+        .flow-dot.active { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; }
+        .flow-dot.completed { background: #10b981; }
+        .flow-dot.rejected { background: #ef4444; }
+        .flow-line { position: absolute; top: 4px; left: 50%; width: 100%; height: 2px; background: #334155; z-index: 1; }
+        .flow-label { font-size: 0.6rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+        .flow-label.active { color: #3b82f6; }
+        .flow-label.completed { color: #10b981; }
+        .flow-label.rejected { color: #ef4444; }
         .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; max-width: 500px; margin: 0 auto; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.12); display: flex; justify-content: space-around; padding: 8px 4px calc(env(safe-area-inset-bottom, 0px) + 10px) 4px; z-index: 1000; box-shadow: 0 -10px 50px rgba(0,0,0,0.8); box-sizing: border-box; user-select: none; }
         .nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; color: #64748b; text-decoration: none; font-size: 0.52rem; font-weight: 800; padding: 10px 2px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex: 1; cursor: pointer; border-radius: 16px; min-width: 0; }
         .nav-item:active { transform: scale(0.9); background: rgba(255,255,255,0.05); }
@@ -1493,22 +1508,63 @@ function App() {
                         </div>
                       ) : (
                         <div style={{display: 'grid', gap: '12px'}}>
-                          {leaveRequests.map(item => (
-                            <div key={item.id} style={{background: 'rgba(255,255,255,0.04)', borderRadius: '20px', padding: '18px', border: '1px solid rgba(255,255,255,0.05)'}}>
-                              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px'}}>
-                                <div>
-                                  <div style={{fontWeight: '900', fontSize: '1rem'}}>{item.type}</div>
-                                  <div style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px'}}>📅 {item.startDate} to {item.endDate}</div>
+                          {leaveRequests.map(item => {
+                            const isPendingManager = item.status === 'Pending (Manager)';
+                            const isPendingAdmin = item.status === 'Pending (Admin)';
+                            const isApproved = item.status === 'Approved';
+                            const isRejected = item.status === 'Rejected';
+
+                            return (
+                              <div key={item.id} style={{background: 'rgba(255,255,255,0.04)', borderRadius: '24px', padding: '20px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden'}}>
+                                {isApproved && <div style={{position: 'absolute', top: -10, right: -10, background: '#10b981', color: 'white', padding: '15px 15px 5px 15px', transform: 'rotate(45deg)', fontSize: '0.6rem', fontWeight: '900'}}>VERIFIED</div>}
+
+                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px'}}>
+                                  <div>
+                                    <div style={{fontWeight: '900', fontSize: '1.1rem', color: '#f8fafc'}}>{item.type}</div>
+                                    <div style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px'}}>
+                                      <span>📅</span> {item.startDate} to {item.endDate}
+                                    </div>
+                                  </div>
+                                  <span className={`badge ${isApproved ? 'badge-success' : isRejected ? 'badge-late' : isPendingAdmin ? 'badge-admin' : 'badge-pending'}`}>
+                                    {item.status}
+                                  </span>
                                 </div>
-                                <span className={`badge ${item.status === 'Approved' ? 'badge-success' : item.status === 'Rejected' ? 'badge-late' : 'badge-pending'}`}>
-                                  {item.status}
-                                </span>
+
+                                <div style={{fontSize: '0.85rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.2)', padding: '14px', borderRadius: '16px', marginBottom: '15px', border: '1px solid rgba(255,255,255,0.03)'}}>
+                                  {item.reason}
+                                </div>
+
+                                {/* Approval Flow Tracker */}
+                                <div className="approval-flow">
+                                  <div className="flow-step">
+                                    <div className={`flow-dot ${isPendingManager ? 'active' : 'completed'}`}></div>
+                                    <div className={`flow-label ${isPendingManager ? 'active' : 'completed'}`}>Manager</div>
+                                    <div className={`flow-line ${!isPendingManager ? 'completed' : ''}`}></div>
+                                  </div>
+                                  <div className="flow-step">
+                                    <div className={`flow-dot ${isPendingAdmin ? 'active' : isApproved ? 'completed' : isRejected && item.statusAt === 'Admin' ? 'rejected' : ''}`}></div>
+                                    <div className={`flow-label ${isPendingAdmin ? 'active' : isApproved ? 'completed' : ''}`}>Admin</div>
+                                    <div className={`flow-line ${isApproved ? 'completed' : ''}`}></div>
+                                  </div>
+                                  <div className="flow-step">
+                                    <div className={`flow-dot ${isApproved ? 'completed' : ''}`}></div>
+                                    <div className={`flow-label ${isApproved ? 'completed' : ''}`}>Done</div>
+                                  </div>
+                                </div>
+
+                                {isPendingManager && (
+                                  <div style={{marginTop: '12px', fontSize: '0.7rem', color: '#60a5fa', fontWeight: '700', textAlign: 'center'}}>
+                                    Awaiting Level 1: Reporting Manager
+                                  </div>
+                                )}
+                                {isPendingAdmin && (
+                                  <div style={{marginTop: '12px', fontSize: '0.7rem', color: '#818cf8', fontWeight: '700', textAlign: 'center'}}>
+                                    Awaiting Level 2: System Administrator
+                                  </div>
+                                )}
                               </div>
-                              <div style={{fontSize: '0.85rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '12px', marginTop: '10px'}}>
-                                {item.reason}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                    </div>
