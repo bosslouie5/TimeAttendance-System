@@ -191,6 +191,7 @@ goto MENU
 set "VER_FILE=backend/version.json"
 set "CONFIG_FILE=mobile-app/src/app_config.json"
 set "ADMIN_CONFIG=web-admin/src/app_config.json"
+set "DEV_CONFIG=web-dev/src/app_config.json"
 set "PKG_FILE=mobile-app/package.json"
 set "GRADLE_FILE=mobile-app/android/app/build.gradle"
 set "CUR_V=1.0.0"
@@ -215,11 +216,25 @@ if exist "%GRADLE_FILE%" (
 )
 
 :: Use Node to update JSON files with both Version Name and Version Code
-node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8'); if (fs.existsSync('backend/apks/latest-version-test.json')) { fs.writeFileSync('backend/apks/latest-version-test.json', JSON.stringify({...v, notes:'BUMPED IN LAB'}, null, 2), 'utf8'); }"
+node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8');"
 node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.versionCode='!NEW_VC!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
+
 if exist "%ADMIN_CONFIG%" (
     node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.versionCode='!NEW_VC!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
     echo [OK] Web-Admin config synced to !NEW_V!.
+)
+
+if exist "%DEV_CONFIG%" (
+    node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%DEV_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%DEV_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+    echo [OK] Web-Dev config synced to !NEW_V!.
+)
+
+:: Pre-sync APK Version Meta for OTA so it matches immediately
+if exist "backend/apks/latest-version.json" (
+    node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('backend/apks/latest-version.json', 'utf8')); v.version='!NEW_V!'; v.versionCode='!NEW_VC!'; v.releaseDate=new Date().toISOString(); fs.writeFileSync('backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+)
+if exist "backend/apks/latest-version-test.json" (
+    node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('backend/apks/latest-version-test.json', 'utf8')); v.version='!NEW_V!'; v.versionCode='!NEW_VC!'; v.releaseDate=new Date().toISOString(); fs.writeFileSync('backend/apks/latest-version-test.json', JSON.stringify(v, null, 2), 'utf8');"
 )
 
 :: Sync package.json

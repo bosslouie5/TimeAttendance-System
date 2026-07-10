@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import appConfig from './app_config.json';
 
 const API_BASE = '/api';
 
@@ -44,7 +45,8 @@ function App() {
   const [editingDevUser, setEditingDevUser] = useState(null);
   const [systemIp, setSystemIp] = useState('127.0.0.1');
 
-  const [appVersion, setAppVersion] = useState('1.0.0');
+  const [appVersion, setAppVersion] = useState(appConfig.version);
+  const [appUpdateInfo, setAppUpdateInfo] = useState(null);
   const [leaveRequests, setLeaveRequests] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('webdev_hr_leaves') || '[]'); } catch (e) { return []; }
   });
@@ -228,7 +230,7 @@ function App() {
         fetch(`${activeApiBase}/app-version`).then(r => r.json())
       ]);
       setUsers(u || []); setLogs(l || []); setEmployees(e || []); setDepartments(d || []); setDevAccounts(da || []); setOrgUnits(o || []); setPositionTitles(pt || []); setSchedules(s || []);
-      if (v && v.version) setAppVersion(v.version);
+      if (v && v.version) setAppUpdateInfo(v);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
 

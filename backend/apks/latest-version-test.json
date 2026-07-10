@@ -1,6 +1,7 @@
 {
   "version": "1.0.4",
-  "versionCode": "68",
-  "buildDate": "2026-07-10T22:05:39.873Z",
-  "notes": "BUMPED IN LAB"
+  "versionCode": "69",
+  "downloadUrl": "/api/master/download-apk/TimeKey_Master.apk",
+  "releaseDate": "2026-07-10T22:12:14.056Z",
+  "notes": "System Update v1.0.4"
 }

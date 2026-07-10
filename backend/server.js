@@ -1163,13 +1163,13 @@ app.get('/api/app-version', (req, res) => {
   const verPath = path.join(__dirname, 'version.json');
   const latestVersionPath = path.join(apksDir, isTestMode ? 'latest-version-test.json' : 'latest-version.json');
 
-  // Any version format allowed - no regex restrictions
-  let payload = { version: brand.version || '1.0.0', changelog: 'System is running normally.' };
+  let payload = { version: brand.version || '1.0.0', systemVersion: brand.version || '1.0.0', changelog: 'System is running normally.' };
 
   if (fs.existsSync(verPath)) {
     try {
       const verData = JSON.parse(fs.readFileSync(verPath, 'utf8'));
       payload = { ...payload, ...verData };
+      payload.systemVersion = verData.version;
     } catch (e) {
       console.warn('[OTA] Failed to parse version.json', e.message);
     }
@@ -1178,15 +1178,17 @@ app.get('/api/app-version', (req, res) => {
   if (fs.existsSync(latestVersionPath)) {
     try {
       const latest = JSON.parse(fs.readFileSync(latestVersionPath, 'utf8'));
-      // RULE: Prioritize latest-version.json for version and versionCode as it represents the actual available APK
-      payload = {
-        ...payload,
-        ...latest,
-        apkVersion: latest.version,
-        apkUrl: latest.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
-        downloadUrl: latest.downloadUrl || payload.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
-        changelog: latest.notes || payload.changelog || 'System update available.'
-      };
+      // APK Info
+      payload.apkVersion = latest.version;
+      payload.apkUrl = latest.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`;
+      payload.downloadUrl = latest.downloadUrl || payload.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`;
+
+      // Update Notes
+      if (latest.notes) payload.changelog = latest.notes;
+
+      // RULE: 'version' field remains for mobile app updates, prioritized by the available APK
+      payload.version = latest.version;
+      payload.versionCode = latest.versionCode || payload.versionCode;
     } catch (e) {
       console.warn('[OTA] Failed to parse latest version metadata', e.message);
     }

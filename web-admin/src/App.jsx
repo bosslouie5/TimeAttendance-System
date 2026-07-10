@@ -1361,7 +1361,10 @@ function App() {
           </div>
           <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
             <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-            APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || appConfig.version}</span>
+            APP VERSION: <span style={{color: '#10b981'}}>{appConfig.version}</span>
+            {appVersionInfo?.version && appVersionInfo.version !== appConfig.version && (
+                <span style={{color: '#f59e0b', marginLeft: '5px'}}> (Update: {appVersionInfo.version})</span>
+            )}
             <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
           </div>
         </div>
