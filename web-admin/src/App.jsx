@@ -56,6 +56,7 @@ function App() {
   const [hrNotifications, setHrNotifications] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('webadmin_hr_notifications') || '[]'); } catch (e) { return []; }
   });
+  const [scheduleAdjustments, setScheduleAdjustments] = useState([]);
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' });
   const [tenantUsers, setTenantUsers] = useState([]);
@@ -207,11 +208,12 @@ function App() {
 
   const loadInitialData = async () => {
     try {
+      const q = user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '';
       const [e, b, o, l, pt, sc] = await Promise.all([
-        requestJson('/employees'),
+        requestJson(`/employees${q}`),
         requestJson('/departments'),
         requestJson('/org-units'),
-        requestJson('/logs'),
+        requestJson(`/logs${q}`),
         requestJson('/position-titles'),
         requestJson('/schedules')
       ]);
@@ -232,12 +234,15 @@ function App() {
 
       // Fetch centralized leaves & announcements when available
       try {
-        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}`);
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`);
         if (leavesRes.ok) {
           const leaves = await leavesRes.json();
           setLeaveRequests(leaves || []);
           sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(leaves || []));
         }
+
+        fetchScheduleAdjustments();
+
         const annsRes = await fetch(`${activeApiBase}/hr/announcements?tenant=${encodeURIComponent(detectedTenantId)}`);
         if (annsRes.ok) {
           const anns = await annsRes.json();
@@ -616,6 +621,29 @@ function App() {
     setLeaveRequests(updated);
     sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(updated));
     setStatus(`Leave request ${status.toLowerCase()} ✓`);
+  };
+
+  const fetchScheduleAdjustments = async () => {
+    try {
+      const q = user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '';
+      const res = await requestJson(`/hr/schedule-adjustments${q}`);
+      setScheduleAdjustments(res || []);
+    } catch (err) { setScheduleAdjustments([]); }
+  };
+
+  const updateAdjustmentStatus = async (id, status) => {
+    setStatus('Updating adjustment...');
+    try {
+      await requestJson(`/hr/schedule-adjustments/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, approvedBy: user?.name || user?.displayName || user?.username })
+      });
+      setStatus(`Adjustment ${status} ✓`);
+      fetchScheduleAdjustments();
+      loadInitialData();
+    } catch (e) {
+      alert('Failed to update adjustment');
+    }
   };
 
   const addAnnouncement = (event) => {
@@ -1342,6 +1370,7 @@ function App() {
             {hasPerm('reports') && <div className="menu-item" onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}>📈 Attendance Logs</div>}
             {hasPerm('announcements') && <div className="menu-item" onClick={() => { setActiveTab('announcements'); setIsMenuOpen(false); }}>📢 Announcements</div>}
             {isManagerView && <div className="menu-item" onClick={() => { setActiveTab('leave-approvals'); setIsMenuOpen(false); }}>✅ Leave Approvals</div>}
+            {(hasPerm('leave-management') || isManagerView) && <div className="menu-item" onClick={() => { setActiveTab('schedule-adjustments'); setIsMenuOpen(false); }}>⏰ Schedule Adjustments</div>}
             {hasPerm('leave-management') && <div className="menu-item" onClick={() => { setActiveTab('leave-management'); setIsMenuOpen(false); }}>⛱️ Leave System</div>}
             {hasPerm('payroll-bridge') && <div className="menu-item" onClick={() => { setActiveTab('payroll-bridge'); setIsMenuOpen(false); }}>💰 Payroll Bridge</div>}
             {hasPerm('setup') && <div className="menu-item" onClick={() => { setActiveTab('system-settings'); setIsMenuOpen(false); }}>⚙️ System Settings</div>}
@@ -2558,6 +2587,73 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'schedule-adjustments' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
+            <h2 style={{marginTop:0, color:'white'}}>⏰ Schedule Adjustment Requests</h2>
+            <p style={{color:'#64748b', marginBottom:'20px'}}>
+              {hasPerm('leave-management') && !user?.employeeId
+                ? 'Review and approve schedule adjustments requested by managers.'
+                : 'Track schedule adjustments for your team.'}
+            </p>
+
+            <div style={{overflowX:'auto', background:'#0f172a', borderRadius:'12px', border:'1px solid #334155'}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Requested By</th>
+                    <th>New Schedule</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th style={{textAlign:'center'}}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scheduleAdjustments.length === 0 ? (
+                    <tr><td colSpan="6" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>No adjustment requests found.</td></tr>
+                  ) : (
+                    scheduleAdjustments.map(adj => (
+                      <tr key={adj.id}>
+                        <td style={{padding:'15px'}}>
+                          <div style={{fontWeight:'bold', color:'white'}}>{adj.employeeName}</div>
+                          <div style={{fontSize:'0.75rem', color:'#64748b'}}>{adj.employeeId}</div>
+                        </td>
+                        <td style={{padding:'15px'}}>{adj.requestedByName || adj.requestedBy}</td>
+                        <td style={{padding:'15px', color:'#f59e0b', fontWeight:'bold'}}>{adj.newSchedule}</td>
+                        <td style={{padding:'15px', fontSize:'0.8rem', color:'#94a3b8'}}>{adj.reason}</td>
+                        <td style={{padding:'15px'}}>
+                          <span style={{
+                            padding:'4px 10px', borderRadius:'10px', fontSize:'0.7rem', fontWeight:'bold',
+                            background: adj.status === 'Approved' ? '#10b98122' : adj.status === 'Rejected' ? '#ef444422' : '#f59e0b22',
+                            color: adj.status === 'Approved' ? '#10b981' : adj.status === 'Rejected' ? '#ef4444' : '#f59e0b',
+                            border: '1px solid currentColor'
+                          }}>{adj.status}</span>
+                        </td>
+                        <td style={{padding:'15px', textAlign:'center'}}>
+                          {adj.status === 'Pending' && hasPerm('leave-management') && !user?.employeeId && (
+                            <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
+                              <button onClick={() => updateAdjustmentStatus(adj.id, 'Approved')} className="btn-green" style={{padding:'5px 12px', fontSize:'0.75rem'}}>Approve</button>
+                              <button onClick={() => updateAdjustmentStatus(adj.id, 'Rejected')} className="btn-red" style={{padding:'5px 12px', fontSize:'0.75rem'}}>Reject</button>
+                            </div>
+                          )}
+                          {adj.status !== 'Pending' && (
+                            <div style={{fontSize:'0.75rem', color:'#64748b'}}>
+                              {adj.status} by {adj.approvedBy}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

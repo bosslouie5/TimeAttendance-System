@@ -232,6 +232,8 @@ function App() {
 
   const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
   const [leavesForApproval, setLeavesForApproval] = useState([]);
+  const [scheduleAdjustments, setScheduleAdjustments] = useState([]);
+  const [adjustmentForm, setAdjustmentForm] = useState({ employeeId: '', newSchedule: '', reason: '' });
   const [isManagerView, setIsManagerView] = useState(false);
   const [currentEmployee, setCurrentEmployee] = useState(null);
 
@@ -349,7 +351,8 @@ function App() {
       
       // Fetch leaves for approval if user is a manager
       await fetchLeavesForApproval();
-      
+      await fetchScheduleAdjustments();
+
       setStatus('Data Synced ✓');
     } catch (e) {}
     setIsSyncing(false);
@@ -946,9 +949,48 @@ function App() {
       const res = await getJson(`${apiUrl.replace(/\/api$/, '')}/api/hr/leaves/for-approval/${empId}`, headers);
       if (res.ok && Array.isArray(res.data)) {
         setLeavesForApproval(res.data);
-        setIsManagerView(res.data.length > 0);
+        // User is a manager if they have subordinates or leaves to approve
+        const hasSubordinates = orgData.subordinates.length > 0;
+        setIsManagerView(res.data.length > 0 || hasSubordinates);
       }
     } catch (e) { console.log('Leave approval fetch error:', e); }
+  };
+
+  const fetchScheduleAdjustments = async () => {
+    const empId = localStorage.getItem('cached_id');
+    const tid = tenantId || localStorage.getItem('tenant_id');
+    if (!empId || !tid || !apiUrl?.startsWith('http')) return;
+    try {
+      const headers = { 'x-tenant-id': tid };
+      const res = await getJson(`${apiUrl.replace(/\/api$/, '')}/api/hr/schedule-adjustments?requestingEmployeeId=${empId}`, headers);
+      if (res.ok && Array.isArray(res.data)) {
+        setScheduleAdjustments(res.data);
+      }
+    } catch (e) { }
+  };
+
+  const submitScheduleAdjustment = async (e) => {
+    if (e) e.preventDefault();
+    const empId = localStorage.getItem('cached_id');
+    const tid = tenantId || localStorage.getItem('tenant_id');
+    if (!adjustmentForm.employeeId || !adjustmentForm.newSchedule || !adjustmentForm.reason.trim()) {
+      showNotice('Incomplete Form', 'Please complete all fields.', 'warning');
+      return;
+    }
+    const newAdj = {
+      ...adjustmentForm,
+      requestedBy: empId,
+      requestedByName: localStorage.getItem('cached_name'),
+      employeeName: orgData.subordinates.find(s => s.employeeId === adjustmentForm.employeeId)?.name || 'Employee'
+    };
+    try {
+      const res = await postJson(`${apiUrl.replace(/\/api$/, '')}/api/hr/schedule-adjustments`, newAdj, { 'x-tenant-id': tid });
+      if (res.ok) {
+        showNotice('Submitted', 'Schedule adjustment request has been submitted to Admin.', 'success');
+        setAdjustmentForm({ employeeId: '', newSchedule: '', reason: '' });
+        fetchScheduleAdjustments();
+      }
+    } catch (e) { showNotice('Error', 'Failed to submit request.', 'error'); }
   };
 
   const approveLeaveRequest = async (leaveId, status) => {
@@ -1653,44 +1695,84 @@ function App() {
               )}
 
               {isManagerView && activeTab === 'leave-approvals' && (
-                <div style={{padding: '20px', paddingBottom: '120px'}}>
-                  <h2 style={{margin: '0 0 20px 0', color: '#f8fafc', fontSize: '1.3rem', fontWeight: '900'}}>✅ Leave Approvals</h2>
-                  <p style={{color: '#94a3b8', marginBottom: '20px', fontSize: '0.85rem'}}>Review and approve leave requests from your team.</p>
-                  
-                  {leavesForApproval.length === 0 ? (
-                    <div style={{textAlign: 'center', padding: '60px 20px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed #334155'}}>
-                      <div style={{fontSize: '2.5rem', marginBottom: '10px'}}>✓</div>
-                      <p style={{color: '#94a3b8', margin: 0}}>No pending leave requests.</p>
+                <div style={{padding: '20px', paddingBottom: '120px'}} className="fade-in">
+                  <div style={{background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <h2 style={{margin: 0, fontSize: '1.2rem'}}>Team Management</h2>
+                    <p style={{color: '#94a3b8', fontSize: '0.8rem', marginTop: '5px'}}>Approve leaves and adjust team schedules</p>
+                  </div>
+
+                  {/* Leave Approvals Section */}
+                  <div className="glass-card" style={{marginBottom: '20px'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
+                      <h3 style={{margin: 0}}>Leave Approvals</h3>
+                      <span className="badge badge-info">{leavesForApproval.length} PENDING</span>
                     </div>
-                  ) : (
-                    <div style={{display: 'grid', gap: '12px'}}>
-                      {leavesForApproval.map(leave => (
-                        <div key={leave.id} style={{background: 'rgba(255,255,255,0.05)', border: '1px solid #334155', borderRadius: '14px', padding: '16px'}}>
-                          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px'}}>
-                            <div>
-                              <div style={{fontWeight: '800', color: '#f8fafc', marginBottom: '4px'}}>{leave.employeeName} ({leave.employeeId})</div>
-                              <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{leave.leaveType || leave.type}</div>
+
+                    {leavesForApproval.length === 0 ? (
+                      <div style={{textAlign: 'center', padding: '20px', color: '#64748b', fontSize: '0.9rem'}}>
+                        No pending leave requests.
+                      </div>
+                    ) : (
+                      <div style={{display: 'grid', gap: '12px'}}>
+                        {leavesForApproval.map(leave => (
+                          <div key={leave.id} style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '18px', padding: '16px'}}>
+                            <div style={{fontWeight: '800', color: '#f8fafc', marginBottom: '4px'}}>{leave.employeeName}</div>
+                            <div style={{fontSize: '0.75rem', color: '#94a3b8', marginBottom: '8px'}}>{leave.type} | {leave.startDate} to {leave.endDate}</div>
+                            <div style={{fontSize: '0.8rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '12px', marginBottom: '12px'}}>{leave.reason}</div>
+                            <div style={{display: 'flex', gap: '10px'}}>
+                              <button onClick={() => approveLeaveRequest(leave.id, 'Approved')} style={{flex: 1, background: '#10b981', color: 'white', border: 'none', padding: '10px', borderRadius: '10px', fontWeight: '700', fontSize: '0.8rem'}}>Approve</button>
+                              <button onClick={() => approveLeaveRequest(leave.id, 'Rejected')} style={{flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '10px', fontWeight: '700', fontSize: '0.8rem'}}>Reject</button>
                             </div>
-                            <span style={{padding: '4px 10px', borderRadius: '999px', fontSize: '0.7rem', background: '#f59e0b22', color: '#f59e0b', fontWeight: '700'}}>Level 1 Pending</span>
                           </div>
-                          <div style={{fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '8px'}}>
-                            📅 {leave.startDate} → {leave.endDate}
-                          </div>
-                          <div style={{fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '12px'}}>
-                            💬 {leave.reason}
-                          </div>
-                          <div style={{display: 'flex', gap: '10px'}}>
-                            <button onClick={() => approveLeaveRequest(leave.id, 'Approved')} style={{flex: 1, background: '#10b981', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '0.85rem'}}>
-                              ✓ Approve
-                            </button>
-                            <button onClick={() => approveLeaveRequest(leave.id, 'Rejected')} style={{flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '0.85rem'}}>
-                              ✗ Reject
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Schedule Adjustment Section */}
+                  <div className="glass-card">
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
+                      <h3 style={{margin: 0}}>Schedule Adjustment</h3>
+                      <span style={{fontSize: '1.5rem'}}>⏰</span>
                     </div>
-                  )}
+
+                    <form onSubmit={submitScheduleAdjustment} style={{marginBottom: '20px'}}>
+                      <label className="label-visible">SELECT EMPLOYEE</label>
+                      <select value={adjustmentForm.employeeId} onChange={e => setAdjustmentForm({...adjustmentForm, employeeId: e.target.value})} className="input-field" style={{marginBottom: '12px'}}>
+                        <option value="">-- Choose Subordinate --</option>
+                        {orgData.subordinates.map(s => (
+                          <option key={s.employeeId} value={s.employeeId}>{s.name} ({s.employeeId})</option>
+                        ))}
+                      </select>
+
+                      <label className="label-visible">NEW SCHEDULE / SHIFT</label>
+                      <input type="text" value={adjustmentForm.newSchedule} onChange={e => setAdjustmentForm({...adjustmentForm, newSchedule: e.target.value})} className="input-field" placeholder="e.g. 09:00 to 18:00" style={{marginBottom: '12px'}} />
+
+                      <label className="label-visible">REASON FOR ADJUSTMENT</label>
+                      <textarea value={adjustmentForm.reason} onChange={e => setAdjustmentForm({...adjustmentForm, reason: e.target.value})} className="input-field" rows="2" style={{marginBottom: '12px', resize: 'none'}} placeholder="Operational requirement..." />
+
+                      <button type="submit" className="btn-primary" style={{padding: '14px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)'}}>REQUEST ADJUSTMENT</button>
+                    </form>
+
+                    <div style={{borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px'}}>
+                      <h4 style={{margin: '0 0 12px 0', fontSize: '0.9rem', color: '#94a3b8'}}>RECENT REQUESTS</h4>
+                      {scheduleAdjustments.length === 0 ? (
+                        <p style={{fontSize: '0.8rem', color: '#64748b', textAlign: 'center'}}>No recent adjustment requests.</p>
+                      ) : (
+                        <div style={{display: 'grid', gap: '10px'}}>
+                          {scheduleAdjustments.map(adj => (
+                            <div key={adj.id} style={{fontSize: '0.8rem', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.03)'}}>
+                              <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                                <span style={{fontWeight: '700'}}>{adj.employeeName}</span>
+                                <span style={{color: adj.status === 'Approved' ? '#10b981' : adj.status === 'Rejected' ? '#ef4444' : '#f59e0b'}}>{adj.status}</span>
+                              </div>
+                              <div style={{color: '#94a3b8', marginTop: '4px'}}>New: {adj.newSchedule}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1712,9 +1794,9 @@ function App() {
                    <span>LEAVE</span>
                 </div>
                 {isManagerView && (
-                  <div className={`nav-item ${activeTab === 'leave-approvals' ? 'active' : ''}`} onClick={() => {setActiveTab('leave-approvals'); fetchLeavesForApproval();}}>
-                     <span style={{fontSize: '1.4rem'}}>✅</span>
-                     <span>APPROVALS</span>
+                  <div className={`nav-item ${activeTab === 'leave-approvals' ? 'active' : ''}`} onClick={() => {setActiveTab('leave-approvals'); fetchLeavesForApproval(); fetchScheduleAdjustments();}}>
+                     <span style={{fontSize: '1.4rem'}}>👥</span>
+                     <span>TEAM</span>
                   </div>
                 )}
                 <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
