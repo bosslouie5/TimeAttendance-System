@@ -160,7 +160,7 @@ if exist "mobile-app\android\release-key.jks" (
     echo.
     set /p buildSigned="Build signed APK now? (Y/N): "
     if /i "!buildSigned!"=="Y" (
-        set "INTERNAL_CALL="
+        set "INTERNAL_CALL=1"
         call :BUILD_SIGNED_APK
     )
 )
@@ -177,6 +177,7 @@ set "ADMIN_CONFIG=web-admin/src/app_config.json"
 set "PKG_FILE=mobile-app/package.json"
 set "GRADLE_FILE=mobile-app/android/app/build.gradle"
 set "CUR_V=1.0.0"
+
 if exist "%CONFIG_FILE%" for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CUR_V=%%v"
 
 echo.
@@ -185,21 +186,26 @@ echo Current Version: %CUR_V%
 set /p NEW_V="Enter New Version (or press Enter to keep): "
 if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 
-:: Use Node to update JSON files (Guarantees UTF-8 without BOM and handles paths correctly)
-node -e "const fs=require('fs'); const v={version:'!NEW_V!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8');"
-node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
-if exist "%ADMIN_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+:: Increment Gradle Version Code and update versionName using PowerShell helper
+if exist "%GRADLE_FILE%" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "tools\update_android_version.ps1" "%GRADLE_FILE%" "!NEW_V!"
+    echo [OK] Gradle Version Code and Name Updated.
+    :: Extract the NEW versionCode that was just incremented
+    for /f "tokens=2" %%a in ('findstr "versionCode" "%GRADLE_FILE%"') do set "NEW_VC=%%a"
+    set "NEW_VC=!NEW_VC: =!"
+) else (
+    set "NEW_VC=0"
+)
+
+:: Use Node to update JSON files with both Version Name and Version Code
+node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', buildDate:new Date().toISOString()}; fs.writeFileSync('%VER_FILE%', JSON.stringify(v, null, 2), 'utf8');"
+node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.versionCode='!NEW_VC!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
+if exist "%ADMIN_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.version='!NEW_V!'; c.versionCode='!NEW_VC!'; c.buildDate=new Date().toISOString(); fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
 
 :: Sync package.json
 if exist "%PKG_FILE%" (
     node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('%PKG_FILE%', 'utf8').replace(/^\uFEFF/, '')); p.version='!NEW_V!'; fs.writeFileSync('%PKG_FILE%', JSON.stringify(p, null, 2), 'utf8');"
     echo [OK] package.json updated.
-)
-
-:: Increment Gradle Version Code and update versionName using PowerShell helper
-if exist "%GRADLE_FILE%" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "tools\update_android_version.ps1" "%GRADLE_FILE%" "!NEW_V!"
-    echo [OK] Gradle Version Code and Name Updated.
 )
 exit /b
 
@@ -247,17 +253,50 @@ goto MENU
 
 :BUILD_SIGNED_APK
 cls
-echo [*] Checking for Version Bump before Build...
-call :VERSION_BUMP_UI
+set "BUMPED="
+set "GRADLE_FILE=mobile-app/android/app/build.gradle"
 
-echo [*] Building signed Android APK for TimeKey Pro...
+if "!INTERNAL_CALL!"=="" (
+    echo [*] Checking for Version Bump before Build...
+    call :VERSION_BUMP_UI
+    set "BUMPED=1"
+)
+
+:: Ensure NEW_VC is set even if no bump happened in this call (e.g. from Master Sync)
+if "!NEW_VC!"=="" (
+    if exist "%GRADLE_FILE%" (
+        for /f "tokens=2" %%a in ('findstr "versionCode" "%GRADLE_FILE%"') do set "NEW_VC=%%a"
+        set "NEW_VC=!NEW_VC: =!"
+    )
+)
+
+:: If we still don't have NEW_V (unlikely), get it from config
+if "!NEW_V!"=="" (
+    set "CONFIG_FILE=mobile-app/src/app_config.json"
+    if exist "!CONFIG_FILE!" for /f "delims=" %%v in ('powershell -Command "(Get-Content !CONFIG_FILE! | ConvertFrom-Json).version"') do set "NEW_V=%%v"
+)
+
+echo [*] Building signed Android APK for TimeKey Pro [Version: !NEW_V! (Code: !NEW_VC!)]...
 if not exist "mobile-app\android\release-key.jks" (
     echo [ERROR] release-key.jks not found in mobile-app\android.
     echo [INFO] Place your keystore at mobile-app\android\release-key.jks or generate it there.
     pause
     goto MENU
 )
+
+:: CRITICAL: If version was bumped or we are in Master Sync, we MUST rebuild and sync web assets to Android
+if "!BUMPED!"=="1" (
+    echo [*] Rebuilding Mobile UI for New Version...
+    pushd mobile-app & call npx vite build --outDir dist --emptyOutDir & popd
+)
+
+echo [*] Syncing Capacitor Assets...
+pushd mobile-app
+call npx cap sync android
+popd
+
 pushd mobile-app\android
+echo [*] Running Gradle Build (assembleRelease)...
 call gradlew.bat assembleRelease
 if errorlevel 1 (
     echo [ERROR] Signed APK build failed.
@@ -274,7 +313,7 @@ if exist "%APK_SOURCE%" (
     copy /y "%APK_SOURCE%" "..\..\backend\apks\TimeKey_Master.apk" >nul
 
     :: Create latest-version.json for Broadcast
-    node -e "const fs=require('fs'); const v={version:'!NEW_V!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+    node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
 
     echo [OK] Signed APK created and Synced for OTA updates.
 ) else (
