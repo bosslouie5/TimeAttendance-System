@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import appConfig from './app_config.json';
 
 const API_BASE = '/api';
 
@@ -1364,7 +1365,7 @@ function App() {
           {appVersionInfo && (
             <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
               <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || 'V1.0.1'}</span>
+              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || appConfig.version || '1.0.1'}</span>
               <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
             </div>
           )}
