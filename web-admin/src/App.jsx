@@ -538,25 +538,36 @@ function App() {
       alert('Please fill in the leave details');
       return;
     }
+
+    // RULE: Check if current user is a manager (has subordinates)
+    const currentEmpId = (user?.employeeId || user?.username || "").toString();
+    const isManager = employees.some(e => (e.reportsTo || "").toString() === currentEmpId && e.reportsTo !== "");
+
     // Auto-fill reportsTo from employee -> manager mapping when not provided
     let effectiveReportsTo = leaveForm.reportsTo?.trim() || '';
-    try {
-      if (!effectiveReportsTo) {
-        const empId = user?.employeeId || user?.username;
-        const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === (empId || "").toString());
-        if (myEmp && myEmp.reportsTo) {
-          const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
-          effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+
+    if (isManager) {
+      // Managers bypass their own manager (if any) and go straight to HR Admin
+      effectiveReportsTo = 'HR Management';
+      console.log("[LEAVE-FLOW] Manager detected, bypassing manager approval step.");
+    } else {
+      try {
+        if (!effectiveReportsTo) {
+          const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === currentEmpId);
+          if (myEmp && myEmp.reportsTo) {
+            const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
+            effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+          }
         }
-      }
-    } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+    }
 
     if (!effectiveReportsTo) effectiveReportsTo = 'HR Management'; // Rule: Fallback to HR
 
     const newRequest = {
       id: `leave-${Date.now()}`,
-      employeeId: user?.username || 'EMP001',
-      employeeName: user?.name || 'Admin User',
+      employeeId: user?.employeeId || user?.username || 'EMP001',
+      employeeName: user?.name || user?.displayName || 'Admin User',
       type: leaveForm.type,
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,

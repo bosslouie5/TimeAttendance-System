@@ -3,6 +3,8 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { Device } from '@capacitor/device';
 import { Browser } from '@capacitor/browser';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { FileOpener } from '@capacitor-community/file-opener';
 import initialData from './initial_data.json';
 import appConfig from './app_config.json';
 import './styles.css';
@@ -109,6 +111,8 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isServerDown, setIsServerDown] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [showBranchPicker, setShowBranchPicker] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
@@ -694,7 +698,7 @@ function App() {
   };
 
   const handleDownloadUpdate = async () => {
-    if (!updateAvailable) return;
+    if (!updateAvailable || isDownloading) return;
 
     const downloadUrl = resolveUpdateDownloadUrl(updateAvailable, apiUrl);
     if (!downloadUrl) {
@@ -702,26 +706,64 @@ function App() {
       return;
     }
 
-    console.log(`[UPDATE] Opening download URL: ${downloadUrl}`);
+    if (Capacitor.getPlatform() === 'web') {
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
 
-    // Flag that an update was initiated, but we don't clear data anymore
-    localStorage.setItem('pending_update_purge', 'true');
+    setIsDownloading(true);
+    setDownloadProgress(0);
     setStatus('📥 DOWNLOADING UPDATE...');
 
     try {
-      if (Capacitor.getPlatform() === 'web') {
-        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        await Browser.open({ url: downloadUrl });
-      }
+      const fileName = `TimeKey_Update_${updateAvailable.versionCode || Date.now()}.apk`;
 
-      setUpdateAvailable(null);
-      showNotice('Download Started', 'The update download has begun. Please check your notification center and reopen the app after installation.', 'success');
+      // 1. Add progress listener BEFORE starting download
+      const progressListener = await Filesystem.addListener('downloadProgress', (progress) => {
+         if (progress.contentLength > 0) {
+           const percent = Math.round((progress.bytes / progress.contentLength) * 100);
+           setDownloadProgress(percent);
+           setStatus(`Downloading: ${percent}%`);
+         }
+      });
+
+      // 2. Start Download using Filesystem (Native support for large files and progress)
+      const downloadResult = await Filesystem.downloadFile({
+        url: downloadUrl,
+        path: fileName,
+        directory: Directory.ExternalStorage, // Use external so Package Installer can see it
+        progress: true
+      });
+
+      const path = downloadResult.path;
+      progressListener.remove();
+
+      setDownloadProgress(100);
+      setStatus('✅ DOWNLOAD COMPLETE');
+
+      // 2. Trigger Installation
+      showNotice('Ready to Install', 'Download complete. Opening installer now...', 'success');
+
+      setTimeout(async () => {
+        try {
+          await FileOpener.open({
+            filePath: path,
+            contentType: 'application/vnd.android.package-archive'
+          });
+          setIsDownloading(false);
+          setUpdateAvailable(null);
+        } catch (err) {
+          console.error('Installer failed:', err);
+          showNotice('Install Failed', 'Could not open the installer. Please find the APK in your Downloads folder.', 'error');
+          setIsDownloading(false);
+        }
+      }, 1500);
+
     } catch (e) {
-      console.warn('[UPDATE] Browser open failed, trying fallback.', e);
-      if (typeof window !== 'undefined' && window.open) {
-        window.open(downloadUrl, '_system');
-      }
+      console.error('[UPDATE] Download failed:', e);
+      setIsDownloading(false);
+      setStatus('❌ DOWNLOAD FAILED');
+      showNotice('Download Error', 'An error occurred while downloading the update. Please try again later.', 'error');
     }
   };
 
@@ -1058,11 +1100,27 @@ function App() {
                   <span style={{fontSize: '5rem', marginBottom: '20px', display: 'block'}}>🚀</span>
                   <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Upgrade Available</h2>
                   <div style={{color: '#3b82f6', fontWeight: '900', marginBottom: '20px'}}>V{updateAvailable.version}</div>
-                  <div style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '15px', textAlign: 'left', maxHeight: '200px', overflowY: 'auto'}}>
-                     <strong style={{color: '#fff', display: 'block', marginBottom: '8px'}}>What's New:</strong>
-                     {updateAvailable.changelog || 'Stability updates and performance improvements.'}
-                  </div>
-                  <button className="btn-primary" onClick={handleDownloadUpdate}>INSTALL UPDATE</button>
+
+                  {!isDownloading ? (
+                    <>
+                      <div style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '15px', textAlign: 'left', maxHeight: '200px', overflowY: 'auto'}}>
+                         <strong style={{color: '#fff', display: 'block', marginBottom: '8px'}}>What's New:</strong>
+                         {updateAvailable.changelog || 'Stability updates and performance improvements.'}
+                      </div>
+                      <button className="btn-primary" onClick={handleDownloadUpdate}>INSTALL UPDATE NOW</button>
+                    </>
+                  ) : (
+                    <div style={{marginTop: '20px'}}>
+                       <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.8rem', fontWeight: '800', color: '#3b82f6'}}>
+                          <span>DOWNLOADING...</span>
+                          <span>{downloadProgress}%</span>
+                       </div>
+                       <div style={{width: '100%', height: '12px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(59, 130, 246, 0.2)'}}>
+                          <div style={{width: `${downloadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', transition: 'width 0.3s ease', boxShadow: '0 0 10px rgba(59, 130, 246, 0.5)'}}></div>
+                       </div>
+                       <p style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '15px'}}>Sinisiguro namin na makuha mo ang pinakabagong features. Huwag munang isara ang app.</p>
+                    </div>
+                  )}
                </div>
             </div>
           )}

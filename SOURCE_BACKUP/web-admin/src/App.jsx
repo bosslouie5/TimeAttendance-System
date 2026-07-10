@@ -42,7 +42,7 @@ function App() {
   const [positionTitles, setPositionTitles] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [tenantDetails, setTenantDetails] = useState(null);
-  const [appVersionInfo, setAppVersionInfo] = useState(null);
+  const [appVersionInfo, setAppVersionInfo] = useState(appConfig);
   const [status, setStatus] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginErrorCode, setLoginErrorCode] = useState('');
@@ -129,30 +129,27 @@ function App() {
   useEffect(() => {
     const checkConnection = () => {
       setActiveApiBase('/api');
-    };
-    checkConnection();
-  }, []);
-
-  useEffect(() => {
-    if (detectedTenantId) {
-      fetch(`${activeApiBase}/tenant-info/${detectedTenantId}`)
-        .then(r => r.json())
-        .then(data => {
-          setTenantDetails(data);
-          if (user && !user.isConsultant && data.permissions) {
-            const updated = { ...user, permissions: data.permissions };
-            setUser(updated);
-            sessionStorage.setItem(sessionKey, JSON.stringify(updated));
-          }
-        })
-        .catch(() => {});
-
-      // Fetch App Version
+      // Fetch App Version (Global)
       fetch(`${activeApiBase}/app-version`)
         .then(r => r.json())
         .then(data => setAppVersionInfo(data))
         .catch(() => {});
-    }
+
+      if (detectedTenantId) {
+        fetch(`${activeApiBase}/tenant-info/${detectedTenantId}`)
+          .then(r => r.json())
+          .then(data => {
+            setTenantDetails(data);
+            if (user && !user.isConsultant && data.permissions) {
+              const updated = { ...user, permissions: data.permissions };
+              setUser(updated);
+              sessionStorage.setItem(sessionKey, JSON.stringify(updated));
+            }
+          })
+          .catch(() => {});
+      }
+    };
+    checkConnection();
   }, [detectedTenantId, activeApiBase]);
 
   useEffect(() => {
@@ -541,25 +538,36 @@ function App() {
       alert('Please fill in the leave details');
       return;
     }
+
+    // RULE: Check if current user is a manager (has subordinates)
+    const currentEmpId = (user?.employeeId || user?.username || "").toString();
+    const isManager = employees.some(e => (e.reportsTo || "").toString() === currentEmpId && e.reportsTo !== "");
+
     // Auto-fill reportsTo from employee -> manager mapping when not provided
     let effectiveReportsTo = leaveForm.reportsTo?.trim() || '';
-    try {
-      if (!effectiveReportsTo) {
-        const empId = user?.employeeId || user?.username;
-        const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === (empId || "").toString());
-        if (myEmp && myEmp.reportsTo) {
-          const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
-          effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+
+    if (isManager) {
+      // Managers bypass their own manager (if any) and go straight to HR Admin
+      effectiveReportsTo = 'HR Management';
+      console.log("[LEAVE-FLOW] Manager detected, bypassing manager approval step.");
+    } else {
+      try {
+        if (!effectiveReportsTo) {
+          const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === currentEmpId);
+          if (myEmp && myEmp.reportsTo) {
+            const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
+            effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+          }
         }
-      }
-    } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+    }
 
     if (!effectiveReportsTo) effectiveReportsTo = 'HR Management'; // Rule: Fallback to HR
 
     const newRequest = {
       id: `leave-${Date.now()}`,
-      employeeId: user?.username || 'EMP001',
-      employeeName: user?.name || 'Admin User',
+      employeeId: user?.employeeId || user?.username || 'EMP001',
+      employeeName: user?.name || user?.displayName || 'Admin User',
       type: leaveForm.type,
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,
@@ -1362,13 +1370,14 @@ function App() {
               LOGOUT
             </button>
           </div>
-          {appVersionInfo && (
-            <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
-              <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || appConfig.version || '1.0.1'}</span>
-              <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
-            </div>
-          )}
+          <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
+            <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
+            APP VERSION: <span style={{color: '#10b981'}}>{appConfig.version}</span>
+            {appVersionInfo?.version && appVersionInfo.version !== appConfig.version && (
+                <span style={{color: '#f59e0b', marginLeft: '5px'}}> (Update: {appVersionInfo.version})</span>
+            )}
+            <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
+          </div>
         </div>
       </header>
 
@@ -1700,8 +1709,16 @@ function App() {
                     {item.updatedAt && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.75rem', color:'#64748b'}}>Updated: {new Date(item.updatedAt).toLocaleString()}</div>}
                     {item.status === 'Pending (Admin)' && (
                       <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
-                        <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Final Approve</button>
-                        <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
+                        {(!detectedTenantId || detectedTenantId === 'master') ? (
+                          <>
+                            <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Final Approve</button>
+                            <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
+                          </>
+                        ) : (
+                          <div style={{fontSize:'0.75rem', color:'#f59e0b', fontStyle:'italic', display:'flex', alignItems:'center', gap:'5px'}}>
+                            <span className="pulse">⏳ Waiting for Global Admin Final Approval...</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* RULE: Integrated Manager Approval in HR Hub */}
