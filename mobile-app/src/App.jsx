@@ -441,20 +441,47 @@ function App() {
     const checkUpdate = async () => {
       if (!apiUrl.startsWith('http') || isServerDown) return;
       try {
+        console.log('[UPDATE] Checking for new version...');
         const res = await getJson(`${apiUrl}/app-version`);
         if (res.ok && res.data) {
           const latest = res.data;
           const currentVer = appConfig.version;
-          const currentParts = currentVer.split('.').map(Number);
+          const currentCode = appConfig.versionCode || 0;
+
+          console.log(`[UPDATE] Current: ${currentVer} (Code: ${currentCode}) | Latest: ${latest.version} (Code: ${latest.versionCode})`);
+
           const latestParts = latest.version.split('.').map(Number);
+          const currentParts = currentVer.split('.').map(Number);
+
           let isNewer = false;
-          for (let i = 0; i < 3; i++) {
-            if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
-            if (latestParts[i] < currentParts[i]) { isNewer = false; break; }
+
+          // 1. Primary Check: versionCode (Best Practice)
+          if (latest.versionCode && currentCode) {
+             if (parseInt(latest.versionCode) > parseInt(currentCode)) {
+                isNewer = true;
+             }
           }
-          if (isNewer) setUpdateAvailable(latest);
+
+          // 2. Fallback: Semantic Versioning comparison
+          if (!isNewer) {
+            for (let i = 0; i < 3; i++) {
+              const latestPart = latestParts[i] || 0;
+              const currentPart = currentParts[i] || 0;
+              if (latestPart > currentPart) { isNewer = true; break; }
+              if (latestPart < currentPart) { isNewer = false; break; }
+            }
+          }
+
+          if (isNewer) {
+            console.log('[UPDATE] New version detected!');
+            setUpdateAvailable(latest);
+          } else {
+            console.log('[UPDATE] App is up to date.');
+          }
         }
-      } catch (err) { }
+      } catch (err) {
+        console.warn('[UPDATE] Check failed:', err.message);
+      }
     };
 
     checkWhatsNew();

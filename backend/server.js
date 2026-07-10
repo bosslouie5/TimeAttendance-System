@@ -1378,38 +1378,57 @@ app.post('/api/master/build-apk', async (req, res) => {
     // 0.1 Versioning Logic (Pro Update System)
     const pkgPath = path.join(mobileAppPath, 'package.json');
     const gradlePath = path.join(mobileAppPath, 'android/app/build.gradle');
-    let currentVersion = '0.1.0';
+    let currentVersion = '1.0.0';
+    let newVersionCode = 1;
 
     if (fs.existsSync(pkgPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      const vParts = pkg.version.split('.').map(Number);
+      const vParts = (pkg.version || '1.0.0').split('.').map(Number);
       vParts[2]++; // Increment patch version
-      pkg.version = vParts.join('.');
-      currentVersion = pkg.version;
+      currentVersion = vParts.join('.');
+      pkg.version = currentVersion;
       fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
       console.log(`[BUILD] Auto-incremented version to: ${currentVersion}`);
     }
 
     if (fs.existsSync(gradlePath)) {
       let gradleContent = fs.readFileSync(gradlePath, 'utf8');
-      gradleContent = gradleContent.replace(/versionCode (\d+)/, (match, v) => `versionCode ${parseInt(v) + 1}`);
+
+      // Update versionCode
+      gradleContent = gradleContent.replace(/versionCode (\d+)/, (match, v) => {
+        newVersionCode = parseInt(v) + 1;
+        return `versionCode ${newVersionCode}`;
+      });
+
+      // Update versionName to match package.json
+      gradleContent = gradleContent.replace(/versionName ".*?"/, `versionName "${currentVersion}"`);
+
       fs.writeFileSync(gradlePath, gradleContent);
-      console.log(`[BUILD] Gradle versionCode bumped.`);
+      console.log(`[BUILD] Gradle versionCode bumped to ${newVersionCode}, versionName to ${currentVersion}.`);
     }
 
     // 1. Update app_config.json & Sync version.json
     const configPath = path.join(mobileAppPath, 'src/app_config.json');
     const verPath = path.join(__dirname, 'version.json');
+
+    // Read existing config to preserve other settings if any
+    let existingConfig = {};
+    if (fs.existsSync(configPath)) {
+      try { existingConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch(e) {}
+    }
+
     const updatePayload = {
+      ...existingConfig,
       defaultApiUrl: apiUrl,
       defaultTenantId: tenantId,
       version: currentVersion,
+      versionCode: newVersionCode,
       buildDate: new Date().toISOString()
     };
 
     fs.writeFileSync(configPath, JSON.stringify(updatePayload, null, 2));
-    fs.writeFileSync(verPath, JSON.stringify({ version: currentVersion, buildDate: updatePayload.buildDate }, null, 2));
-    console.log(`[BUILD] Synced app_config.json and version.json to ${currentVersion}`);
+    fs.writeFileSync(verPath, JSON.stringify({ version: currentVersion, versionCode: newVersionCode, buildDate: updatePayload.buildDate }, null, 2));
+    console.log(`[BUILD] Synced app_config.json and version.json to ${currentVersion} (${newVersionCode})`);
 
     // 2. Update app name in strings.xml
     const stringsPath = path.join(mobileAppPath, 'android/app/src/main/res/values/strings.xml');

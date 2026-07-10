@@ -23,7 +23,7 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo [BUILD] Step 3: Gradle...
 cd android
-call gradlew.bat assembleDebug
+call gradlew.bat clean assembleDebug
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo [BUILD] DONE!
