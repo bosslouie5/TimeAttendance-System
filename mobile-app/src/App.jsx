@@ -731,7 +731,7 @@ function App() {
       const downloadResult = await Filesystem.downloadFile({
         url: downloadUrl,
         path: fileName,
-        directory: Directory.ExternalStorage, // Use external so Package Installer can see it
+        directory: Directory.Cache, // Use Cache for better compatibility with Scoped Storage
         progress: true
       });
 
