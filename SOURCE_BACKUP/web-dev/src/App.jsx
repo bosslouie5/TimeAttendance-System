@@ -1628,7 +1628,7 @@ function App() {
                 }}
               >
                 <option value="ALL" style={{background: '#1e293b'}}>🌐 ALL TENANTS (SHARED DATA)</option>
-                {users.map(u => (
+                {uniqueTenants.map(u => (
                   <option key={u.tenantId || u.username} value={u.tenantId || u.username} style={{background: '#1e293b'}}>
                     🏢 {u.companyName} ({u.tenantId || u.username})
                   </option>
@@ -2169,8 +2169,8 @@ function App() {
            <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:'20px'}}>
               <div style={{background:'#1e293b', padding:'20px', borderRadius:'15px', border:'1px solid #334155', maxHeight:'80vh', overflowY:'auto'}}>
                  <h2 style={{marginTop:0}}>Select Tenant</h2>
-                 {users.map(u => (
-                   <div key={u.tenantId || u.username} onClick={() => setSelectedTenant(u)} style={{padding:'15px', borderRadius:'10px', background: selectedTenant?.tenantId === (u.tenantId || u.username) ? '#3b82f6' : '#0f172a', marginBottom:'10px', cursor:'pointer', border:'1px solid #334155'}}>
+                 {uniqueTenants.map(u => (
+                   <div key={u.tenantId || u.username} onClick={() => setSelectedTenant(u)} style={{padding:'15px', borderRadius:'10px', background: (selectedTenant?.tenantId || selectedTenant?.username) === (u.tenantId || u.username) ? '#3b82f6' : '#0f172a', marginBottom:'10px', cursor:'pointer', border:'1px solid #334155'}}>
                       <div style={{fontWeight:'bold'}}>{u.companyName}</div>
                       <div style={{fontSize:'0.7rem', opacity:0.6}}>{u.tenantId || u.username}</div>
                    </div>
@@ -2230,7 +2230,7 @@ function App() {
                 style={{...inputStyle, marginBottom:0, width:'220px', padding:'10px', color:'#f8fafc'}}
               >
                 <option value="">Select Tenant</option>
-                {users.map(u => (
+                {uniqueTenants.map(u => (
                   <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                     {u.companyName} ({u.tenantId || u.username})
                   </option>
@@ -2342,7 +2342,7 @@ function App() {
                     <label style={{fontSize:'0.55rem', color:'#3b82f6', display:'block', marginBottom:'4px', fontWeight:'900', letterSpacing:'0.5px'}}>TENANT *</label>
                     <select style={{...inputStyle, padding:'8px 12px', marginBottom:0, fontSize:'0.8rem', height:'38px'}} value={empTenantId} onChange={e => handleEmpTenantChange(e.target.value)} disabled={isEditingEmp}>
                       <option value="">Select Tenant</option>
-                      {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
+                      {uniqueTenants.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                     </select>
                   </div>
                   <div>
@@ -2468,7 +2468,7 @@ function App() {
                      style={{...inputStyle, width:'100%'}}
                    >
                      <option value="">Select Tenant</option>
-                     {users.map(u => (
+                     {uniqueTenants.map(u => (
                        <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                          {u.companyName} ({u.tenantId || u.username})
                        </option>
@@ -2610,7 +2610,7 @@ function App() {
                      style={{...inputStyle, width:'100%'}}
                    >
                      <option value="">Select Tenant</option>
-                     {users.map(u => (
+                     {uniqueTenants.map(u => (
                        <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                          {u.companyName} ({u.tenantId || u.username})
                        </option>
@@ -2697,7 +2697,7 @@ function App() {
                      style={{...inputStyle, width:'100%'}}
                    >
                      <option value="">Select Tenant</option>
-                     {users.map(u => (
+                     {uniqueTenants.map(u => (
                        <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                          {u.companyName} ({u.tenantId || u.username})
                        </option>
@@ -3071,7 +3071,7 @@ function App() {
                 <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                 <select value={selectedDevicesTenant} onChange={e => setSelectedDevicesTenant(e.target.value)} style={{...inputStyle, marginBottom:0, padding:'10px', height:'42px'}}>
                   <option value="ALL">All Tenants</option>
-                  {users.map(u => (
+                  {uniqueTenants.map(u => (
                     <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName} ({u.tenantId || u.username})</option>
                   ))}
                 </select>
@@ -3139,7 +3139,7 @@ function App() {
                   <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                   <select value={selectedAssignBranchTenant} onChange={e => setSelectedAssignBranchTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'240px', padding:'10px', height:'42px'}}>
                     <option value="">-- Select a tenant --</option>
-                    {users.map(u => (
+                    {uniqueTenants.map(u => (
                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
                         {u.companyName} ({u.tenantId || u.username})
                       </option>
@@ -3301,7 +3301,7 @@ function App() {
                   <label style={{color:'#94a3b8', fontSize:'0.75rem', fontWeight:'700', textTransform:'uppercase'}}>Tenant</label>
                   <select value={selectedAssignScheduleTenant} onChange={e => setSelectedAssignScheduleTenant(e.target.value)} style={{...inputStyle, marginBottom:0, width:'220px', padding:'10px', height:'42px'}}>
                     <option value="">-- Select a tenant --</option>
-                    {users.map(u => (
+                    {uniqueTenants.map(u => (
                       <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName} ({u.tenantId || u.username})</option>
                     ))}
                   </select>
@@ -3539,7 +3539,7 @@ function App() {
                     <p style={{fontSize:'0.75rem', color:'#64748b'}}>Clear data for a specific company.</p>
                     <select id="wipe-tenant" style={inputStyle}>
                        <option value="">Select Tenant...</option>
-                       {users.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
+                       {uniqueTenants.map(u => <option key={u.tenantId || u.username} value={u.tenantId || u.username}>{u.companyName}</option>)}
                     </select>
                     <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
                        <button onClick={() => {

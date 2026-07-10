@@ -43,6 +43,8 @@ function App() {
   const [tenantDetails, setTenantDetails] = useState(null);
   const [appVersionInfo, setAppVersionInfo] = useState(null);
   const [status, setStatus] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginErrorCode, setLoginErrorCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [leaveRequests, setLeaveRequests] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('webadmin_hr_leaves') || '[]'); } catch (e) { return []; }
@@ -273,6 +275,8 @@ function App() {
       return;
     }
     setStatus('Logging in...');
+    setLoginError('');
+    setLoginErrorCode('');
     try {
       const res = await fetch(`${activeApiBase}/auth/web-login`, {
         method: 'POST',
@@ -289,10 +293,14 @@ function App() {
           fetchLeavesForApproval(data.user.employeeId);
         }
       } else {
-        alert(data.error || 'Invalid Credentials');
+        setLoginError(data.message || data.error || 'Invalid Credentials');
+        setLoginErrorCode(data.code || '');
         setStatus('');
       }
-    } catch (e) { alert('Login connection failed'); setStatus(''); }
+    } catch (e) {
+      setLoginError('Connection failed. Please check your internet or server status.');
+      setStatus('');
+    }
   };
 
   const fetchLeavesForApproval = async (employeeId) => {
@@ -1085,10 +1093,56 @@ function App() {
   if (!user) {
     return (
       <div style={{display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a', fontFamily:'sans-serif'}}>
-        <div style={{background:'#1e293b', padding:'40px', borderRadius:'15px', border:'1px solid #334155', width:'100%', maxWidth:'400px', textAlign:'center'}}>
+        <div style={{
+          background:'#1e293b',
+          padding:'40px',
+          borderRadius:'15px',
+          border:'1px solid #334155',
+          width:'100%',
+          maxWidth:'400px',
+          textAlign:'center',
+          boxShadow: loginError ? '0 0 30px rgba(239, 68, 68, 0.2)' : '0 10px 25px rgba(0,0,0,0.2)',
+          animation: loginError ? 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both' : 'none'
+        }}>
+          <style>{`
+            @keyframes shake {
+              10%, 90% { transform: translate3d(-1px, 0, 0); }
+              20%, 80% { transform: translate3d(2px, 0, 0); }
+              30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+              40%, 60% { transform: translate3d(4px, 0, 0); }
+            }
+          `}</style>
           <h1 style={{color:'#3b82f6', marginBottom:'10px', fontWeight: '900'}}>TIMEKEY SYSTEM</h1>
           <p style={{color:'#64748b', marginBottom:'30px', fontWeight: 'bold', letterSpacing: '1px'}}>ADMIN MANAGEMENT PORTAL</p>
           {tenantDetails && <h2 style={{color:'#60a5fa', fontSize:'1.2rem', marginBottom:'25px'}}>{tenantDetails.companyName}</h2>}
+
+          {loginError && (
+            <div style={{
+              background:'rgba(239, 68, 68, 0.1)',
+              border:'1px solid rgba(239, 68, 68, 0.3)',
+              color:'#f87171',
+              padding:'12px',
+              borderRadius:'10px',
+              marginBottom:'20px',
+              fontSize:'0.85rem',
+              fontWeight:'700',
+              textAlign:'left',
+              display:'flex',
+              gap:'10px',
+              alignItems:'flex-start'
+            }}>
+              <span style={{fontSize:'1.2rem'}}>⚠️</span>
+              <div>
+                <div>{loginError}</div>
+                {loginErrorCode === 'IP_BLOCKED' && (
+                  <div style={{marginTop:'5px', fontSize:'0.7rem', color:'#64748b'}}>
+                    Gamitin ang Developer Portal para i-whitelist ang iyong IP.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
             <input
               value={username}
