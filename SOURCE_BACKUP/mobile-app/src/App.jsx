@@ -449,56 +449,44 @@ function App() {
     };
 
     const checkUpdate = async () => {
-      if (!apiUrl.startsWith('http') || isServerDown) return;
+      if (!apiUrl || !apiUrl.startsWith('http') || isServerDown) return;
       try {
-        console.log('[UPDATE] Checking for new version...');
         const res = await getJson(`${apiUrl}/app-version`);
         if (res.ok && res.data) {
           const latest = res.data;
-          const currentVer = appConfig.version;
-          const currentCode = appConfig.versionCode || 0;
-
-          console.log(`[UPDATE] Current: ${currentVer} (Code: ${currentCode}) | Latest: ${latest.version} (Code: ${latest.versionCode})`);
-
-          const latestParts = latest.version.split('.').map(Number);
-          const currentParts = currentVer.split('.').map(Number);
+          const currentVer = appConfig.version || '1.0.0';
+          const currentCode = parseInt(appConfig.versionCode || 0);
+          const latestCode = parseInt(latest.versionCode || 0);
 
           let isNewer = false;
 
-          // 1. Primary Check: versionCode (Best Practice)
-          if (latest.versionCode && currentCode) {
-             if (parseInt(latest.versionCode) > parseInt(currentCode)) {
-                isNewer = true;
-             }
+          // 1. Primary Check: versionCode
+          if (latestCode > currentCode) {
+             isNewer = true;
           }
 
           // 2. Fallback: Semantic Versioning comparison
           if (!isNewer) {
+            const latestParts = latest.version.split('.').map(v => parseInt(v) || 0);
+            const currentParts = currentVer.split('.').map(v => parseInt(v) || 0);
             for (let i = 0; i < 3; i++) {
-              const latestPart = latestParts[i] || 0;
-              const currentPart = currentParts[i] || 0;
-              if (latestPart > currentPart) { isNewer = true; break; }
-              if (latestPart < currentPart) { isNewer = false; break; }
+              if (latestParts[i] > currentParts[i]) { isNewer = true; break; }
+              if (latestParts[i] < currentParts[i]) { isNewer = false; break; }
             }
           }
 
           if (isNewer) {
-            console.log('[UPDATE] New version detected!');
             setUpdateAvailable(latest);
-          } else {
-            console.log('[UPDATE] App is up to date.');
           }
         }
-      } catch (err) {
-        console.warn('[UPDATE] Check failed:', err.message);
-      }
+      } catch (err) {}
     };
 
     checkWhatsNew();
     checkUpdate();
 
-    // Auto-polling for updates every 45 seconds (PRO REAL-TIME)
-    const updateTimer = setInterval(checkUpdate, 45000);
+    // Auto-polling for updates
+    const updateTimer = setInterval(checkUpdate, 30000);
     return () => clearInterval(updateTimer);
   }, [apiUrl, isServerDown]);
 

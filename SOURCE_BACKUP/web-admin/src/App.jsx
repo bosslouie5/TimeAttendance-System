@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import appConfig from './app_config.json';
 
 const API_BASE = '/api';
 
@@ -334,6 +335,9 @@ function App() {
       if (res.ok) {
         const updated = await res.json();
         setLeavesForApproval(prev => prev.map(l => l.id === leaveId ? updated : l));
+        // Also update the main leaveRequests list so HR Hub reflects changes immediately
+        setLeaveRequests(prev => prev.map(l => l.id === leaveId ? updated : l));
+        setStatus(`Leave ${status.toLowerCase()} ✓`);
         alert(`Leave ${status.toLowerCase()} successfully`);
       }
     } catch (err) { alert('Failed to update leave'); }
@@ -593,6 +597,8 @@ function App() {
         const updated = leaveRequests.map(item => item.id === id ? updatedItem : item);
         setLeaveRequests(updated);
         sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(updated));
+        // Also update leavesForApproval for consistency
+        setLeavesForApproval(prev => prev.map(l => l.id === id ? updatedItem : l));
         setStatus(`Leave request ${status.toLowerCase()} ✓`);
         return;
       }
@@ -1359,7 +1365,7 @@ function App() {
           {appVersionInfo && (
             <div style={{fontSize: '0.65rem', color: '#94a3b8', fontWeight: '800', display:'flex', alignItems:'center', gap:'5px', background:'rgba(255,255,255,0.05)', padding:'4px 10px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.05)'}}>
               <span style={{width:'6px', height:'6px', background:'#10b981', borderRadius:'50%', display:'inline-block'}}></span>
-              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || 'V1.0.1'}</span>
+              APP VERSION: <span style={{color: '#10b981'}}>{appVersionInfo?.version || appConfig.version || '1.0.1'}</span>
               <span style={{color: '#64748b', marginLeft:'5px'}}>(PRO EDITION)</span>
             </div>
           )}
@@ -1698,8 +1704,15 @@ function App() {
                         <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
                       </div>
                     )}
-                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && (
-                      <div style={{marginTop:'10px', fontSize:'0.7rem', color:'#f59e0b', fontStyle:'italic'}}>Waiting for Manager Approval...</div>
+                    {/* RULE: Integrated Manager Approval in HR Hub */}
+                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && (item.reportsTo === user.employeeId || item.reportsTo === user.displayName || item.reportsTo === user.username) && (
+                      <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
+                        <button onClick={() => approveLeave(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Approve as Manager</button>
+                        <button onClick={() => approveLeave(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject as Manager</button>
+                      </div>
+                    )}
+                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && !(item.reportsTo === user.employeeId || item.reportsTo === user.displayName || item.reportsTo === user.username) && (
+                      <div style={{marginTop:'10px', fontSize:'0.7rem', color:'#f59e0b', fontStyle:'italic'}}>Waiting for Manager Approval ({item.reportsTo})...</div>
                     )}
                   </div>
                 ))}

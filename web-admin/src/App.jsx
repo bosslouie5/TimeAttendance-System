@@ -1700,8 +1700,16 @@ function App() {
                     {item.updatedAt && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.75rem', color:'#64748b'}}>Updated: {new Date(item.updatedAt).toLocaleString()}</div>}
                     {item.status === 'Pending (Admin)' && (
                       <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
-                        <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Final Approve</button>
-                        <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
+                        {(!detectedTenantId || detectedTenantId === 'master') ? (
+                          <>
+                            <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Final Approve</button>
+                            <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
+                          </>
+                        ) : (
+                          <div style={{fontSize:'0.75rem', color:'#f59e0b', fontStyle:'italic', display:'flex', alignItems:'center', gap:'5px'}}>
+                            <span className="pulse">⏳ Waiting for Global Admin Final Approval...</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* RULE: Integrated Manager Approval in HR Hub */}

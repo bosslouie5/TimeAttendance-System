@@ -795,9 +795,23 @@ app.put('/api/hr/leaves/:id/status', tenantGuard, async (req, res) => {
   let updated = null;
   data.leaves = (data.leaves || []).map(l => {
     if (l.id === id && l.tenantId === (req.tenantId || l.tenantId || 'master')) {
+      let finalStatus = status;
+
+      // RULE: Tenant users cannot set "Approved" status directly.
+      // It must go through "Pending (Admin)" first.
+      if (status === 'Approved' && req.tenantId && req.tenantId !== 'master') {
+        if (l.status !== 'Pending (Admin)') {
+          finalStatus = 'Pending (Admin)';
+        } else {
+          // If it's already Pending (Admin), a tenant user stays in Pending (Admin)
+          // because only the Global Admin can move it to "Approved".
+          finalStatus = 'Pending (Admin)';
+        }
+      }
+
       updated = {
         ...l,
-        status,
+        status: finalStatus,
         approvedBy: approvedBy || l.approvedBy || 'admin',
         updatedAt: new Date().toISOString()
       };

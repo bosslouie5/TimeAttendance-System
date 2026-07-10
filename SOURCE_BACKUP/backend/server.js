@@ -270,7 +270,22 @@ const tenantGuard = (req, res, next) => {
   next();
 };
 
-app.use('/portal/:tenantId', express.static(webAdminDist));
+// --- STATIC FILES WITH CACHE CONTROL ---
+const staticOptions = {
+  setHeaders: (res, path) => {
+    if (isTestMode) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    }
+  }
+};
+
+app.use('/portal/:tenantId', express.static(webAdminDist, staticOptions));
 
 // --- API ENDPOINTS ---
 
@@ -1149,10 +1164,10 @@ app.get('/api/app-version', (req, res) => {
   if (fs.existsSync(latestVersionPath)) {
     try {
       const latest = JSON.parse(fs.readFileSync(latestVersionPath, 'utf8'));
-      // Merge metadata but prioritize system version from version.json for the display
+      // RULE: Prioritize latest-version.json for version and versionCode as it represents the actual available APK
       payload = {
+        ...payload,
         ...latest,
-        ...payload, // Prioritize version.json fields (version, buildDate)
         apkVersion: latest.version,
         apkUrl: latest.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
         downloadUrl: latest.downloadUrl || payload.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
@@ -1746,14 +1761,14 @@ app.get('/api/master/apks', async (req, res) => {
 
 app.get('/api/settings', async (req, res) => res.json({ currentSystemIp: getNetworkIP(), currentSystemGateway: '10.222.166.1' }));
 
-app.use('/dev', express.static(webDevDist));
+app.use('/dev', express.static(webDevDist, staticOptions));
 app.get('/dev/*', (req, res) => res.sendFile(path.join(webDevDist, 'index.html')));
 
 // --- MOBILE APP SERVICE ---
-app.use('/app', express.static(mobileDist));
+app.use('/app', express.static(mobileDist, staticOptions));
 app.get('/app/*', (req, res) => res.sendFile(path.join(mobileDist, 'index.html')));
 
-app.use('/', express.static(webAdminDist));
+app.use('/', express.static(webAdminDist, staticOptions));
 app.get('/*', (req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/apks')) return;
 
