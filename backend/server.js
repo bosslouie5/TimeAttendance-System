@@ -1149,10 +1149,10 @@ app.get('/api/app-version', (req, res) => {
   if (fs.existsSync(latestVersionPath)) {
     try {
       const latest = JSON.parse(fs.readFileSync(latestVersionPath, 'utf8'));
-      // Merge metadata but prioritize system version from version.json for the display
+      // RULE: Prioritize latest-version.json for version and versionCode as it represents the actual available APK
       payload = {
+        ...payload,
         ...latest,
-        ...payload, // Prioritize version.json fields (version, buildDate)
         apkVersion: latest.version,
         apkUrl: latest.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,
         downloadUrl: latest.downloadUrl || payload.downloadUrl || payload.apkUrl || `/api/master/download-apk/TimeKey_Master.apk`,

@@ -740,7 +740,14 @@ app.get('/api/devices', tenantGuard, async (req, res) => {
 app.get('/api/hr/leaves', tenantGuard, async (req, res) => {
   const data = await loadData();
   const tenantId = req.tenantId || req.query.tenant || 'master';
-  const filtered = (data.leaves || []).filter(l => (tenantId === 'master' || !tenantId) ? true : (l.tenantId === tenantId));
+  const { employeeId } = req.query;
+
+  let filtered = (data.leaves || []).filter(l => (tenantId === 'master' || !tenantId) ? true : (l.tenantId === tenantId));
+
+  if (employeeId) {
+    filtered = filtered.filter(l => (l.employeeId || "").toString() === employeeId.toString());
+  }
+
   res.json(filtered);
 });
 
@@ -748,12 +755,17 @@ app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
   const data = await loadData();
   if (!data.leaves) data.leaves = [];
   const tenantId = req.tenantId || req.body.tenantId || 'master';
+
+  // Logic: If no reportsTo, default to HR Management and skip Manager step
+  const reportsTo = req.body.reportsTo || req.body.manager || '';
+  const isDirectToHR = !reportsTo || reportsTo === 'HR Management';
+
   const newLeave = {
     ...req.body,
     id: `leave-${Date.now()}`,
-    status: req.body.status || 'Pending (Manager)',
+    status: isDirectToHR ? 'Pending (Admin)' : (req.body.status || 'Pending (Manager)'),
     tenantId,
-    reportsTo: req.body.reportsTo || req.body.manager || '',
+    reportsTo: isDirectToHR ? 'HR Management' : reportsTo,
     createdAt: new Date().toISOString()
   };
   data.leaves.push(newLeave);
