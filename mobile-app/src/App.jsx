@@ -845,16 +845,7 @@ function App() {
       return;
     }
 
-    const newRequest = {
-      id: Date.now().toString(),
-      employeeId: localStorage.getItem('cached_id') || 'N/A',
-      employeeName: localStorage.getItem('cached_name') || 'Employee',
-      type: leaveForm.type,
-      startDate: leaveForm.startDate,
-      endDate: leaveForm.endDate,
-      reason: leaveForm.reason.trim(),
-      // Auto-resolve reportsTo from cachedEmployee -> manager mapping when not provided
-      reportsTo: (function(){
+    const effectiveReportsTo = (function(){
         try {
           if (leaveForm.reportsTo && leaveForm.reportsTo.trim()) return leaveForm.reportsTo.trim();
           const emp = cachedEmployee || JSON.parse(localStorage.getItem('all_employees')||'[]').find(e=> (e.employeeId||'').toString()=== (localStorage.getItem('cached_id')||'').toString());
@@ -865,8 +856,18 @@ function App() {
           }
         } catch(e){}
         return 'HR Management'; // Rule: If no reportsTo, direct to HR
-      })(),
-      status: 'Pending (Manager)',
+    })();
+
+    const newRequest = {
+      id: Date.now().toString(),
+      employeeId: localStorage.getItem('cached_id') || 'N/A',
+      employeeName: localStorage.getItem('cached_name') || 'Employee',
+      type: leaveForm.type,
+      startDate: leaveForm.startDate,
+      endDate: leaveForm.endDate,
+      reason: leaveForm.reason.trim(),
+      reportsTo: effectiveReportsTo,
+      status: effectiveReportsTo === 'HR Management' ? 'Pending (Admin)' : 'Pending (Manager)',
       tenantId: tenantId || localStorage.getItem('tenant_id') || 'unknown'
     };
 

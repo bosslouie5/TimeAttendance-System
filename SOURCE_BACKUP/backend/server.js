@@ -153,14 +153,14 @@ async function loadData() {
     return d;
   });
 
-  // 2. RULE 7: Automatic Module Injection for all users (Respect per-tenant overrides)
-  // If a tenant already has an explicit permissions array (even if reduced),
-  // we must respect it so toggles can disable modules. Only seed default
-  // permissions when none are present.
+  // 2. RULE 7: Automatic Module Injection for all users
+  // Ensure every user has ALL current modules in ALL_MODULES
   data.users = (data.users || []).map(u => {
     const currentPerms = u.permissions || [];
-    if (!currentPerms || currentPerms.length === 0) {
-      u.permissions = Array.from(ALL_MODULES);
+    const missingModules = ALL_MODULES.filter(m => !currentPerms.includes(m));
+
+    if (missingModules.length > 0) {
+      u.permissions = [...currentPerms, ...missingModules];
       needsFix = true;
     }
     return u;
@@ -797,15 +797,15 @@ app.put('/api/hr/leaves/:id/status', tenantGuard, async (req, res) => {
     if (l.id === id && l.tenantId === (req.tenantId || l.tenantId || 'master')) {
       let finalStatus = status;
 
-      // RULE: Tenant users cannot set "Approved" status directly.
-      // It must go through "Pending (Admin)" first.
+      // RULE: Tenant users can approve "Pending (Admin)" leaves if it belongs to their tenant.
+      // This allows HR/Admin to approve top-level employees' leaves directly.
       if (status === 'Approved' && req.tenantId && req.tenantId !== 'master') {
-        if (l.status !== 'Pending (Admin)') {
-          finalStatus = 'Pending (Admin)';
+        if (l.status !== 'Pending (Admin)' && l.status !== 'Pending (Manager)') {
+           // If it's not in an approvable state for tenant admin, keep it as is or move to admin pending
+           finalStatus = 'Pending (Admin)';
         } else {
-          // If it's already Pending (Admin), a tenant user stays in Pending (Admin)
-          // because only the Global Admin can move it to "Approved".
-          finalStatus = 'Pending (Admin)';
+           // ALLOWED: Tenant admin can move it to Approved if it's their own tenant's data
+           finalStatus = 'Approved';
         }
       }
 
