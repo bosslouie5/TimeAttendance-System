@@ -247,6 +247,9 @@ goto MENU
 
 :BUILD_SIGNED_APK
 cls
+echo [*] Checking for Version Bump before Build...
+call :VERSION_BUMP_UI
+
 echo [*] Building signed Android APK for TimeKey Pro...
 if not exist "mobile-app\android\release-key.jks" (
     echo [ERROR] release-key.jks not found in mobile-app\android.
@@ -265,7 +268,15 @@ if errorlevel 1 (
 set "APK_SOURCE=app\build\outputs\apk\release\app-release.apk"
 if exist "%APK_SOURCE%" (
     copy /y "%APK_SOURCE%" "..\app-release-TimeKey-Pro.apk" >nul
-    echo [OK] Signed APK created at mobile-app\app-release-TimeKey-Pro.apk
+
+    :: Sync to Backend for OTA Updates
+    if not exist "..\..\backend\apks" mkdir "..\..\backend\apks"
+    copy /y "%APK_SOURCE%" "..\..\backend\apks\TimeKey_Master.apk" >nul
+
+    :: Create latest-version.json for Broadcast
+    node -e "const fs=require('fs'); const v={version:'!NEW_V!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+
+    echo [OK] Signed APK created and Synced for OTA updates.
 ) else (
     echo [ERROR] APK output not found after build.
 )

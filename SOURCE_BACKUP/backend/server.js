@@ -1370,7 +1370,7 @@ app.post('/api/master/build-apk', async (req, res) => {
 
   try {
     const mobileAppPath = path.join(__dirname, '../mobile-app');
-    const sourceApk = path.join(mobileAppPath, 'android/app/build/outputs/apk/debug/app-debug.apk');
+    const sourceApk = path.join(mobileAppPath, 'android/app/build/outputs/apk/release/app-release.apk');
 
     // 0. Cleanup old build to ensure fresh APK
     if (fs.existsSync(sourceApk)) fs.unlinkSync(sourceApk);
@@ -1560,8 +1560,8 @@ app.post('/api/master/build-and-run-apk', async (req, res) => {
     fs.writeFileSync(capPath, JSON.stringify(capConfig, null, 2));
 
     // Run build
-    execSync('npm run apk', { cwd: path.join(__dirname, '../mobile-app'), shell: true });
-    const sourceApk = path.join(__dirname, '../mobile-app/android/app/build/outputs/apk/debug/app-debug.apk');
+    execSync('npm run build && npx cap sync android && cd android && gradlew.bat assembleRelease', { cwd: path.join(__dirname, '../mobile-app'), shell: true });
+    const sourceApk = path.join(__dirname, '../mobile-app/android/app/build/outputs/apk/release/app-release.apk');
 
     if (!fs.existsSync(sourceApk)) throw new Error('APK not found after build');
 
