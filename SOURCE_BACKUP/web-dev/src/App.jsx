@@ -35,6 +35,18 @@ function App() {
   const [systemIp, setSystemIp] = useState('127.0.0.1');
 
   const [appVersion, setAppVersion] = useState('1.0.0');
+  const [leaveRequests, setLeaveRequests] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webdev_hr_leaves') || '[]'); } catch (e) { return []; }
+  });
+  const [hrAnnouncements, setHrAnnouncements] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webdev_hr_announcements') || '[]'); } catch (e) { return []; }
+  });
+  const [hrNotifications, setHrNotifications] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('webdev_hr_notifications') || '[]'); } catch (e) { return []; }
+  });
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' });
 
   const AVAILABLE_PERMISSIONS = [
     { id: 'dashboard', name: 'Dashboard' },
@@ -74,6 +86,14 @@ function App() {
   const [selectedBranchTenant, setSelectedBranchTenant] = useState('');
   const [selectedDeptTenant, setSelectedDeptTenant] = useState('');
   const [selectedPositionTenant, setSelectedPositionTenant] = useState('');
+  const [leavesForApproval, setLeavesForApproval] = useState([]);
+  const [subordinates, setSubordinates] = useState([]);
+  const [isManagerView, setIsManagerView] = useState(false);
+  const [newTenantUser, setNewTenantUser] = useState('');
+  const [newTenantUserPass, setNewTenantUserPass] = useState('');
+  const [newTenantUserDisplay, setNewTenantUserDisplay] = useState('');
+  const [newTenantUserEmployeeId, setNewTenantUserEmployeeId] = useState('');
+  const [tenantUsers, setTenantUsers] = useState([]);
 
   // Employee Management States
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
@@ -92,6 +112,7 @@ function App() {
   const [empTermDate, setEmpTermDate] = useState('');
   const [empTermNote, setEmpTermNote] = useState('');
   const [empStatus, setEmpStatus] = useState('Active');
+  const [empReportsTo, setEmpReportsTo] = useState('');
   const [empTenantId, setEmpTenantId] = useState('');
   const [empSchedule, setEmpSchedule] = useState('');
   const [empSearch, setEmpSearch] = useState('');
@@ -199,7 +220,257 @@ function App() {
       if (v && v.version) setAppVersion(v.version);
       setLastSyncTime(new Date());
       fetch(`${activeApiBase}/settings`).then(r => r.json()).then(data => { if (data.currentSystemIp) setSystemIp(data.currentSystemIp); });
+
+      // Fetch centralized leaves & announcements (if backend available)
+      try {
+        const tenantQuery = (globalTenantFilter && globalTenantFilter !== 'ALL') ? `?tenant=${encodeURIComponent(globalTenantFilter)}` : '';
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves${tenantQuery}`);
+        if (leavesRes.ok) {
+          const leaves = await leavesRes.json();
+          setLeaveRequests(leaves || []);
+          sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(leaves || []));
+        }
+        const annsRes = await fetch(`${activeApiBase}/hr/announcements${tenantQuery}`);
+        if (annsRes.ok) {
+          const anns = await annsRes.json();
+          setHrAnnouncements(anns || []);
+          sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(anns || []));
+        }
+        // Fetch notifications
+        try {
+          const notesRes = await fetch(`${activeApiBase}/hr/notifications${tenantQuery}`);
+          if (notesRes.ok) {
+            const notes = await notesRes.json();
+            setHrNotifications(notes || []);
+            sessionStorage.setItem('webdev_hr_notifications', JSON.stringify(notes || []));
+          }
+        } catch (e) { /* ignore */ }
+      } catch (err) {
+        // ignore if API not present or offline
+      }
+
     } catch (e) { setStatus('Sync Error'); }
+  };
+
+  // Poll leaves periodically so web view sees mobile submissions
+  useEffect(() => {
+    if (!activeApiBase) return;
+    const iv = setInterval(() => loadInitialData(), 15000);
+    return () => clearInterval(iv);
+  }, [activeApiBase, globalTenantFilter]);
+
+  // When current user has employeeId, auto-fetch leaves for approval (manager view)
+  useEffect(() => {
+    try {
+      const empId = currentUser?.employeeId || currentUser?.username;
+      const tenantId = globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || null);
+      if (empId && tenantId) {
+        fetchLeavesForApproval(tenantId, empId);
+      }
+    } catch (e) {}
+  }, [currentUser, globalTenantFilter]);
+
+  useEffect(() => {
+    if (leaveRequests.length === 0) {
+      const seeded = [{
+        id: 'seed-leave-1',
+        employeeId: 'EMP001',
+        employeeName: 'Demo Employee',
+        type: 'Sick Leave',
+        startDate: '2026-07-08',
+        endDate: '2026-07-09',
+        reason: 'Medical checkup',
+        status: 'Pending',
+        tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : 'demo-tenant'
+      }];
+      setLeaveRequests(seeded);
+      sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(seeded));
+    }
+  }, [leaveRequests.length]);
+
+  useEffect(() => {
+    if (hrAnnouncements.length === 0) {
+      const seeded = [{
+        id: 'seed-ann-1',
+        title: 'HR Hub Enabled',
+        message: 'Leave requests and announcements are now available in the web dashboard.',
+        tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : 'demo-tenant'
+      }];
+      setHrAnnouncements(seeded);
+      sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(seeded));
+    }
+  }, [hrAnnouncements.length]);
+
+  const submitLeaveRequest = async (event) => {
+    event.preventDefault();
+    if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason.trim()) {
+      alert('Please fill in the leave details');
+      return;
+    }
+
+    const tenantId = globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || null);
+    if (!tenantId) {
+      alert('Please select a specific tenant before submitting leave requests.');
+      return;
+    }
+
+    // Auto-fill reportsTo from employee -> manager mapping when not provided
+    let effectiveReportsTo = leaveForm.reportsTo?.trim() || '';
+    try {
+      if (!effectiveReportsTo) {
+        const empId = currentUser?.employeeId || currentUser?.username;
+        const myEmp = (employees || []).find(e => (e.employeeId || "").toString() === (empId || "").toString());
+        if (myEmp && myEmp.reportsTo) {
+          const mgr = (employees || []).find(e => (e.employeeId || "").toString() === (myEmp.reportsTo || "").toString());
+          effectiveReportsTo = mgr ? (mgr.name || mgr.employeeId) : myEmp.reportsTo;
+        }
+      }
+    } catch (e) { /* swallow */ }
+
+    const newRequest = {
+      id: `leave-${Date.now()}`,
+      employeeId: currentUser?.username || 'EMP001',
+      employeeName: currentUser?.displayName || 'Demo Employee',
+      type: leaveForm.type,
+      startDate: leaveForm.startDate,
+      endDate: leaveForm.endDate,
+      reason: leaveForm.reason.trim(),
+      reportsTo: effectiveReportsTo,
+      status: 'Pending',
+      tenantId
+    };
+
+    // Try POSTing to backend
+    try {
+      const res = await fetch(`${activeApiBase}/hr/leaves`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, body: JSON.stringify(newRequest) });
+      if (res.ok) {
+        const saved = await res.json();
+        const updated = [saved, ...leaveRequests];
+        setLeaveRequests(updated);
+        sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(updated));
+        setLeaveForm({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
+        setStatus('Leave request submitted ✓');
+        return;
+      }
+    } catch (e) { /* fallback to local */ }
+
+    const updated = [newRequest, ...leaveRequests];
+    setLeaveRequests(updated);
+    sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(updated));
+    setLeaveForm({ type: 'Sick Leave', startDate: '', endDate: '', reason: '', reportsTo: '' });
+    setStatus('Leave request saved locally ✓');
+  };
+
+  const updateLeaveRequestStatus = async (id, status) => {
+    const approvedBy = currentUser?.displayName || currentUser?.username || 'Dev Approver';
+    const requestItem = leaveRequests.find(item => item.id === id);
+    const tenantId = requestItem?.tenantId || (globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || null));
+
+    let updatedItem = null;
+    if (tenantId) {
+      try {
+        const res = await fetch(`${activeApiBase}/hr/leaves/${id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+          body: JSON.stringify({ status, approvedBy })
+        });
+        if (res.ok) {
+          updatedItem = await res.json();
+        }
+      } catch (err) {
+        // fallback to local update
+      }
+    }
+
+    const updated = leaveRequests.map(item => item.id === id ? (updatedItem || { ...item, status, approvedBy, updatedAt: new Date().toISOString() }) : item);
+    setLeaveRequests(updated);
+    sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(updated));
+    setStatus(`Leave request ${status.toLowerCase()} ✓`);
+  };
+
+  const addAnnouncement = (event) => {
+    event.preventDefault();
+    if (!announcementForm.title.trim() || !announcementForm.message.trim()) return;
+
+    const newAnnouncement = {
+      id: `ann-${Date.now()}`,
+      title: announcementForm.title.trim(),
+      message: announcementForm.message.trim(),
+      tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : (currentUser?.tenantId || 'demo-tenant')
+    };
+
+    const updated = [newAnnouncement, ...hrAnnouncements];
+    setHrAnnouncements(updated);
+    sessionStorage.setItem('webdev_hr_announcements', JSON.stringify(updated));
+    setAnnouncementForm({ title: '', message: '' });
+    setStatus('Announcement posted ✓');
+  };
+
+  const fetchLeavesForApproval = async (tenantId, employeeId) => {
+    try {
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/hr/leaves/for-approval/${employeeId}`, {
+        headers: { 'x-tenant-id': tenantId }
+      });
+      if (res.ok) {
+        const leaves = await res.json();
+        setLeavesForApproval(leaves || []);
+        setIsManagerView(leaves && leaves.length > 0);
+      }
+      const subRes = await fetch(`${apiBase}/employees/subordinates/${employeeId}`, {
+        headers: { 'x-tenant-id': tenantId }
+      });
+      if (subRes.ok) {
+        const subs = await subRes.json();
+        setSubordinates(subs || []);
+      }
+    } catch (err) { console.log('Leave fetch error:', err); }
+  };
+
+  const approveLeave = async (tenantId, leaveId, status) => {
+    try {
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/hr/leaves/${leaveId}/manager-approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ status, managerId: currentUser?.employeeId, managerName: currentUser?.name || currentUser?.username })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setLeavesForApproval(prev => prev.map(l => l.id === leaveId ? updated : l));
+        setStatus(`Leave ${status.toLowerCase()} ✓`);
+      }
+    } catch (err) { alert('Failed to update leave'); }
+  };
+
+  const createTenantAdminUser = async () => {
+    if (!selectedTenant || !newTenantUser || !newTenantUserPass) {
+      alert('Please select a tenant and fill in all fields');
+      return;
+    }
+    try {
+      const apiBase = activeApiBase || API_BASE;
+      const res = await fetch(`${apiBase}/tenant-users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': selectedTenant.tenantId },
+        body: JSON.stringify({
+          username: newTenantUser,
+          password: newTenantUserPass,
+          displayName: newTenantUserDisplay || newTenantUser,
+          employeeId: newTenantUserEmployeeId || '',
+          permissions: selectedTenant.permissions || []
+        })
+      });
+      if (res.ok) {
+        alert('Tenant user created! They can now access web-admin.');
+        setNewTenantUser('');
+        setNewTenantUserPass('');
+        setNewTenantUserDisplay('');
+        setNewTenantUserEmployeeId('');
+      } else {
+        alert('Failed to create user');
+      }
+    } catch (err) { alert('Error creating tenant user'); }
   };
 
   const handleDevLogin = async () => {
@@ -438,6 +709,7 @@ function App() {
 
   const handleEmpTenantChange = (tenantId) => {
     setEmpTenantId(tenantId);
+    setEmpReportsTo('');
     if (!isEditingEmp) {
       setEmpId(getNextEmployeeId(tenantId));
     }
@@ -458,6 +730,7 @@ function App() {
     setEmpTermNote('');
     setEmpStatus('Active');
     setEmpSchedule('');
+    setEmpReportsTo('');
     const initialTenant = globalTenantFilter === 'ALL' ? '' : globalTenantFilter;
     setEmpTenantId(initialTenant);
     setEmpId(getNextEmployeeId(initialTenant));
@@ -481,6 +754,7 @@ function App() {
     setEmpTermNote(emp.terminationNote || '');
     setEmpStatus(emp.status || 'Active');
     setEmpSchedule(emp.schedule || '');
+    setEmpReportsTo(emp.reportsTo || '');
     setEmpTenantId(emp.tenantId);
     setIsEditingEmp(true);
     setIsAddEmpModalOpen(true);
@@ -552,6 +826,7 @@ function App() {
           terminationNote: empTermNote,
           schedule: empSchedule,
           status: empStatus,
+          reportsTo: empReportsTo,
           tenantId: empTenantId
         })
       });
@@ -1067,6 +1342,26 @@ function App() {
 
   return (
     <div style={{fontFamily:'system-ui, sans-serif', background:'#0f172a', color:'white', minHeight:'100vh', padding:'20px'}}>
+      {/* Notifications */}
+      <div style={{position:'fixed', right:20, top:20, zIndex:1200}}>
+        <div style={{position:'relative'}}>
+          <button onClick={() => setShowNotifPanel(s => !s)} style={{background:'#111827', border:'1px solid rgba(255,255,255,0.06)', color:'white', padding:'10px 12px', borderRadius:12, cursor:'pointer'}}>
+            🔔 {hrNotifications?.length || 0}
+          </button>
+          {showNotifPanel && (
+            <div style={{position:'absolute', right:0, top:44, width:360, maxHeight:420, overflowY:'auto', background:'#0b1220', border:'1px solid rgba(255,255,255,0.06)', borderRadius:12, padding:12}}>
+              <div style={{fontWeight:800, marginBottom:8}}>Notifications</div>
+              {hrNotifications && hrNotifications.length > 0 ? hrNotifications.map(n => (
+                <div key={n.id} style={{padding:'10px', borderBottom:'1px solid rgba(255,255,255,0.03)'}}>
+                  <div style={{fontWeight:700}}>{n.title}</div>
+                  <div style={{fontSize:12, color:'#9ca3af'}}>{n.message}</div>
+                  <div style={{fontSize:11, color:'#6b7280', marginTop:6}}>{new Date(n.createdAt || n.created || Date.now()).toLocaleString()}</div>
+                </div>
+              )) : <div style={{color:'#9ca3af'}}>No notifications</div>}
+            </div>
+          )}
+        </div>
+      </div>
       <style>{`
         .fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -1242,6 +1537,12 @@ function App() {
           <MenuItem active={activeTab === 'employees'} onClick={() => {setActiveTab('employees'); setIsMenuOpen(false);}}>
             <span>👥</span> Staff Management
           </MenuItem>
+          <MenuItem active={activeTab === 'hr-hub'} onClick={() => {setActiveTab('hr-hub'); setIsMenuOpen(false);}}>
+            <span>🧑‍💼</span> HR Hub
+          </MenuItem>
+          <MenuItem active={activeTab === 'leave-requests'} onClick={() => {setActiveTab('leave-requests'); setIsMenuOpen(false);}}>
+            <span>✅</span> Leave Requests
+          </MenuItem>
           <MenuItem active={activeTab === 'assign-branch'} onClick={() => {setActiveTab('assign-branch'); setIsMenuOpen(false);}}>
             <span>🔗</span> Assign Branch
           </MenuItem>
@@ -1380,6 +1681,7 @@ function App() {
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'20px'}}>
             <ModuleCard icon="👥" title="Manage Tenant" desc="Provision portals and track usage" color="#8b5cf6" onClick={() => setActiveTab('tenants')} />
             <ModuleCard icon="👥" title="Staff Management" desc="Global list of registered staff" color="#3b82f6" onClick={() => setActiveTab('employees')} />
+            <ModuleCard icon="🧑‍💼" title="HR Hub" desc="Leave requests, notices, staff snapshot" color="#8b5cf6" onClick={() => setActiveTab('hr-hub')} />
             <ModuleCard icon="📍" title="Branch Setup" desc="Configure geofence office locations" color="#10b981" onClick={() => setActiveTab('branches')} />
             <ModuleCard icon="🏢" title="Dept. Management" desc="Organizational units for each company" color="#3b82f6" onClick={() => setActiveTab('org-departments')} />
             <ModuleCard icon="💼" title="Position Management" desc="Define custom job position titles" color="#60a5fa" onClick={() => setActiveTab('position-titles')} />
@@ -1389,6 +1691,102 @@ function App() {
             <ModuleCard icon="📅" title="Assign Schedule" desc="Assign work shifts to employees" color="#f59e0b" onClick={() => setActiveTab('assign-schedule')} />
             <ModuleCard icon="📱" title="Device Managemnt" desc="Manage secure device linking" color="#10b981" onClick={() => setActiveTab('devices')} />
             <ModuleCard icon="⏰" title="Schedule Management" desc="Set office hours and shifts" color="#f59e0b" onClick={() => setActiveTab('schedules')} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'hr-hub' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div style={{display:'grid', gap:'20px'}}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'15px'}}>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Staff</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#3b82f6', marginTop:'8px'}}>{employees.filter(e => globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter).length}</div>
+              </div>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Pending Leaves</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#f59e0b', marginTop:'8px'}}>{leaveRequests.filter(item => globalTenantFilter === 'ALL' || item.tenantId === globalTenantFilter).filter(item => item.status === 'Pending').length}</div>
+              </div>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Today Logs</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#10b981', marginTop:'8px'}}>{logs.filter(l => (globalTenantFilter === 'ALL' || l.tenantId === globalTenantFilter) && new Date(l.timestamp).toDateString() === new Date().toDateString()).length}</div>
+              </div>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'18px', padding:'18px'}}>
+                <div style={{fontSize:'0.7rem', color:'#64748b', textTransform:'uppercase', fontWeight:'900'}}>Schedules</div>
+                <div style={{fontSize:'1.5rem', fontWeight:'900', color:'#8b5cf6', marginTop:'8px'}}>{schedules.filter(s => globalTenantFilter === 'ALL' || s.tenantId === globalTenantFilter).length}</div>
+              </div>
+            </div>
+
+            <div style={{display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:'20px'}}>
+              <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
+                <h3 style={{marginTop:0, color:'#f8fafc'}}>Leave Requests</h3>
+                <form onSubmit={submitLeaveRequest} style={{display:'grid', gap:'10px', marginBottom:'15px'}}>
+                  <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type:e.target.value})} style={inputStyle}>
+                    <option>Sick Leave</option>
+                    <option>Vacation Leave</option>
+                    <option>Emergency Leave</option>
+                    <option>Personal Leave</option>
+                  </select>
+                  <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate:e.target.value})} style={inputStyle} />
+                  <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({...leaveForm, endDate:e.target.value})} style={inputStyle} />
+                  <textarea rows="3" value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason:e.target.value})} placeholder="Reason" style={{...inputStyle, resize:'vertical'}} />
+                  <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo:e.target.value})} placeholder="Reports To / Manager" style={inputStyle} />
+                  <button type="submit" style={{...smallBtn, background:'#3b82f6'}}>Submit Leave Request</button>
+                </form>
+                <div style={{display:'grid', gap:'10px'}}>
+                  {(leaveRequests.filter(item => globalTenantFilter === 'ALL' || item.tenantId === globalTenantFilter)).slice(0, 5).map(item => (
+                    <div key={item.id} style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'14px', padding:'12px'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', gap:'10px', alignItems:'center'}}>
+                        <div>
+                          <div style={{fontWeight:'800', color:'#f8fafc'}}>{item.employeeName} • {item.type}</div>
+                          <div style={{fontSize:'0.75rem', color:'#64748b'}}>{item.startDate} → {item.endDate}</div>
+                        </div>
+                        <span style={{padding:'4px 8px', borderRadius:'999px', fontSize:'0.7rem', background: item.status === 'Pending' ? '#f59e0422' : item.status === 'Approved' ? '#10b98122' : '#ef444422', color: item.status === 'Pending' ? '#f59e0b' : item.status === 'Approved' ? '#10b981' : '#ef4444'}}>{item.status}</span>
+                      </div>
+                      <div style={{marginTop:'8px', fontSize:'0.8rem', color:'#cbd5e1'}}>{item.reason}</div>
+                      {item.reportsTo && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#94a3b8'}}>Reports To: {item.reportsTo}</div>}
+                      {item.approvedBy && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.78rem', color:'#94a3b8'}}>Approved by: {item.approvedBy}</div>}
+                      {item.updatedAt && item.status !== 'Pending' && <div style={{marginTop:'6px', fontSize:'0.75rem', color:'#64748b'}}>Updated: {new Date(item.updatedAt).toLocaleString()}</div>}
+                      {item.status === 'Pending' && (
+                        <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
+                          <button onClick={() => updateLeaveRequestStatus(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Approve</button>
+                          <button onClick={() => updateLeaveRequestStatus(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{display:'grid', gap:'20px'}}>
+                <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
+                  <h3 style={{marginTop:0, color:'#f8fafc'}}>Announcements</h3>
+                  <form onSubmit={addAnnouncement} style={{display:'grid', gap:'10px', marginBottom:'12px'}}>
+                    <input value={announcementForm.title} onChange={e => setAnnouncementForm({...announcementForm, title:e.target.value})} placeholder="Title" style={inputStyle} />
+                    <textarea rows="3" value={announcementForm.message} onChange={e => setAnnouncementForm({...announcementForm, message:e.target.value})} placeholder="Message" style={{...inputStyle, resize:'vertical'}} />
+                    <button type="submit" style={{...smallBtn, background:'#8b5cf6'}}>Post Announcement</button>
+                  </form>
+                  <div style={{display:'grid', gap:'10px'}}>
+                    {(hrAnnouncements.filter(item => globalTenantFilter === 'ALL' || item.tenantId === globalTenantFilter)).slice(0, 4).map(item => (
+                      <div key={item.id} style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'14px', padding:'12px'}}>
+                        <div style={{fontWeight:'800', color:'#f8fafc'}}>{item.title}</div>
+                        <div style={{fontSize:'0.8rem', color:'#cbd5e1', marginTop:'6px'}}>{item.message}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
+                  <h3 style={{marginTop:0, color:'#f8fafc'}}>Attendance Snapshot</h3>
+                  <div style={{display:'grid', gap:'8px'}}>
+                    <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Today logs: {logs.filter(l => (globalTenantFilter === 'ALL' || l.tenantId === globalTenantFilter) && new Date(l.timestamp).toDateString() === new Date().toDateString()).length}</div>
+                    <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Registered staff: {employees.filter(e => globalTenantFilter === 'ALL' || e.tenantId === globalTenantFilter).length}</div>
+                    <div style={{background:'#0f172a', border:'1px solid #334155', borderRadius:'12px', padding:'10px'}}>Active schedules: {schedules.filter(s => globalTenantFilter === 'ALL' || s.tenantId === globalTenantFilter).length}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1806,6 +2204,7 @@ function App() {
                     <th>Full Name</th>
                     <th>Job Title</th>
                     <th>Department</th>
+                    <th>Reports To</th>
                     <th>Assigned Branch</th>
                     <th>Gender</th>
                     <th>Nationality</th>
@@ -1833,6 +2232,7 @@ function App() {
                       <td style={{fontWeight:'bold', color: 'white'}}>{e.name}</td>
                       <td>{e.jobTitle || '-'}</td>
                       <td>{e.department || '-'}</td>
+                      <td>{e.reportsTo ? employees.find(emp => emp.employeeId === e.reportsTo && emp.tenantId === e.tenantId)?.name || e.reportsTo : '-'}</td>
                       <td>{e.branchName || '-'}</td>
                       <td>{e.gender || '-'}</td>
                       <td>{e.nationality || '-'}</td>
@@ -1920,6 +2320,15 @@ function App() {
                     <select style={{...inputStyle, padding:'8px 12px', marginBottom:0, fontSize:'0.8rem', height:'38px'}} value={empDept} onChange={e => setEmpDept(e.target.value)}>
                       <option value="">Select Branch</option>
                       {departments.filter(d => d.tenantId === empTenantId).map(d => <option key={d.departmentId} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.55rem', color:'#3b82f6', display:'block', marginBottom:'4px', fontWeight:'900', letterSpacing:'0.5px'}}>REPORTS TO (Manager)</label>
+                    <select style={{...inputStyle, padding:'8px 12px', marginBottom:0, fontSize:'0.8rem', height:'38px'}} value={empReportsTo} onChange={e => setEmpReportsTo(e.target.value)}>
+                      <option value="">No Manager</option>
+                      {employees.filter(e => e.tenantId === empTenantId && e.employeeId !== empId).map(e => (
+                        <option key={e.employeeId} value={e.employeeId}>{e.employeeId} - {e.name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -2307,6 +2716,103 @@ function App() {
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {activeTab === 'leave-requests' && (
+        <div className="fade-in">
+          <BackToDashboard onClick={() => setActiveTab('dashboard')} />
+          <div className="card">
+            <h2 style={{marginTop:0, color:'white'}}>✅ Leave Requests & Approvals</h2>
+            <p style={{color:'#64748b', marginBottom:'20px'}}>Manage leave requests from your team. Select a tenant to view and approve leaves.</p>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px', marginBottom:'25px'}}>
+              <div className="form-group">
+                <label>SELECT TENANT</label>
+                <select value={selectedTenant?.tenantId || ''} onChange={e => {
+                  const t = users.find(u => (u.tenantId || u.username) === e.target.value);
+                  setSelectedTenant(t);
+                  if (t?.tenantId) {
+                    fetchLeavesForApproval(t.tenantId, t.adminEmployeeId || t.tenantId);
+                  }
+                }} style={{background:'#0f172a', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}}>
+                  <option value="">-- Select a Tenant --</option>
+                  {users.map(u => (
+                    <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                      {u.companyName} ({u.tenantId || u.username})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {selectedTenant && (
+              <>
+                <div style={{background:'#0f172a', padding:'20px', borderRadius:'12px', border:'1px solid #334155', marginBottom:'20px'}}>
+                  <h3 style={{marginTop:0, color:'#3b82f6'}}>{selectedTenant.companyName}</h3>
+                  <p style={{color:'#94a3b8', marginBottom:'15px', fontSize:'0.9rem'}}>Manage tenant-level users and view leave requests for this organization.</p>
+                  
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))', gap:'15px', marginBottom:'20px'}}>
+                    <div className="form-group">
+                      <label>NEW USER USERNAME</label>
+                      <input value={newTenantUser} onChange={e => setNewTenantUser(e.target.value)} placeholder="e.g., manager01" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                    <div className="form-group">
+                      <label>PASSWORD</label>
+                      <input type="password" value={newTenantUserPass} onChange={e => setNewTenantUserPass(e.target.value)} placeholder="••••••••" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                    <div className="form-group">
+                      <label>DISPLAY NAME</label>
+                      <input value={newTenantUserDisplay} onChange={e => setNewTenantUserDisplay(e.target.value)} placeholder="e.g., Manager One" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                    <div className="form-group">
+                      <label>EMPLOYEE ID (auto-map)</label>
+                      <input value={newTenantUserEmployeeId} onChange={e => setNewTenantUserEmployeeId(e.target.value)} placeholder="e.g., 0000" style={{background:'#1e293b', border:'1px solid #334155', padding:'10px', borderRadius:'8px', color:'white'}} />
+                    </div>
+                  </div>
+                  <button onClick={createTenantAdminUser} style={{background:'#3b82f6', color:'white', padding:'10px 20px', border:'none', borderRadius:'8px', fontWeight:'bold', cursor:'pointer'}}>Create Tenant Admin User</button>
+                </div>
+
+                <div style={{marginTop:'25px'}}>
+                  <h3 style={{color:'#10b981', marginBottom:'15px'}}>✅ Pending Leave Approvals</h3>
+                  {leavesForApproval.length === 0 ? (
+                    <div style={{padding:'40px', background:'#0f172a', borderRadius:'12px', textAlign:'center', border:'1px dashed #334155'}}>
+                      <div style={{fontSize:'2rem', marginBottom:'10px'}}>✓</div>
+                      <p style={{color:'#94a3b8'}}>No pending leave requests.</p>
+                    </div>
+                  ) : (
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', borderCollapse:'collapse'}}>
+                        <thead>
+                          <tr style={{borderBottom:'2px solid #334155'}}>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Employee</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Type</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Date Range</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Reason</th>
+                            <th style={{padding:'12px', textAlign:'left', color:'#94a3b8', fontSize:'0.8rem', fontWeight:'bold'}}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leavesForApproval.map(leave => (
+                            <tr key={leave.id} style={{borderBottom:'1px solid #334155'}}>
+                              <td style={{padding:'12px', color:'#cbd5e1'}}>{leave.employeeName} ({leave.employeeId})</td>
+                              <td style={{padding:'12px', color:'#cbd5e1'}}>{leave.leaveType || leave.type}</td>
+                              <td style={{padding:'12px', color:'#cbd5e1'}}>{leave.startDate} → {leave.endDate}</td>
+                              <td style={{padding:'12px', color:'#94a3b8', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis'}}>{leave.reason || '-'}</td>
+                              <td style={{padding:'12px', display:'flex', gap:'8px'}}>
+                                <button onClick={() => approveLeave(selectedTenant.tenantId, leave.id, 'Approved')} style={{background:'#10b981', color:'white', border:'none', padding:'6px 12px', borderRadius:'6px', cursor:'pointer', fontSize:'0.8rem', fontWeight:'bold'}}>Approve</button>
+                                <button onClick={() => approveLeave(selectedTenant.tenantId, leave.id, 'Rejected')} style={{background:'#ef4444', color:'white', border:'none', padding:'6px 12px', borderRadius:'6px', cursor:'pointer', fontSize:'0.8rem', fontWeight:'bold'}}>Reject</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 

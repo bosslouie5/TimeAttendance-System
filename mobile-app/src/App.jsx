@@ -755,6 +755,22 @@ function App() {
     });
   }, [cachedEmployee?.schedule]);
 
+  const orgData = useMemo(() => {
+    const all = JSON.parse(localStorage.getItem('all_employees') || '[]');
+    const me = cachedEmployee;
+    if (!me || !me.employeeId) return { manager: null, teammates: [], subordinates: [] };
+
+    const manager = all.find(e => (e.employeeId || "").toString() === (me.reportsTo || "").toString());
+    const teammates = all.filter(e =>
+        (e.reportsTo || "").toString() === (me.reportsTo || "").toString() &&
+        (e.employeeId || "").toString() !== (me.employeeId || "").toString() &&
+        me.reportsTo
+    );
+    const subordinates = all.filter(e => (e.reportsTo || "").toString() === (me.employeeId || "").toString());
+
+    return { manager, teammates, subordinates };
+  }, [cachedEmployee]);
+
   const submitLeaveRequest = async (event) => {
     event.preventDefault();
     if (!leaveForm.startDate || !leaveForm.endDate || !leaveForm.reason.trim()) {
@@ -913,11 +929,11 @@ function App() {
         .badge-pending { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .badge-late { color: #f87171; background: rgba(239, 68, 68, 0.1); }
-        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; max-width: 500px; margin: 0 auto; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-around; padding: 12px 0 calc(env(safe-area-inset-bottom, 0px) + 15px) 0; z-index: 1000; box-shadow: 0 -10px 40px rgba(0,0,0,0.6); box-sizing: border-box; user-select: none; }
-        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; text-decoration: none; font-size: 0.65rem; font-weight: 800; padding: 10px; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); flex: 1; cursor: pointer; border-radius: 20px; }
-        .nav-item:active { transform: scale(0.92); background: rgba(255,255,255,0.05); }
+        .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; max-width: 500px; margin: 0 auto; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.12); display: flex; justify-content: space-around; padding: 8px 4px calc(env(safe-area-inset-bottom, 0px) + 10px) 4px; z-index: 1000; box-shadow: 0 -10px 50px rgba(0,0,0,0.8); box-sizing: border-box; user-select: none; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; color: #64748b; text-decoration: none; font-size: 0.52rem; font-weight: 800; padding: 10px 2px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex: 1; cursor: pointer; border-radius: 16px; min-width: 0; }
+        .nav-item:active { transform: scale(0.9); background: rgba(255,255,255,0.05); }
         .nav-item.active { color: #3b82f6; }
-        .nav-item.active span:first-child { transform: translateY(-2px) scale(1.15); filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5)); }
+        .nav-item.active span:first-child { transform: translateY(-3px) scale(1.1); filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.6)); }
         .notification-card { background: rgba(15,23,42,0.95); border: 1px solid rgba(59,130,246,0.22); padding: 18px 20px; border-radius: 24px; margin-bottom: 20px; text-align: left; box-shadow: 0 18px 32px rgba(0,0,0,0.22); }
         .notification-card strong { display: block; margin-bottom: 8px; font-size: 1rem; letter-spacing: 0.04em; }
         .notification-card p { margin: 0; color: #cbd5e1; line-height: 1.7; }
@@ -1272,45 +1288,6 @@ function App() {
 
                    <div className="glass-card" style={{marginBottom: '20px'}}>
                       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
-                        <h3 style={{margin: 0}}>Leave Requests</h3>
-                        <span style={{fontSize: '0.7rem', color: '#64748b'}}>NEW</span>
-                      </div>
-                      <form onSubmit={submitLeaveRequest}>
-                        <label className="label-visible">LEAVE TYPE</label>
-                        <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})} className="input-field" style={{marginBottom: '12px'}}>
-                          <option>Sick Leave</option>
-                          <option>Vacation Leave</option>
-                          <option>Emergency Leave</option>
-                          <option>Personal Leave</option>
-                        </select>
-                        <label className="label-visible">START DATE</label>
-                        <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate: e.target.value})} className="input-field" style={{marginBottom: '12px'}} />
-                        <label className="label-visible">END DATE</label>
-                        <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({...leaveForm, endDate: e.target.value})} className="input-field" style={{marginBottom: '12px'}} />
-                        <label className="label-visible">REASON</label>
-                        <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} className="input-field" rows="3" style={{marginBottom: '12px', resize: 'vertical'}} />
-                        <label className="label-visible">REPORTS TO</label>
-                        <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo: e.target.value})} className="input-field" placeholder="Manager Name" style={{marginBottom: '12px'}} />
-                        <button type="submit" className="btn-primary" style={{padding: '16px'}}>SUBMIT LEAVE</button>
-                      </form>
-                      {leaveRequests.length > 0 && (
-                        <div style={{marginTop: '16px'}}>
-                          {leaveRequests.slice(0, 3).map(item => (
-                            <div key={item.id} style={{background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '12px', marginBottom: '8px'}}>
-                              <div style={{fontWeight: '800'}}>{item.type}</div>
-                              <div style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px'}}>{item.startDate} → {item.endDate}</div>
-                              {item.reportsTo && <div style={{fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px'}}>Reports To: {item.reportsTo}</div>}
-                              <div style={{fontSize: '0.72rem', color: '#f59e0b', marginTop: '6px'}}>{item.status}</div>
-                              {item.approvedBy && item.status !== 'Pending' && <div style={{fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px'}}>Approved by: {item.approvedBy}</div>}
-                              {item.updatedAt && item.status !== 'Pending' && <div style={{fontSize: '0.72rem', color: '#64748b', marginTop: '4px'}}>Updated: {new Date(item.updatedAt).toLocaleString()}</div>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                   </div>
-
-                   <div className="glass-card" style={{marginBottom: '20px'}}>
-                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
                         <h3 style={{margin: 0}}>Schedule Overview</h3>
                         <span style={{fontSize: '0.7rem', color: '#64748b'}}>UPCOMING</span>
                       </div>
@@ -1324,10 +1301,10 @@ function App() {
 
                    <div className="glass-card">
                       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
-                        <h3 style={{margin: 0}}>Notifications</h3>
+                        <h3 style={{margin: 0}}>Recent Alerts</h3>
                         <span style={{fontSize: '0.7rem', color: '#64748b'}}>{hrNotifications.length}</span>
                       </div>
-                      {hrNotifications.map(item => (
+                      {hrNotifications.slice(0, 5).map(item => (
                         <div key={item.id} style={{background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '12px', marginBottom: '8px'}}>
                           <div style={{fontWeight: '800'}}>{item.title}</div>
                           <div style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px'}}>{item.message}</div>
@@ -1337,6 +1314,151 @@ function App() {
 
                    <div style={{textAlign: 'center', marginTop: '30px', color: '#64748b', fontSize: '0.7rem', fontWeight: '900'}}>
                       {status.toUpperCase()} | V{appConfig.version} | {(apiUrl.includes('127.0.0.1') || apiUrl.includes('localhost:4002')) ? 'LAB MODE' : 'CLOUD LIVE'}
+                   </div>
+                </div>
+              )}
+
+              {activeTab === 'view-org' && (
+                <div className="fade-in">
+                  <div style={{background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <h2 style={{margin: 0, fontSize: '1.2rem'}}>Organization View</h2>
+                    <p style={{color: '#94a3b8', fontSize: '0.8rem', marginTop: '5px'}}>Hierarchy and reporting structure</p>
+                  </div>
+
+                  {orgData.manager && (
+                    <div className="glass-card" style={{marginBottom: '20px', borderLeft: '4px solid #3b82f6'}}>
+                      <span className="label-visible">DIRECT MANAGER</span>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px'}}>
+                        <div style={{width: '50px', height: '50px', borderRadius: '15px', background: 'rgba(59, 130, 246, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'}}>👔</div>
+                        <div>
+                          <div style={{fontWeight: '900', fontSize: '1.1rem'}}>{orgData.manager.name}</div>
+                          <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{orgData.manager.jobTitle || 'Manager'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="glass-card" style={{marginBottom: '20px', borderLeft: '4px solid #10b981'}}>
+                    <span className="label-visible">MY PROFILE</span>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px'}}>
+                      <div style={{width: '50px', height: '50px', borderRadius: '15px', background: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'}}>👤</div>
+                      <div>
+                        <div style={{fontWeight: '900', fontSize: '1.1rem'}}>{cachedEmployee?.name} (You)</div>
+                        <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{cachedEmployee?.jobTitle}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {orgData.teammates.length > 0 && (
+                    <div className="glass-card" style={{marginBottom: '20px'}}>
+                      <span className="label-visible">TEAMMATES</span>
+                      <div style={{display: 'grid', gap: '12px', marginTop: '15px'}}>
+                        {orgData.teammates.map(t => (
+                          <div key={t.employeeId} style={{display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '16px'}}>
+                             <div style={{fontSize: '1.2rem'}}>👥</div>
+                             <div>
+                               <div style={{fontWeight: '700', fontSize: '0.9rem'}}>{t.name}</div>
+                               <div style={{fontSize: '0.7rem', color: '#64748b'}}>{t.jobTitle}</div>
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {orgData.subordinates.length > 0 && (
+                    <div className="glass-card">
+                      <span className="label-visible">DIRECT REPORTS</span>
+                      <div style={{display: 'grid', gap: '12px', marginTop: '15px'}}>
+                        {orgData.subordinates.map(s => (
+                          <div key={s.employeeId} style={{display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.1)'}}>
+                             <div style={{fontSize: '1.2rem'}}>📉</div>
+                             <div>
+                               <div style={{fontWeight: '700', fontSize: '0.9rem'}}>{s.name}</div>
+                               <div style={{fontSize: '0.7rem', color: '#64748b'}}>{s.jobTitle}</div>
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!orgData.manager && orgData.subordinates.length === 0 && orgData.teammates.length === 0 && (
+                    <div style={{textAlign: 'center', padding: '40px 20px', color: '#64748b'}}>
+                       <div style={{fontSize: '3rem', marginBottom: '15px'}}>🏢</div>
+                       <p>Walang nakitang reporting structure para sa account mo.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'leave-request' && (
+                <div className="fade-in">
+                   <div style={{background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '25px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                      <h2 style={{margin: 0, fontSize: '1.2rem'}}>Leave Management</h2>
+                      <p style={{color: '#94a3b8', fontSize: '0.8rem', marginTop: '5px'}}>File your leave requests and track status</p>
+                   </div>
+
+                   <div className="glass-card" style={{marginBottom: '20px'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
+                        <h3 style={{margin: 0}}>New Request</h3>
+                        <span style={{fontSize: '1.8rem'}}>📝</span>
+                      </div>
+                      <form onSubmit={submitLeaveRequest}>
+                        <label className="label-visible">LEAVE TYPE</label>
+                        <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})} className="input-field" style={{marginBottom: '12px'}}>
+                          <option>Sick Leave</option>
+                          <option>Vacation Leave</option>
+                          <option>Emergency Leave</option>
+                          <option>Personal Leave</option>
+                        </select>
+                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
+                          <div>
+                            <label className="label-visible">START DATE</label>
+                            <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate: e.target.value})} className="input-field" style={{marginBottom: '12px'}} />
+                          </div>
+                          <div>
+                            <label className="label-visible">END DATE</label>
+                            <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({...leaveForm, endDate: e.target.value})} className="input-field" style={{marginBottom: '12px'}} />
+                          </div>
+                        </div>
+                        <label className="label-visible">REASON</label>
+                        <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} className="input-field" rows="3" style={{marginBottom: '12px', resize: 'vertical'}} placeholder="Why are you taking leave?" />
+                        <label className="label-visible">REPORTS TO (MANAGER)</label>
+                        <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo: e.target.value})} className="input-field" placeholder="Manager Name" style={{marginBottom: '12px'}} />
+                        <button type="submit" className="btn-primary" style={{padding: '16px'}}>SUBMIT REQUEST</button>
+                      </form>
+                   </div>
+
+                   <div className="glass-card">
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+                        <h3 style={{margin: 0}}>Leave History</h3>
+                        <span style={{fontSize: '0.7rem', color: '#64748b'}}>{leaveRequests.length} TOTAL</span>
+                      </div>
+                      {leaveRequests.length === 0 ? (
+                        <div style={{textAlign: 'center', padding: '30px 10px', color: '#64748b'}}>
+                          <p>Wala ka pang history ng leave requests.</p>
+                        </div>
+                      ) : (
+                        <div style={{display: 'grid', gap: '12px'}}>
+                          {leaveRequests.map(item => (
+                            <div key={item.id} style={{background: 'rgba(255,255,255,0.04)', borderRadius: '20px', padding: '18px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px'}}>
+                                <div>
+                                  <div style={{fontWeight: '900', fontSize: '1rem'}}>{item.type}</div>
+                                  <div style={{fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px'}}>📅 {item.startDate} to {item.endDate}</div>
+                                </div>
+                                <span className={`badge ${item.status === 'Approved' ? 'badge-success' : item.status === 'Rejected' ? 'badge-late' : 'badge-pending'}`}>
+                                  {item.status}
+                                </span>
+                              </div>
+                              <div style={{fontSize: '0.85rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '12px', marginTop: '10px'}}>
+                                {item.reason}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                    </div>
                 </div>
               )}
@@ -1385,22 +1507,30 @@ function App() {
 
               <div className="nav-bar">
                 <div className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
-                   <span style={{fontSize: '1.6rem', transition: '0.3s'}}>🏠</span>
+                   <span style={{fontSize: '1.4rem'}}>🏠</span>
                    <span>HOME</span>
                 </div>
                 <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-                   <span style={{fontSize: '1.6rem', transition: '0.3s'}}>📋</span>
+                   <span style={{fontSize: '1.4rem'}}>📋</span>
                    <span>LOGS</span>
+                </div>
+                <div className={`nav-item ${activeTab === 'view-org' ? 'active' : ''}`} onClick={() => setActiveTab('view-org')}>
+                   <span style={{fontSize: '1.4rem'}}>🌳</span>
+                   <span>VIEW ORG</span>
+                </div>
+                <div className={`nav-item ${activeTab === 'leave-request' ? 'active' : ''}`} onClick={() => setActiveTab('leave-request')}>
+                   <span style={{fontSize: '1.4rem'}}>📅</span>
+                   <span>LEAVE</span>
                 </div>
                 {isManagerView && (
                   <div className={`nav-item ${activeTab === 'leave-approvals' ? 'active' : ''}`} onClick={() => {setActiveTab('leave-approvals'); fetchLeavesForApproval();}}>
-                     <span style={{fontSize: '1.6rem', transition: '0.3s'}}>✅</span>
+                     <span style={{fontSize: '1.4rem'}}>✅</span>
                      <span>APPROVALS</span>
                   </div>
                 )}
                 <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
-                   <span style={{fontSize: '1.6rem', transition: '0.3s'}}>👤</span>
-                   <span>HR HUB</span>
+                   <span style={{fontSize: '1.4rem'}}>👤</span>
+                   <span>PROFILE</span>
                 </div>
               </div>
             </>
