@@ -77,12 +77,23 @@ cls
 echo [*] 1/4 Syncing Live Data to Lab...
 if exist "backend\data.json" copy /y "backend\data.json" "backend\data-test.json" >nul
 
-echo [*] 2/4 Rebuilding UI (Lab Mode)...
-pushd web-dev & call npx vite build --outDir dist-test --emptyOutDir & popd
-pushd web-admin & call npx vite build --outDir dist-test --emptyOutDir & popd
-pushd mobile-app & call npx vite build --outDir dist-test --emptyOutDir & popd
+echo [*] 2/4 Injecting Lab Configuration (Port 4002)...
+:: Inject Local API URL for Web Modules
+set "ADMIN_CONFIG=web-admin/src/app_config.json"
+set "DEV_CONFIG=web-dev/src/app_config.json"
+set "MOBILE_CONFIG=mobile-app/src/app_config.json"
 
-echo [*] 3/4 Initializing Port 4002 Lab...
+if exist "%ADMIN_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='http://localhost:4002/api'; fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+if exist "%DEV_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%DEV_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='http://localhost:4002/api'; fs.writeFileSync('%DEV_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+if exist "%MOBILE_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%MOBILE_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='http://localhost:4002/api'; fs.writeFileSync('%MOBILE_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+
+echo [*] 3/4 Rebuilding UI (Lab Mode)...
+:: Clean old assets first to prevent version ghosts
+pushd web-dev & if exist dist-test rd /s /q dist-test & call npx vite build --outDir dist-test --emptyOutDir & popd
+pushd web-admin & if exist dist-test rd /s /q dist-test & call npx vite build --outDir dist-test --emptyOutDir & popd
+pushd mobile-app & if exist dist-test rd /s /q dist-test & call npx vite build --outDir dist-test --emptyOutDir & popd
+
+echo [*] 4/4 Initializing Port 4002 Lab...
 taskkill /F /IM node.exe /T >nul 2>&1
 taskkill /F /IM cloudflared.exe /T >nul 2>&1
 "%ADB_EXE%" reverse tcp:4002 tcp:4002
@@ -122,13 +133,15 @@ if exist "%CONFIG_FILE%" (
 
 if exist "MIRROR_PHONE.bat" start /b "" cmd /c "MIRROR_PHONE.bat"
 pushd mobile-app
+echo [*] Cleaning Mobile Assets...
+if exist dist rd /s /q dist
 echo [*] Building UI (Lab Mode)...
 call npx vite build --outDir dist --emptyOutDir
 echo [*] Syncing Capacitor...
 call npx cap sync android
 echo [*] Building Debug APK for Lab OTA testing...
 cd android
-call gradlew.bat assembleDebug
+call gradlew.bat clean assembleDebug
 cd ..
 if exist "android\app\build\outputs\apk\debug\app-debug.apk" (
     copy /y "android\app\build\outputs\apk\debug\app-debug.apk" "..\backend\apks\TimeKey_Master.apk" >nul
@@ -174,9 +187,10 @@ if exist "%CONFIG_FILE%" (
 )
 
 echo [*] 2/4 Rebuilding All Production Assets with Version !NEW_V!...
-pushd web-dev & call npx vite build --outDir dist --emptyOutDir & popd
-pushd web-admin & call npx vite build --outDir dist --emptyOutDir & popd
-pushd mobile-app & call npx vite build --outDir dist --emptyOutDir & popd
+:: NINJA CLEAN: Ensure no ghost versions
+pushd web-dev & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
+pushd web-admin & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
+pushd mobile-app & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
 
 echo [*] 3/4 Finalizing Production Assets...
 :: No need to copy from dist-test anymore, we build directly to dist for MASTER SYNC

@@ -16,6 +16,7 @@
     "start-mobile": "npm --workspace mobile-app run dev",
     "build-mobile": "npm --workspace mobile-app run build",
     "apk-mobile": "npm --workspace mobile-app run apk",
+    "clean": "node -e \"const fs=require('fs'); ['web-admin','web-dev','mobile-app'].forEach(d=>{['dist','dist-test'].forEach(f=>{const p=d+'/'+f; if(fs.existsSync(p)) fs.rmSync(p,{recursive:true,force:true})})})\"",
     "dev:full": "node scripts/start-dev.js"
   },
   "devDependencies": {

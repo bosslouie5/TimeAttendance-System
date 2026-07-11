@@ -13,7 +13,8 @@ function App() {
   const currentPath = window.location.pathname;
   const pathParts = currentPath.split('/');
   const portalIndex = pathParts.indexOf('portal');
-  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim() : '';
+  // Fallback to appConfig.defaultTenantId if none in URL (Pro Dev feature for local testing)
+  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim() : (appConfig.defaultTenantId || '');
   const isPortalMissingTenant = !detectedTenantId;
 
   const searchParams = new URLSearchParams(window.location.search);
