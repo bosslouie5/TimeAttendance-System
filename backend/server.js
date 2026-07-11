@@ -27,6 +27,7 @@ const dbFile = isTestMode ? 'data-test.json' : 'data.json';
 
 const DB_PATH = path.join(__dirname, dbFile);
 const MONGODB_URI = process.env.MONGODB_URI;
+const isRenderHost = !!process.env.RENDER;
 let dbClient = null;
 
 console.log(`\n\x1b[36m[${brand.brandName.toUpperCase()}] System Starting...\x1b[0m`);
@@ -34,6 +35,11 @@ console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + brand.devHos
 console.log(`\x1b[35m[ENV] Database: ${MONGODB_URI ? 'MONGODB ATLAS (Cloud)' : dbFile + ' (Local JSON)'}\x1b[0m`);
 if (!MONGODB_URI && !isTestMode) {
   console.log(`\x1b[31m[WARNING] No MONGODB_URI detected in Production! Data will be LOST on every redeploy/restart on Render.\x1b[0m`);
+}
+if (!MONGODB_URI && !isTestMode && isRenderHost) {
+  console.error('\x1b[31m[FATAL] No MONGODB_URI configured on Render. Aborting startup to protect your MongoDB data.\x1b[0m');
+  console.error('[FATAL] Set MONGODB_URI to your MongoDB Atlas connection string before deploying.');
+  process.exit(1);
 }
 console.log('');
 
