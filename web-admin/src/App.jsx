@@ -11,10 +11,18 @@ function App() {
   const [saasStatus, setSaasStatus] = useState('Syncing...');
 
   const currentPath = window.location.pathname;
-  const pathParts = currentPath.split('/');
+  const pathParts = currentPath.split('/').filter(Boolean);
   const portalIndex = pathParts.indexOf('portal');
-  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim() : '';
+  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim().split('?')[0].split('#')[0] : '';
   const isPortalMissingTenant = !detectedTenantId;
+
+  useEffect(() => {
+    if (detectedTenantId) {
+      console.log(`[SYSTEM] Portal Active for Tenant: ${detectedTenantId}`);
+    } else {
+      console.warn(`[SYSTEM] No Tenant ID detected in URL. Please use /portal/<TenantID>`);
+    }
+  }, [detectedTenantId]);
 
   const searchParams = new URLSearchParams(window.location.search);
   const isDevMode = searchParams.get('devMode') === 'true';

@@ -505,16 +505,22 @@ app.delete('/api/master/dev-accounts/:username', async (req, res) => {
 // --- CORE APP ENDPOINTS ---
 app.get('/api/employees', tenantGuard, async (req, res) => {
   const data = await loadData();
-  const tenantId = req.tenantId || 'master';
+  const tenantId = (req.tenantId || 'master').toString().trim();
   const { requestingEmployeeId } = req.query;
 
-  let filtered = data.employees.filter(e => e.tenantId === tenantId);
+  console.log(`[API] Fetch Employees for Tenant: "${tenantId}" (Requestor: ${requestingEmployeeId || 'Admin'})`);
+
+  let filtered = data.employees.filter(e => {
+    const etid = (e.tenantId || '').toString().trim();
+    return etid.toLowerCase() === tenantId.toLowerCase();
+  });
 
   if (requestingEmployeeId) {
     const subordinateIds = getAllSubordinateIds(requestingEmployeeId, data.employees, tenantId);
     filtered = filtered.filter(e => subordinateIds.includes(e.employeeId) || e.employeeId === requestingEmployeeId);
   }
 
+  console.log(`[API] Returning ${filtered.length} employees for tenant ${tenantId}`);
   res.json(filtered);
 });
 
@@ -809,16 +815,16 @@ app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
   if (!data.leaves) data.leaves = [];
   const tenantId = req.tenantId || req.body.tenantId || 'master';
 
-  // Logic: If no reportsTo or explicit "HR Management", bypass Manager step
-  const rawReportsTo = (req.body.reportsTo || req.body.manager || '').toString().trim();
-  const isDirectToHR = !rawReportsTo || rawReportsTo.toLowerCase() === 'hr management';
+  // Logic: If no reportsTo, default to HR Management and skip Manager step
+  const reportsTo = req.body.reportsTo || req.body.manager || '';
+  const isDirectToHR = !reportsTo || reportsTo === 'HR Management';
 
   const newLeave = {
     ...req.body,
     id: `leave-${Date.now()}`,
     status: isDirectToHR ? 'Pending (Admin)' : (req.body.status || 'Pending (Manager)'),
     tenantId,
-    reportsTo: isDirectToHR ? 'HR Management' : rawReportsTo,
+    reportsTo: isDirectToHR ? 'HR Management' : reportsTo,
     createdAt: new Date().toISOString()
   };
   data.leaves.push(newLeave);

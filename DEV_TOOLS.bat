@@ -89,9 +89,20 @@ if exist "%MOBILE_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(f
 
 echo [*] 3/4 Rebuilding UI (Lab Mode)...
 :: Clean old assets first to prevent version ghosts
-pushd web-dev & if exist dist-test rd /s /q dist-test & call npx vite build --outDir dist-test --emptyOutDir & popd
-pushd web-admin & if exist dist-test rd /s /q dist-test & call npx vite build --outDir dist-test --emptyOutDir & popd
-pushd mobile-app & if exist dist-test rd /s /q dist-test & call npx vite build --outDir dist-test --emptyOutDir & popd
+pushd web-dev
+if exist dist-test rd /s /q dist-test
+call npx vite build --outDir dist-test --emptyOutDir
+popd
+
+pushd web-admin
+if exist dist-test rd /s /q dist-test
+call npx vite build --outDir dist-test --emptyOutDir
+popd
+
+pushd mobile-app
+if exist dist-test rd /s /q dist-test
+call npx vite build --outDir dist-test --emptyOutDir
+popd
 
 echo [*] 4/4 Initializing Port 4002 Lab...
 taskkill /F /IM node.exe /T >nul 2>&1
@@ -143,6 +154,9 @@ echo [*] Building Debug APK for Lab OTA testing...
 cd android
 call gradlew.bat clean assembleDebug
 cd ..
+popd
+
+pushd mobile-app
 if exist "android\app\build\outputs\apk\debug\app-debug.apk" (
     copy /y "android\app\build\outputs\apk\debug\app-debug.apk" "..\backend\apks\TimeKey_Master.apk" >nul
 
@@ -192,9 +206,20 @@ echo [OK] Production API URL injected into all modules.
 echo [*] 2/4 Rebuilding All Production Assets with Version !NEW_V!...
 
 :: NINJA CLEAN: Ensure no ghost versions
-pushd web-dev & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
-pushd web-admin & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
-pushd mobile-app & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
+pushd web-dev
+if exist dist rd /s /q dist
+call npx vite build --outDir dist --emptyOutDir
+popd
+
+pushd web-admin
+if exist dist rd /s /q dist
+call npx vite build --outDir dist --emptyOutDir
+popd
+
+pushd mobile-app
+if exist dist rd /s /q dist
+call npx vite build --outDir dist --emptyOutDir
+popd
 
 echo [*] 3/4 Finalizing Production Assets...
 :: No need to copy from dist-test anymore, we build directly to dist for MASTER SYNC

@@ -1618,21 +1618,8 @@ function App() {
                         </div>
                         <label className="label-visible">REASON</label>
                         <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} className="input-field" rows="3" style={{marginBottom: '12px', resize: 'vertical'}} placeholder="Why are you taking leave?" />
-
-                        <label className="label-visible">APPROVAL ROUTE</label>
-                        <select
-                          value={leaveForm.reportsTo}
-                          onChange={e => setLeaveForm({...leaveForm, reportsTo: e.target.value})}
-                          className="input-field"
-                          style={{marginBottom: '12px'}}
-                        >
-                          <option value="">Auto-select (Based on Profile)</option>
-                          <option value="HR Management" style={{fontWeight:'bold', color:'#3b82f6'}}>Direct to HR Management (Final Approval)</option>
-                          {orgData.manager && (
-                             <option value={orgData.manager.employeeId}>My Manager: {orgData.manager.name}</option>
-                          )}
-                        </select>
-
+                        <label className="label-visible">REPORTS TO (MANAGER)</label>
+                        <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo: e.target.value})} className="input-field" placeholder="Manager Name" style={{marginBottom: '12px'}} />
                         <button type="submit" className="btn-primary" style={{padding: '16px'}}>SUBMIT REQUEST</button>
                       </form>
                    </div>
