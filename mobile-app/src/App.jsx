@@ -486,27 +486,56 @@ function App() {
       return false;
     };
 
-    // WHAT'S NEW LOGIC (One-time prompt after a genuinely newer version)
+    const isGithubProductionReleaseReady = async (renderVersion, renderCode, currentVersion, currentCode) => {
+      const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
+      try {
+        const githubRes = await getJson(`${GITHUB_PAGES_URL}/apks/latest-version.json?t=${Date.now()}`);
+        if (!githubRes.ok || !githubRes.data) return false;
+
+        const githubVersion = githubRes.data.version || githubRes.data.apkVersion || githubRes.data.versionName || null;
+        const githubCode = githubRes.data.versionCode ? parseInt(githubRes.data.versionCode, 10) : null;
+
+        if (!githubVersion && githubCode === null) return false;
+
+        const renderIsNewer = isVersionActuallyNewer(renderVersion, renderCode, currentVersion, currentCode);
+        if (!renderIsNewer) return false;
+
+        if (githubVersion && githubVersion !== renderVersion) return false;
+        if (githubCode !== null && renderCode !== null && githubCode !== renderCode) return false;
+
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+
+    // WHAT'S NEW LOGIC (One-time prompt after the GitHub production release is ready)
     const checkWhatsNew = async () => {
       const lastSeenCode = localStorage.getItem('last_seen_version_code');
       const currentCode = appConfig.versionCode;
       const currentVer = appConfig.version || '1.0.0';
 
       try {
-        const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
-        const res = await getJson(`${GITHUB_PAGES_URL}/apks/latest-version.json?t=${Date.now()}`);
-        if (res.ok && res.data) {
-          const latest = res.data;
-          const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
-          const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
-          const shouldPromptForWhatsNew = lastSeenCode && lastSeenCode !== currentCode && isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
+        if (apiUrl && apiUrl.startsWith('http')) {
+          const renderRes = await getJson(`${apiUrl}/app-version`);
+          if (renderRes.ok && renderRes.data) {
+            const latest = renderRes.data;
+            const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
+            const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
+            const releaseReady = await isGithubProductionReleaseReady(serverVersion, latestCode, currentVer, currentCode);
+            const shouldPromptForWhatsNew = lastSeenCode && lastSeenCode !== currentCode && releaseReady && isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
 
-          if (shouldPromptForWhatsNew) {
-            setWhatsNewData(latest);
-            setShowWhatsNew(true);
+            if (shouldPromptForWhatsNew) {
+              setWhatsNewData(latest);
+              setShowWhatsNew(true);
+            } else {
+              setShowWhatsNew(false);
+            }
           } else {
             setShowWhatsNew(false);
           }
+        } else {
+          setShowWhatsNew(false);
         }
       } catch (e) {
         setShowWhatsNew(false);
@@ -517,23 +546,16 @@ function App() {
     };
 
     const checkUpdate = async () => {
-      // RULE: Only prompt after GitHub Deployment is finished
-      // We check the version metadata hosted on GitHub Pages for perfect sync
-      const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
-      const updateMetadataUrl = `${GITHUB_PAGES_URL}/apks/latest-version.json?v=${Date.now()}`;
-
       const isLabServer = apiUrl && (apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1') || apiUrl.includes(':4002'));
 
       try {
-        const res = await getJson(updateMetadataUrl);
         let latest = null;
 
-        if (res.ok && res.data) {
-           latest = res.data;
-        } else if (apiUrl && apiUrl.startsWith('http')) {
-           // Fallback to Render API if GitHub Pages metadata is not found
-           const fallbackRes = await getJson(`${apiUrl}/app-version`);
-           if (fallbackRes.ok) latest = fallbackRes.data;
+        if (apiUrl && apiUrl.startsWith('http')) {
+          const renderRes = await getJson(`${apiUrl}/app-version`);
+          if (renderRes.ok && renderRes.data) {
+            latest = renderRes.data;
+          }
         }
 
         if (latest) {
@@ -543,11 +565,12 @@ function App() {
           const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
 
           const isNewer = isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
+          const releaseReady = await isGithubProductionReleaseReady(serverVersion, latestCode, currentVer, currentCode);
 
           // PRO LOGGING
-          console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${serverVersion} (${latestCode}) | isNewer: ${isNewer}`);
+          console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${serverVersion} (${latestCode}) | isNewer: ${isNewer} | releaseReady: ${releaseReady}`);
 
-          if (isNewer) {
+          if (isNewer && releaseReady) {
             const payload = { ...latest, version: serverVersion };
             if (isLabServer && !window.location.search.includes('forceUpdate')) {
                console.warn("[OTA-LAB] Update available but suppressed for Lab Server stability.");
