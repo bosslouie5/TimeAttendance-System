@@ -88,28 +88,38 @@ echo [!] WARNING: PROMOTING TO PRODUCTION (PORT 4001)
 set /p confirm="Sigurado ka na ba? (Y/N): "
 if /i "%confirm%" neq "Y" goto MENU
 
+:: VERSION BUMP STEP
+echo.
+set "CONFIG_FILE=mobile-app/src/app_config.json"
+if exist "%CONFIG_FILE%" for /f "delims=" %%v in ('powershell -Command "(Get-Content %CONFIG_FILE% | ConvertFrom-Json).version"') do set "CUR_V=%%v"
+echo Current Version: %CUR_V%
+set /p NEW_V="Enter New Version (e.g. 1.0.5): "
+if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
+
 echo [*] Step 1: Auto-Backup...
 powershell -ExecutionPolicy Bypass -File "tools\backup_system.ps1" -Action "backup" -CheckpointName "AUTO_LIVE"
 
-echo [*] Step 2: Switching to Production URL...
+echo [*] Step 2: Updating Version and Switching to Production URL...
 call :SET_URL "https://timeattendance-system.onrender.com/api"
+:: Sync version to configs and Gradle
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\update_android_version.ps1" "mobile-app/android/app/build.gradle" "!NEW_V!"
+node -e "const fs=require('fs'); ['web-admin','web-dev','mobile-app'].forEach(m=>{ const p=`${m}/src/app_config.json`; if(fs.existsSync(p)){ const c=JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'')); c.version='!NEW_V!'; fs.writeFileSync(p,JSON.stringify(c,null,2)); } })"
+node -e "const fs=require('fs'); const v={version:'!NEW_V!', buildDate:new Date().toISOString()}; fs.writeFileSync('backend/version.json', JSON.stringify(v, null, 2), 'utf8');"
 
 echo [*] Step 3: Building All Modules...
 pushd web-dev & call npx vite build --emptyOutDir & popd
 pushd web-admin & call npx vite build --emptyOutDir & popd
 pushd mobile-app & call npx vite build --emptyOutDir & popd
 
-echo [*] Step 4: Version Bump + APK Build...
-set "INTERNAL_CALL=1"
+echo [*] Step 4: Finalizing APK Build...
 call :BUILD_APK
 
 echo [*] Step 5: Pushing to GitHub (Render Auto-Deploy)...
 "%GIT_EXE%" add .
-"%GIT_EXE%" commit -m "Production Release: %date% %time%"
+"%GIT_EXE%" commit -m "Production Release: v!NEW_V! - %date% %time%"
 "%GIT_EXE%" push origin main
 
-echo [SUCCESS] System is now LIVE! Port 4001 and Render updated.
-set "INTERNAL_CALL="
+echo [SUCCESS] System is now LIVE v!NEW_V!! Port 4001 and Render updated.
 pause
 goto MENU
 
