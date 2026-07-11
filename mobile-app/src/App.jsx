@@ -117,6 +117,7 @@ function App() {
   const [showBranchPicker, setShowBranchPicker] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [whatsNewData, setWhatsNewData] = useState(null);
+  const [systemVersion, setSystemVersion] = useState(appConfig.version || '1.0.0');
 
   const [departments, setDepartments] = useState(() => {
     try {
@@ -158,6 +159,23 @@ function App() {
   const hideNotice = () => {
     setNoticeModal(prev => ({ ...prev, visible: false }));
   };
+
+  useEffect(() => {
+    const fetchSystemVersion = async () => {
+      try {
+        const res = await getJson(`${apiUrl}/app-version`);
+        if (res.ok && res.data) {
+          setSystemVersion(res.data.systemVersion || res.data.version || appConfig.version || '1.0.0');
+        }
+      } catch (err) {
+        console.warn('[SYSTEM-VERSION] Could not fetch system version:', err.message || err);
+      }
+    };
+
+    if (apiUrl) {
+      fetchSystemVersion();
+    }
+  }, [apiUrl]);
 
   const groupedLogs = useMemo(() => {
     const groups = {};
@@ -1206,7 +1224,7 @@ function App() {
                <div className="update-card" style={{border: '1px solid #10b981'}}>
                   <span style={{fontSize: '5rem', marginBottom: '20px', display: 'block'}}>✨</span>
                   <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Update Successful!</h2>
-                  <div style={{color: '#10b981', fontWeight: '900', marginBottom: '20px'}}>System is now at V{appConfig.version}</div>
+                  <div style={{color: '#10b981', fontWeight: '900', marginBottom: '20px'}}>System is now at V{systemVersion}</div>
                   <div style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '30px', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '15px', textAlign: 'left'}}>
                      <strong style={{color: '#fff', display: 'block', marginBottom: '8px'}}>Release Notes:</strong>
                      {whatsNewData?.changelog || 'We have improved the system stability and fixed some bugs to give you a better experience.'}
@@ -1232,7 +1250,7 @@ function App() {
           <div style={{textAlign: 'center', padding: '20px 0', marginBottom: '15px'}} onDoubleClick={handleUpdateServer}>
               <div style={{fontSize: '0.6rem', color: '#3b82f6', fontWeight: '900', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '10px'}}>Time Attendance Hub</div>
               <h1 style={{fontSize: '1.6rem', margin: 0, fontWeight: '900', color: '#fff'}}>{tenantInfo?.companyName?.toUpperCase() || 'OFFICIAL HUB'}</h1>
-              <div style={{fontSize: '0.7rem', color: '#64748b', fontWeight: '700', marginTop: '5px'}}>System V{appConfig.version}</div>
+              <div style={{fontSize: '0.7rem', color: '#64748b', fontWeight: '700', marginTop: '5px'}}>System V{systemVersion}</div>
           </div>
 
           {!loggedIn ? (
@@ -1487,7 +1505,7 @@ function App() {
                    </div>
 
                    <div style={{textAlign: 'center', marginTop: '30px', color: '#64748b', fontSize: '0.7rem', fontWeight: '900'}}>
-                      {status.toUpperCase()} | V{appConfig.version} | {(apiUrl.includes('127.0.0.1') || apiUrl.includes('localhost:4002')) ? 'LAB MODE' : 'CLOUD LIVE'}
+                      {status.toUpperCase()} | V{systemVersion} | {(apiUrl.includes('127.0.0.1') || apiUrl.includes('localhost:4002')) ? 'LAB MODE' : 'CLOUD LIVE'}
                    </div>
                 </div>
               )}
