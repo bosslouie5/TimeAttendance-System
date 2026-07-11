@@ -235,12 +235,12 @@ if exist "mobile-app\android\release-key.jks" (
 
 echo [*] 4/4 Committing and Pushing to GitHub...
 "%GIT_EXE%" add .
-:: Force add dist folders because they are in .gitignore
+:: Force add critical files and folders
 "%GIT_EXE%" add -f web-dev/dist/
 "%GIT_EXE%" add -f web-admin/dist/
 "%GIT_EXE%" add -f mobile-app/dist/
-if exist "apks\TimeKey_Master.apk" "%GIT_EXE%" add -f "apks\TimeKey_Master.apk"
-if exist "backend\apks\TimeKey_Master.apk" "%GIT_EXE%" add -f "backend\apks\TimeKey_Master.apk"
+"%GIT_EXE%" add -f "apks/*"
+"%GIT_EXE%" add -f "backend/apks/*"
 
 "%GIT_EXE%" commit -m "Production Release: v!NEW_V! Build !NEW_VC! - %date% %time%"
 "%GIT_EXE%" push origin main
@@ -264,8 +264,13 @@ if exist "%CONFIG_FILE%" for /f "delims=" %%v in ('powershell -Command "(Get-Con
 
 echo.
 echo [ VERSION BUMP ]
-echo Current Version: %CUR_V%
-set /p NEW_V="Enter New Version (or press Enter to keep): "
+echo Current Local Version: %CUR_V%
+:: Pro Feature: Check GitHub Version for Reference
+echo [*] Fetching Global Version from GitHub...
+for /f "delims=" %%g in ('powershell -Command "$v = (Invoke-WebRequest -Uri 'https://bosslouie5.github.io/TimeAttendance-System/apks/latest-version.json?t=%random%' -UseBasicParsing | ConvertFrom-Json).version; $v"') do set "GIT_V=%%g"
+echo Current GitHub Version: %GIT_V%
+echo.
+set /p NEW_V="Enter New Version: "
 if "!NEW_V!"=="" set "NEW_V=%CUR_V%"
 
 :: Increment Gradle Version Code and update versionName using PowerShell helper
