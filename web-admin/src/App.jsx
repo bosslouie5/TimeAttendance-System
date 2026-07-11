@@ -212,41 +212,62 @@ function App() {
   };
 
   const loadInitialData = async () => {
+    if (loading) return;
+    setLoading(true);
     try {
-      const q = user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '';
-      const [e, b, o, l, pt, sc] = await Promise.all([
-        requestJson(`/employees${q}`),
-        requestJson('/departments'),
-        requestJson('/org-units'),
-        requestJson(`/logs${q}`),
-        requestJson('/position-titles'),
-        requestJson('/schedules')
+      const q = (user?.username === 'admin' || user?.isConsultant) ? '' : (user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '');
+
+      // Individual fetching for better stability (Rule 5: Pro Dev approach)
+      const fetchTask = async (path, setter) => {
+        try {
+          const data = await requestJson(path);
+          setter(data || []);
+        } catch (err) {
+          console.error(`Error loading ${path}:`, err);
+          setter([]);
+        }
+      };
+
+      await Promise.all([
+        fetchTask(`/employees${q}`, setEmployees),
+        fetchTask('/departments', setDepartments),
+        fetchTask('/org-units', setOrgUnits),
+        fetchTask(`/logs${q}`, setLogs),
+        fetchTask('/position-titles', setPositionTitles),
+        fetchTask('/schedules', setSchedules)
       ]);
-      setEmployees(e || []);
-      setDepartments(b || []);
-      setOrgUnits(o || []);
-      setLogs(l || []);
-      setPositionTitles(pt || []);
-      setSchedules(sc || []);
+
+      // Protected secondary fetches
       try {
         const a = await requestJson('/assignments');
         setAssignments(a || []);
       } catch (err) { setAssignments([]); }
+
       try {
         const tu = await requestJson('/tenant-users');
         setTenantUsers(tu || []);
       } catch (err) { setTenantUsers([]); }
 
-      // Fetch centralized leaves & announcements when available
+      // Fetch centralized leaves & announcements
       try {
-        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`);
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`, {
+           headers: { 'x-tenant-id': detectedTenantId }
+        });
         if (leavesRes.ok) {
           const leaves = await leavesRes.json();
           setLeaveRequests(leaves || []);
           sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(leaves || []));
         }
+      } catch (err) { console.error('Leaves fetch error:', err); }
 
-        fetchScheduleAdjustments();
+      fetchScheduleAdjustments();
+    } catch (err) {
+      console.error('Critical data load error:', err);
+      setStatus('Failed to sync data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
         const annsRes = await fetch(`${activeApiBase}/hr/announcements?tenant=${encodeURIComponent(detectedTenantId)}`);
         if (annsRes.ok) {
@@ -1843,12 +1864,29 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {employees
-                  .filter(e => {
-                    const s = empSearch.toLowerCase();
-                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
-                  })
-                  .map((e, idx) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
+                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
+                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
+                    </td>
+                  </tr>
+                ) : employees.length === 0 ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
+                      No employee records found for this tenant.
+                    </td>
+                  </tr>
+                ) : (
+                  employees
+                    .filter(e => {
+                      const s = (empSearch || '').toLowerCase();
+                      const name = (e.name || '').toLowerCase();
+                      const id = (e.employeeId || '').toLowerCase();
+                      return name.includes(s) || id.includes(s);
+                    })
+                    .map((e, idx) => (
                   <tr key={idx}>
                     <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                     <td style={{fontWeight:'700', color: 'white'}}>{e.name}</td>
@@ -2119,12 +2157,29 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {employees
-                  .filter(e => {
-                    const s = empSearch.toLowerCase();
-                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
-                  })
-                  .map((e, idx) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
+                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
+                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
+                    </td>
+                  </tr>
+                ) : employees.length === 0 ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
+                      No employee records found for this tenant.
+                    </td>
+                  </tr>
+                ) : (
+                  employees
+                    .filter(e => {
+                      const s = (empSearch || '').toLowerCase();
+                      const name = (e.name || '').toLowerCase();
+                      const id = (e.employeeId || '').toLowerCase();
+                      return name.includes(s) || id.includes(s);
+                    })
+                    .map((e, idx) => (
                     <tr key={idx}>
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
@@ -2422,12 +2477,29 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {employees
-                  .filter(e => {
-                    const s = empSearch.toLowerCase();
-                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
-                  })
-                  .map((e, idx) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
+                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
+                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
+                    </td>
+                  </tr>
+                ) : employees.length === 0 ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
+                      No employee records found for this tenant.
+                    </td>
+                  </tr>
+                ) : (
+                  employees
+                    .filter(e => {
+                      const s = (empSearch || '').toLowerCase();
+                      const name = (e.name || '').toLowerCase();
+                      const id = (e.employeeId || '').toLowerCase();
+                      return name.includes(s) || id.includes(s);
+                    })
+                    .map((e, idx) => (
                     <tr key={idx}>
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
@@ -2491,12 +2563,29 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {employees
-                  .filter(e => {
-                    const s = empSearch.toLowerCase();
-                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
-                  })
-                  .map((e, idx) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
+                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
+                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
+                    </td>
+                  </tr>
+                ) : employees.length === 0 ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
+                      No employee records found for this tenant.
+                    </td>
+                  </tr>
+                ) : (
+                  employees
+                    .filter(e => {
+                      const s = (empSearch || '').toLowerCase();
+                      const name = (e.name || '').toLowerCase();
+                      const id = (e.employeeId || '').toLowerCase();
+                      return name.includes(s) || id.includes(s);
+                    })
+                    .map((e, idx) => (
                     <tr key={idx}>
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
