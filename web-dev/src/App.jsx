@@ -285,24 +285,6 @@ function App() {
   }, [currentUser, globalTenantFilter]);
 
   useEffect(() => {
-    if (leaveRequests.length === 0) {
-      const seeded = [{
-        id: 'seed-leave-1',
-        employeeId: 'EMP001',
-        employeeName: 'Employee',
-        type: 'Sick Leave',
-        startDate: '2026-07-08',
-        endDate: '2026-07-09',
-        reason: 'Medical checkup',
-        status: 'Pending',
-        tenantId: globalTenantFilter !== 'ALL' ? globalTenantFilter : 'demo-tenant'
-      }];
-      setLeaveRequests(seeded);
-      sessionStorage.setItem('webdev_hr_leaves', JSON.stringify(seeded));
-    }
-  }, [leaveRequests.length]);
-
-  useEffect(() => {
     if (hrAnnouncements.length === 0) {
       const seeded = [{
         id: 'seed-ann-1',

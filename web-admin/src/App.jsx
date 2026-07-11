@@ -182,24 +182,6 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    if (leaveRequests.length === 0) {
-      const seeded = [{
-        id: 'seed-admin-leave-1',
-        employeeId: 'EMP001',
-        employeeName: 'Employee',
-        type: 'Vacation Leave',
-        startDate: '2026-07-12',
-        endDate: '2026-07-15',
-        reason: 'Planned vacation',
-        status: 'Pending',
-        tenantId: detectedTenantId
-      }];
-      setLeaveRequests(seeded);
-      sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(seeded));
-    }
-  }, [leaveRequests.length, detectedTenantId]);
-
-  useEffect(() => {
     if (hrAnnouncements.length === 0) {
       const seeded = [{
         id: 'seed-admin-ann-1',

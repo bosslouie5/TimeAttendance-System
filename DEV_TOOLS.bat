@@ -106,7 +106,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\update_android_versio
 node -e "const fs=require('fs'); ['web-admin','web-dev','mobile-app'].forEach(m=>{ const p=`${m}/src/app_config.json`; if(fs.existsSync(p)){ const c=JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'')); c.version='!NEW_V!'; fs.writeFileSync(p,JSON.stringify(c,null,2)); } })"
 node -e "const fs=require('fs'); const v={version:'!NEW_V!', buildDate:new Date().toISOString()}; fs.writeFileSync('backend/version.json', JSON.stringify(v, null, 2), 'utf8');"
 :: Update Metadata for Update Notifications
-node -e "const fs=require('fs'); const path=require('path'); const v='!NEW_V!'; const meta={version:v, downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v'+v}; ['backend/apks','apks'].forEach(d=>{ fs.mkdirSync(d,{recursive:true}); fs.writeFileSync(path.join(d,'latest-version.json'), JSON.stringify(meta, null, 2)); });"
+node -e "const fs=require('fs'); const path=require('path'); const v='!NEW_V!'; const cfg=JSON.parse(fs.readFileSync('mobile-app/src/app_config.json','utf8').replace(/^\uFEFF/,'')); const meta={version:v, versionCode: parseInt(cfg.versionCode || '0', 10) || 0, downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v'+v}; ['backend/apks','apks'].forEach(d=>{ fs.mkdirSync(d,{recursive:true}); fs.writeFileSync(path.join(d,'latest-version.json'), JSON.stringify(meta, null, 2)); });"
 
 echo [*] Step 3: Building All Modules...
 pushd web-dev & call npx vite build --emptyOutDir & popd

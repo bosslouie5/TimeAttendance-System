@@ -500,6 +500,7 @@ function App() {
           const currentVer = appConfig.version || '1.0.0';
           const currentCode = parseInt(appConfig.versionCode || '0', 10);
           const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
+          const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
 
           const compareVersions = (a, b) => {
             const pa = (a || '0').split('.').map(n => parseInt(n, 10) || 0);
@@ -518,19 +519,20 @@ function App() {
 
           if (latestCode !== null && !isNaN(latestCode)) {
             isNewer = latestCode > currentCode;
-          } else if (latest.version) {
-            isNewer = compareVersions(latest.version, currentVer) > 0;
+          } else if (serverVersion) {
+            isNewer = compareVersions(serverVersion, currentVer) > 0;
           }
 
           // PRO LOGGING
-          console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${latest.version} (${latestCode}) | isNewer: ${isNewer}`);
+          console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${serverVersion} (${latestCode}) | isNewer: ${isNewer}`);
 
           if (isNewer) {
+            const payload = { ...latest, version: serverVersion };
             if (isLabServer && !window.location.search.includes('forceUpdate')) {
                console.warn("[OTA-LAB] Update available but suppressed for Lab Server stability.");
-               if (latest.version !== currentVer) setUpdateAvailable(latest);
+               if (serverVersion !== currentVer) setUpdateAvailable(payload);
             } else {
-               setUpdateAvailable(latest);
+               setUpdateAvailable(payload);
             }
           } else {
             setUpdateAvailable(null);
@@ -1202,7 +1204,7 @@ function App() {
                <div className="update-card">
                   <span style={{fontSize: '5rem', marginBottom: '20px', display: 'block'}}>🚀</span>
                   <h2 style={{fontSize: '1.8rem', fontWeight: '900', color: '#fff', marginBottom: '10px'}}>Upgrade Available</h2>
-                  <div style={{color: '#3b82f6', fontWeight: '900', marginBottom: '20px'}}>V{updateAvailable.version}</div>
+                  <div style={{color: '#3b82f6', fontWeight: '900', marginBottom: '20px'}}>V{updateAvailable.version || updateAvailable.apkVersion || appConfig.version}</div>
 
                   {!isDownloading ? (
                     <>
