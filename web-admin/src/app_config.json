@@ -1,7 +1,6 @@
 {
-  "defaultApiUrl": "https://timeattendance-system.onrender.com/api",
-  "defaultTenantId": "949230",
-  "version": "1.0.5",
-  "buildDate": "2026-07-11T00:25:21.968Z",
-  "versionCode": "81"
+  "version": "1.0.2",
+  "buildDate": "2026-07-11T00:30:08.933Z",
+  "versionCode": "82",
+  "defaultApiUrl": "https://timeattendance-system.onrender.com/api"
 }

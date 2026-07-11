@@ -7,14 +7,13 @@ import appConfig from './app_config.json';
 const API_BASE = '/api';
 
 function App() {
-  const [activeApiBase, setActiveApiBase] = useState(appConfig.defaultApiUrl || '/api');
+  const [activeApiBase, setActiveApiBase] = useState('/api');
   const [saasStatus, setSaasStatus] = useState('Syncing...');
 
   const currentPath = window.location.pathname;
   const pathParts = currentPath.split('/');
   const portalIndex = pathParts.indexOf('portal');
-  // Fallback to appConfig.defaultTenantId if none in URL (Pro Dev feature for local testing)
-  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim() : (appConfig.defaultTenantId || '');
+  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim() : '';
   const isPortalMissingTenant = !detectedTenantId;
 
   const searchParams = new URLSearchParams(window.location.search);
@@ -130,18 +129,15 @@ function App() {
 
   useEffect(() => {
     const checkConnection = () => {
-      // Use config URL if present, otherwise default to relative /api
-      const base = appConfig.defaultApiUrl || '/api';
-      if (activeApiBase !== base) setActiveApiBase(base);
-
+      setActiveApiBase('/api');
       // Fetch App Version (Global)
-      fetch(`${base}/app-version`)
+      fetch(`${activeApiBase}/app-version`)
         .then(r => r.json())
         .then(data => setAppVersionInfo(data))
         .catch(() => {});
 
       if (detectedTenantId) {
-        fetch(`${base}/tenant-info/${detectedTenantId}`)
+        fetch(`${activeApiBase}/tenant-info/${detectedTenantId}`)
           .then(r => r.json())
           .then(data => {
             setTenantDetails(data);
@@ -156,7 +152,6 @@ function App() {
     };
     checkConnection();
   }, [detectedTenantId, activeApiBase]);
-
 
   useEffect(() => {
     if (user) {
@@ -212,62 +207,41 @@ function App() {
   };
 
   const loadInitialData = async () => {
-    if (loading) return;
-    setLoading(true);
     try {
-      const q = (user?.username === 'admin' || user?.isConsultant) ? '' : (user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '');
-
-      // Individual fetching for better stability (Rule 5: Pro Dev approach)
-      const fetchTask = async (path, setter) => {
-        try {
-          const data = await requestJson(path);
-          setter(data || []);
-        } catch (err) {
-          console.error(`Error loading ${path}:`, err);
-          setter([]);
-        }
-      };
-
-      await Promise.all([
-        fetchTask(`/employees${q}`, setEmployees),
-        fetchTask('/departments', setDepartments),
-        fetchTask('/org-units', setOrgUnits),
-        fetchTask(`/logs${q}`, setLogs),
-        fetchTask('/position-titles', setPositionTitles),
-        fetchTask('/schedules', setSchedules)
+      const q = user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '';
+      const [e, b, o, l, pt, sc] = await Promise.all([
+        requestJson(`/employees${q}`),
+        requestJson('/departments'),
+        requestJson('/org-units'),
+        requestJson(`/logs${q}`),
+        requestJson('/position-titles'),
+        requestJson('/schedules')
       ]);
-
-      // Protected secondary fetches
+      setEmployees(e || []);
+      setDepartments(b || []);
+      setOrgUnits(o || []);
+      setLogs(l || []);
+      setPositionTitles(pt || []);
+      setSchedules(sc || []);
       try {
         const a = await requestJson('/assignments');
         setAssignments(a || []);
       } catch (err) { setAssignments([]); }
-
       try {
         const tu = await requestJson('/tenant-users');
         setTenantUsers(tu || []);
       } catch (err) { setTenantUsers([]); }
 
-      // Fetch centralized leaves & announcements
+      // Fetch centralized leaves & announcements when available
       try {
-        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`, {
-           headers: { 'x-tenant-id': detectedTenantId }
-        });
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`);
         if (leavesRes.ok) {
           const leaves = await leavesRes.json();
           setLeaveRequests(leaves || []);
           sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(leaves || []));
         }
-      } catch (err) { console.error('Leaves fetch error:', err); }
 
-      fetchScheduleAdjustments();
-    } catch (err) {
-      console.error('Critical data load error:', err);
-      setStatus('Failed to sync data');
-    } finally {
-      setLoading(false);
-    }
-  };
+        fetchScheduleAdjustments();
 
         const annsRes = await fetch(`${activeApiBase}/hr/announcements?tenant=${encodeURIComponent(detectedTenantId)}`);
         if (annsRes.ok) {
@@ -1744,18 +1718,7 @@ function App() {
                 <input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate:e.target.value})} style={inputStyle} />
                 <input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({...leaveForm, endDate:e.target.value})} style={inputStyle} />
                 <textarea rows="3" value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason:e.target.value})} placeholder="Reason" style={{...inputStyle, resize:'vertical'}} />
-                <label style={{fontSize:'0.7rem', color:'#64748b', fontWeight:'900', marginBottom:'-5px'}}>APPROVAL PATH</label>
-                <select
-                  value={leaveForm.reportsTo}
-                  onChange={e => setLeaveForm({...leaveForm, reportsTo:e.target.value})}
-                  style={inputStyle}
-                >
-                  <option value="">Auto-detect (Recommended)</option>
-                  <option value="HR Management">Direct to HR Management (Final Approval)</option>
-                  {employees.filter(e => (e.employeeId || "").toString() !== (user.employeeId || "").toString()).map(e => (
-                    <option key={e.employeeId} value={e.employeeId}>{e.name} (Manager)</option>
-                  ))}
-                </select>
+                <input value={leaveForm.reportsTo} onChange={e => setLeaveForm({...leaveForm, reportsTo:e.target.value})} placeholder="Reports To / Manager" style={inputStyle} />
                 <button type="submit" style={{...smallBtn, background:'#3b82f6'}}>Submit Leave Request</button>
               </form>
               <div style={{display:'grid', gap:'10px'}}>
@@ -1864,29 +1827,12 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
-                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
-                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
-                    </td>
-                  </tr>
-                ) : employees.length === 0 ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
-                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
-                      No employee records found for this tenant.
-                    </td>
-                  </tr>
-                ) : (
-                  employees
-                    .filter(e => {
-                      const s = (empSearch || '').toLowerCase();
-                      const name = (e.name || '').toLowerCase();
-                      const id = (e.employeeId || '').toLowerCase();
-                      return name.includes(s) || id.includes(s);
-                    })
-                    .map((e, idx) => (
+                {employees
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
                   <tr key={idx}>
                     <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                     <td style={{fontWeight:'700', color: 'white'}}>{e.name}</td>
@@ -2157,29 +2103,12 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
-                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
-                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
-                    </td>
-                  </tr>
-                ) : employees.length === 0 ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
-                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
-                      No employee records found for this tenant.
-                    </td>
-                  </tr>
-                ) : (
-                  employees
-                    .filter(e => {
-                      const s = (empSearch || '').toLowerCase();
-                      const name = (e.name || '').toLowerCase();
-                      const id = (e.employeeId || '').toLowerCase();
-                      return name.includes(s) || id.includes(s);
-                    })
-                    .map((e, idx) => (
+                {employees
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
                     <tr key={idx}>
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
@@ -2477,29 +2406,12 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
-                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
-                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
-                    </td>
-                  </tr>
-                ) : employees.length === 0 ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
-                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
-                      No employee records found for this tenant.
-                    </td>
-                  </tr>
-                ) : (
-                  employees
-                    .filter(e => {
-                      const s = (empSearch || '').toLowerCase();
-                      const name = (e.name || '').toLowerCase();
-                      const id = (e.employeeId || '').toLowerCase();
-                      return name.includes(s) || id.includes(s);
-                    })
-                    .map((e, idx) => (
+                {employees
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
                     <tr key={idx}>
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
@@ -2563,29 +2475,12 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
-                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
-                      <div style={{color:'#64748b', fontSize:'0.9rem'}}>Synchronizing staff records...</div>
-                    </td>
-                  </tr>
-                ) : employees.length === 0 ? (
-                  <tr>
-                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
-                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
-                      No employee records found for this tenant.
-                    </td>
-                  </tr>
-                ) : (
-                  employees
-                    .filter(e => {
-                      const s = (empSearch || '').toLowerCase();
-                      const name = (e.name || '').toLowerCase();
-                      const id = (e.employeeId || '').toLowerCase();
-                      return name.includes(s) || id.includes(s);
-                    })
-                    .map((e, idx) => (
+                {employees
+                  .filter(e => {
+                    const s = empSearch.toLowerCase();
+                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
+                  })
+                  .map((e, idx) => (
                     <tr key={idx}>
                       <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                       <td style={{fontWeight: '700', color: 'white'}}>{e.name}</td>
@@ -2944,10 +2839,9 @@ function App() {
               </div>
 
               <div className="form-group">
-                <label>REPORTS TO (Direct Approval)</label>
+                <label>REPORTS TO (Employee ID)</label>
                 <select value={empReportsTo} onChange={e => setEmpReportsTo(e.target.value)}>
-                  <option value="">-- Select Manager --</option>
-                  <option value="HR Management" style={{fontWeight:'bold', color:'#3b82f6'}}>Direct to HR Management (No Manager)</option>
+                  <option value="">-- No Manager --</option>
                   {employees.filter(e => e.employeeId !== empId).map(e => (
                     <option key={e.employeeId} value={e.employeeId}>{e.employeeId} - {e.name}</option>
                   ))}
