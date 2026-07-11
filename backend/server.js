@@ -938,9 +938,15 @@ app.get('/api/hr/leaves/for-approval/:employeeId', tenantGuard, async (req, res)
   const tenantId = req.tenantId || 'master';
   
   // Find all employees who report to this manager
-  const subordinates = (data.employees || []).filter(e => 
-    e.reportsTo === employeeId && e.tenantId === tenantId
-  );
+  const subordinates = (data.employees || []).filter(e => {
+    const isTenantMatch = e.tenantId === tenantId;
+    const isExplicitReport = e.reportsTo === employeeId;
+
+    // RULE: If the requester is 'admin', also include employees with NO manager
+    const isManagerLess = employeeId === 'admin' && (!e.reportsTo || e.reportsTo.trim() === '');
+
+    return isTenantMatch && (isExplicitReport || isManagerLess);
+  });
   
   // Get leaves from subordinates that need approval
   const subordinateIds = subordinates.map(s => s.employeeId);
@@ -959,9 +965,15 @@ app.get('/api/employees/subordinates/:employeeId', tenantGuard, async (req, res)
   const data = await loadData();
   const tenantId = req.tenantId || 'master';
   
-  const subordinates = (data.employees || []).filter(e => 
-    e.reportsTo === employeeId && e.tenantId === tenantId
-  );
+  const subordinates = (data.employees || []).filter(e => {
+    const isTenantMatch = e.tenantId === tenantId;
+    const isExplicitReport = e.reportsTo === employeeId;
+
+    // RULE: If the requester is 'admin', also include employees with NO manager
+    const isManagerLess = employeeId === 'admin' && (!e.reportsTo || e.reportsTo.trim() === '');
+
+    return isTenantMatch && (isExplicitReport || isManagerLess);
+  });
   
   res.json(subordinates);
 });
@@ -975,7 +987,13 @@ app.put('/api/hr/leaves/:id/manager-approve', tenantGuard, async (req, res) => {
   
   data.leaves = (data.leaves || []).map(l => {
     if (l.id === id && l.tenantId === (req.tenantId || l.tenantId || 'master')) {
-      const newStatus = status === 'Approved' ? 'Pending (Admin)' : status;
+      // If the admin is the one approving, it goes straight to 'Approved'
+      // instead of 'Pending (Admin)' because they are the final authority.
+      let newStatus = status === 'Approved' ? 'Pending (Admin)' : status;
+      if (status === 'Approved' && (managerId === 'admin' || managerName === 'admin' || !managerId)) {
+        newStatus = 'Approved';
+      }
+
       updated = {
         ...l,
         status: newStatus,

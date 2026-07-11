@@ -164,7 +164,19 @@ function App() {
   useEffect(() => {
     if (user) {
       loadInitialData();
-      const interval = setInterval(loadInitialData, 30000);
+
+      // Auto-fetch leaves for approval (Rule 7 sync)
+      const approvalId = user.employeeId || (user.username === 'admin' ? 'admin' : null);
+      if (approvalId) {
+        fetchLeavesForApproval(approvalId);
+      }
+
+      const interval = setInterval(() => {
+        loadInitialData();
+        if (approvalId) {
+          fetchLeavesForApproval(approvalId);
+        }
+      }, 30000);
       return () => clearInterval(interval);
     }
   }, [user]);
@@ -319,9 +331,10 @@ function App() {
         sessionStorage.setItem(sessionKey, JSON.stringify(data.user));
         setUser(data.user);
         setActiveTab('dashboard');
-        // Auto-fetch leaves for approval if user has an employee ID
-        if (data.user.employeeId) {
-          fetchLeavesForApproval(data.user.employeeId);
+        // Auto-fetch leaves for approval (Rule 7: Admin as default manager for manager-less employees)
+        const approvalId = data.user.employeeId || (data.user.username === 'admin' ? 'admin' : null);
+        if (approvalId) {
+          fetchLeavesForApproval(approvalId);
         }
       } else {
         setLoginError(data.message || data.error || 'Invalid Credentials');
