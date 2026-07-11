@@ -1784,13 +1784,13 @@ function App() {
                       </div>
                     )}
                     {/* RULE: Integrated Manager Approval in HR Hub */}
-                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && (item.reportsTo === user.employeeId || item.reportsTo === user.displayName || item.reportsTo === user.username) && (
+                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && (item.reportsTo === user.employeeId || item.reportsTo === user.displayName || item.reportsTo === user.username || (user.username === 'admin' && item.reportsTo === 'HR Management')) && (
                       <div style={{display:'flex', gap:'8px', marginTop:'10px'}}>
                         <button onClick={() => approveLeave(item.id, 'Approved')} style={{...smallBtn, background:'#10b981', padding:'6px 10px'}}>Approve as Manager</button>
                         <button onClick={() => approveLeave(item.id, 'Rejected')} style={{...smallBtn, background:'#ef4444', padding:'6px 10px'}}>Reject as Manager</button>
                       </div>
                     )}
-                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && !(item.reportsTo === user.employeeId || item.reportsTo === user.displayName || item.reportsTo === user.username) && (
+                    {(item.status === 'Pending' || item.status === 'Pending (Manager)') && !(item.reportsTo === user.employeeId || item.reportsTo === user.displayName || item.reportsTo === user.username || (user.username === 'admin' && item.reportsTo === 'HR Management')) && (
                       <div style={{marginTop:'10px', fontSize:'0.7rem', color:'#f59e0b', fontStyle:'italic'}}>Waiting for Manager Approval ({item.reportsTo})...</div>
                     )}
                   </div>
@@ -2592,7 +2592,11 @@ function App() {
           <BackToDashboard onClick={() => setActiveTab('dashboard')} />
           <div className="card">
             <h2 style={{marginTop:0, color:'white'}}>✅ Leave Approvals for Your Team</h2>
-            <p style={{color:'#64748b', marginBottom:'20px'}}>Review and approve leave requests from employees reporting to you (Employee ID: {user?.employeeId || 'N/A'}).</p>
+            <p style={{color:'#64748b', marginBottom:'20px'}}>
+              {user?.username === 'admin'
+                ? "Review and approve leave requests from employees reporting to you or directly assigned to HR Management."
+                : `Review and approve leave requests from employees reporting to you (Employee ID: ${user?.employeeId || 'N/A'}).`}
+            </p>
             
             {leavesForApproval.length === 0 ? (
               <div style={{textAlign:'center', padding:'60px', background:'#0f172a', borderRadius:'12px', border:'1px dashed #334155'}}>

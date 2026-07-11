@@ -980,11 +980,17 @@ app.get('/api/hr/leaves/for-approval/:employeeId', tenantGuard, async (req, res)
   
   // Get leaves from subordinates that need approval
   const subordinateIds = subordinates.map(s => s.employeeId);
-  const leavesForApproval = (data.leaves || []).filter(l => 
-    subordinateIds.includes(l.employeeId) && 
-    l.tenantId === tenantId &&
-    (l.status === 'Pending' || l.status === 'Pending (Manager)')
-  );
+  const leavesForApproval = (data.leaves || []).filter(l => {
+    const isSubordinate = subordinateIds.includes(l.employeeId);
+    const isTenantMatch = l.tenantId === tenantId;
+
+    // RULE: If the requester is 'admin', they see "Pending (Admin)" and "HR Management" assignments
+    const isPending = l.status === 'Pending' || l.status === 'Pending (Manager)';
+    const isAdminPending = employeeId === 'admin' && (l.status === 'Pending (Admin)' || l.reportsTo === 'HR Management');
+
+    return isTenantMatch && (isSubordinate || (employeeId === 'admin' && l.reportsTo === 'HR Management')) &&
+           (isPending || (employeeId === 'admin' && l.status === 'Pending (Admin)'));
+  });
   
   res.json(leavesForApproval);
 });
