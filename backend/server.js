@@ -136,7 +136,14 @@ async function loadData() {
   if (db) {
     const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements', 'scheduleAdjustments'];
     for (const col of collections) {
-      try { data[col] = await db.collection(col).find({}).toArray(); } catch (e) { data[col] = []; }
+      try {
+        data[col] = await db.collection(col).find({}).toArray();
+      } catch (e) {
+        console.error(`\x1b[31m[DB] Critical Error loading ${col}: ${e.message}\x1b[0m`);
+        // If we fail to load a collection from MongoDB, we must abort to prevent
+        // the system from assuming the collection is empty and wiping it during saveData.
+        throw new Error(`Failed to load ${col} from MongoDB. Aborting to prevent data loss.`);
+      }
     }
   } else {
     // Check for data.json, but also look for a backup if we're on Render
@@ -183,12 +190,29 @@ async function loadData() {
   return data;
 }
 
-async function saveData(data) {
+async function saveData(data, force = false) {
   const db = await getDb();
   if (db) {
     const collections = ['users', 'employees', 'departments', 'logs', 'orgUnits', 'assignments', 'positionTitles', 'schedules', 'leaves', 'announcements', 'scheduleAdjustments'];
     for (const col of collections) {
       if (data[col]) {
+        // --- PRO SAFETY GUARD (RULE 2: NO DATA LOSS) ---
+        // Before wiping a collection, check if the incoming data is empty.
+        // If memory is empty but DB has records, block the wipe.
+        // This protects against accidental data clearing during server sync.
+        if (data[col].length === 0 && !force) {
+          try {
+            const dbCount = await db.collection(col).countDocuments();
+            if (dbCount > 0) {
+              console.warn(`\x1b[33m[DB-SAFETY] WIPE BLOCKED: Collection '${col}' has ${dbCount} records in DB but incoming data is empty.\x1b[0m`);
+              continue; // Skip this collection to preserve existing data
+            }
+          } catch (e) {
+            console.error(`[DB-SAFETY] Error checking count for ${col}:`, e.message);
+            continue; // Skip on error to be safe
+          }
+        }
+
         await db.collection(col).deleteMany({});
         if (data[col].length > 0) await db.collection(col).insertMany(data[col]);
       }
@@ -1440,7 +1464,7 @@ app.post('/api/master/clear-data', async (req, res) => {
     }
   }
 
-  await saveData(data);
+  await saveData(data, true);
   res.json({ success: true, message: `${target} cleared ${isGlobal ? 'globally' : 'for ' + tenantId}` });
 });
 

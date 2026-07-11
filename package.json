@@ -23,5 +23,5 @@
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0"
   },
-  "version": "1.0.1"
+  "version": "1.0.2"
 }
