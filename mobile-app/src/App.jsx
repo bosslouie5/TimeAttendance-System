@@ -361,7 +361,7 @@ function App() {
         const localLeaves = JSON.parse(localStorage.getItem('leave_requests') || '[]');
         const mergedLeaves = [
           ...remoteLeaves,
-          ...localLeaves.filter(local => !remoteLeaves.some(remote => remote.id === local.id))
+          ...localLeaves.filter(local => (local.tenantId || '') !== targetTenantId && !remoteLeaves.some(remote => remote.id === local.id))
         ];
         localStorage.setItem('leave_requests', JSON.stringify(mergedLeaves));
         setLeaveRequests(mergedLeaves);

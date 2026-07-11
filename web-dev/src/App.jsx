@@ -584,6 +584,38 @@ function App() {
     } catch (e) { setStatus('Clear operation failed'); }
   };
 
+  const handleClearTenantLeaveLogs = async (tenant) => {
+    if (!tenant) return alert('Please select a tenant first.');
+    const tenantId = tenant.tenantId || tenant.username;
+    const tenantName = tenant.companyName || tenantId;
+
+    if (!window.confirm(`WARNING: This will permanently delete all leave logs for ${tenantName}. Continue?`)) return;
+
+    setProcessingMsg(`Clearing leave logs for ${tenantName}...`);
+    setProcessing(true);
+
+    try {
+      const res = await fetch(`${activeApiBase}/master/clear-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId, target: 'leaves' })
+      });
+
+      if (res.ok) {
+        loadInitialData();
+        setStatus(`Leave logs cleared for ${tenantName} ✓`);
+        setIsActionMenuOpen(false);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Clear operation failed');
+      }
+    } catch (e) {
+      setStatus('Clear operation failed');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleClearTenantData = async (tenant) => {
     if (!tenant) return alert('Please select a tenant first.');
     const tenantId = tenant.tenantId || tenant.username;
@@ -1921,6 +1953,8 @@ function App() {
                           await deleteTenant(selectedTenant.tenantId || selectedTenant.username);
                           setProcessing(false);
                         }} className="btn-hover" style={{...addBtn, background:'#ef4444'}}>🗑️ Terminate Tenant</button>
+
+                        <button onClick={() => handleClearTenantLeaveLogs(selectedTenant)} className="btn-hover" style={{...addBtn, background:'#f59e0b'}}>🧹 Clear Leave Logs</button>
 
                         <button onClick={() => handleClearTenantData(selectedTenant)} className="btn-hover" style={{...addBtn, background:'#f97316'}}>🧹 Clear Data</button>
 

@@ -1472,6 +1472,9 @@ app.post('/api/master/clear-data', async (req, res) => {
   if (target === 'logs') {
     if (isGlobal) data.logs = [];
     else data.logs = data.logs.filter(l => l.tenantId !== tenantId);
+  } else if (target === 'leaves') {
+    if (isGlobal) data.leaves = [];
+    else data.leaves = (data.leaves || []).filter(l => l.tenantId !== tenantId);
   } else if (target === 'employees') {
     if (isGlobal) {
       data.employees = [];
