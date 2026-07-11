@@ -186,7 +186,7 @@ function App() {
       const seeded = [{
         id: 'seed-admin-leave-1',
         employeeId: 'EMP001',
-        employeeName: 'Demo Employee',
+        employeeName: 'Employee',
         type: 'Vacation Leave',
         startDate: '2026-07-12',
         endDate: '2026-07-15',

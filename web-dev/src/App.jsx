@@ -289,7 +289,7 @@ function App() {
       const seeded = [{
         id: 'seed-leave-1',
         employeeId: 'EMP001',
-        employeeName: 'Demo Employee',
+        employeeName: 'Employee',
         type: 'Sick Leave',
         startDate: '2026-07-08',
         endDate: '2026-07-09',
@@ -346,7 +346,7 @@ function App() {
     const newRequest = {
       id: `leave-${Date.now()}`,
       employeeId: currentUser?.username || 'EMP001',
-      employeeName: currentUser?.displayName || 'Demo Employee',
+      employeeName: currentUser?.displayName || currentUser?.username || 'Employee',
       type: leaveForm.type,
       startDate: leaveForm.startDate,
       endDate: leaveForm.endDate,
