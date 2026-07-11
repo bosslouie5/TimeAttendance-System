@@ -505,16 +505,22 @@ app.delete('/api/master/dev-accounts/:username', async (req, res) => {
 // --- CORE APP ENDPOINTS ---
 app.get('/api/employees', tenantGuard, async (req, res) => {
   const data = await loadData();
-  const tenantId = req.tenantId || 'master';
+  const tenantId = (req.tenantId || 'master').toString().trim();
   const { requestingEmployeeId } = req.query;
 
-  let filtered = data.employees.filter(e => e.tenantId === tenantId);
+  console.log(`[API] Fetch Employees for Tenant: "${tenantId}" (Requestor: ${requestingEmployeeId || 'Admin'})`);
+
+  let filtered = data.employees.filter(e => {
+    const etid = (e.tenantId || '').toString().trim();
+    return etid.toLowerCase() === tenantId.toLowerCase();
+  });
 
   if (requestingEmployeeId) {
     const subordinateIds = getAllSubordinateIds(requestingEmployeeId, data.employees, tenantId);
     filtered = filtered.filter(e => subordinateIds.includes(e.employeeId) || e.employeeId === requestingEmployeeId);
   }
 
+  console.log(`[API] Returning ${filtered.length} employees for tenant ${tenantId}`);
   res.json(filtered);
 });
 

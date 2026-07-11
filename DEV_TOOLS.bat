@@ -223,13 +223,6 @@ popd
 
 echo [*] 3/4 Finalizing Production Assets...
 :: No need to copy from dist-test anymore, we build directly to dist for MASTER SYNC
-"%GIT_EXE%" add .
-:: Force add dist folders because they are in .gitignore
-"%GIT_EXE%" add -f web-dev/dist/
-"%GIT_EXE%" add -f web-admin/dist/
-"%GIT_EXE%" add -f mobile-app/dist/
-"%GIT_EXE%" commit -m "Production Release: %date% %time%"
-"%GIT_EXE%" push origin main
 
 if exist "mobile-app\android\release-key.jks" (
     echo.
@@ -239,6 +232,18 @@ if exist "mobile-app\android\release-key.jks" (
         call :BUILD_SIGNED_APK
     )
 )
+
+echo [*] 4/4 Committing and Pushing to GitHub...
+"%GIT_EXE%" add .
+:: Force add dist folders because they are in .gitignore
+"%GIT_EXE%" add -f web-dev/dist/
+"%GIT_EXE%" add -f web-admin/dist/
+"%GIT_EXE%" add -f mobile-app/dist/
+if exist "apks\TimeKey_Master.apk" "%GIT_EXE%" add -f "apks\TimeKey_Master.apk"
+if exist "backend\apks\TimeKey_Master.apk" "%GIT_EXE%" add -f "backend\apks\TimeKey_Master.apk"
+
+"%GIT_EXE%" commit -m "Production Release: v!NEW_V! Build !NEW_VC! - %date% %time%"
+"%GIT_EXE%" push origin main
 
 set "INTERNAL_CALL="
 echo [SUCCESS] Full Sync Complete.
@@ -251,6 +256,7 @@ set "CONFIG_FILE=mobile-app/src/app_config.json"
 set "ADMIN_CONFIG=web-admin/src/app_config.json"
 set "DEV_CONFIG=web-dev/src/app_config.json"
 set "PKG_FILE=mobile-app/package.json"
+set "ROOT_PKG_FILE=package.json"
 set "GRADLE_FILE=mobile-app/android/app/build.gradle"
 set "CUR_V=1.0.0"
 
@@ -300,11 +306,14 @@ if exist "backend/apks/latest-version-test.json" (
 )
 
 
-:: Sync package.json
+:: Sync package.json files
 if exist "%PKG_FILE%" (
     node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('%PKG_FILE%', 'utf8').replace(/^\uFEFF/, '')); p.version='!NEW_V!'; fs.writeFileSync('%PKG_FILE%', JSON.stringify(p, null, 2), 'utf8');"
-    echo [OK] package.json updated.
 )
+if exist "%ROOT_PKG_FILE%" (
+    node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('%ROOT_PKG_FILE%', 'utf8').replace(/^\uFEFF/, '')); p.version='!NEW_V!'; fs.writeFileSync('%ROOT_PKG_FILE%', JSON.stringify(p, null, 2), 'utf8');"
+)
+echo [OK] package.json updated.
 exit /b
 
 :BACKUP
@@ -426,6 +435,8 @@ if exist "%APK_SOURCE%" (
     echo [ERROR] APK output not found after build.
 )
 popd
-pause
-goto MENU
-goto MENU
+if "!INTERNAL_CALL!"=="" (
+    pause
+    goto MENU
+)
+exit /b

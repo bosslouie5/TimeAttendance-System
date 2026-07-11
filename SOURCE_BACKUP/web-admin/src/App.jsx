@@ -11,10 +11,18 @@ function App() {
   const [saasStatus, setSaasStatus] = useState('Syncing...');
 
   const currentPath = window.location.pathname;
-  const pathParts = currentPath.split('/');
+  const pathParts = currentPath.split('/').filter(Boolean);
   const portalIndex = pathParts.indexOf('portal');
-  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim() : '';
+  const detectedTenantId = portalIndex !== -1 ? String(pathParts[portalIndex + 1] || '').trim().split('?')[0].split('#')[0] : '';
   const isPortalMissingTenant = !detectedTenantId;
+
+  useEffect(() => {
+    if (detectedTenantId) {
+      console.log(`[SYSTEM] Portal Active for Tenant: ${detectedTenantId}`);
+    } else {
+      console.warn(`[SYSTEM] No Tenant ID detected in URL. Please use /portal/<TenantID>`);
+    }
+  }, [detectedTenantId]);
 
   const searchParams = new URLSearchParams(window.location.search);
   const isDevMode = searchParams.get('devMode') === 'true';
@@ -207,60 +215,80 @@ function App() {
   };
 
   const loadInitialData = async () => {
+    if (loading) return;
+    setLoading(true);
     try {
-      const q = user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '';
-      const [e, b, o, l, pt, sc] = await Promise.all([
-        requestJson(`/employees${q}`),
-        requestJson('/departments'),
-        requestJson('/org-units'),
-        requestJson(`/logs${q}`),
-        requestJson('/position-titles'),
-        requestJson('/schedules')
+      const q = (user?.username === 'admin' || user?.isConsultant) ? '' : (user?.employeeId ? `?requestingEmployeeId=${user.employeeId}` : '');
+
+      const fetchTask = async (path, setter) => {
+        try {
+          const data = await requestJson(path);
+          setter(data || []);
+        } catch (err) {
+          console.error(`Error loading ${path}:`, err);
+          setter([]);
+        }
+      };
+
+      await Promise.all([
+        fetchTask(`/employees${q}`, setEmployees),
+        fetchTask('/departments', setDepartments),
+        fetchTask('/org-units', setOrgUnits),
+        fetchTask(`/logs${q}`, setLogs),
+        fetchTask('/position-titles', setPositionTitles),
+        fetchTask('/schedules', setSchedules)
       ]);
-      setEmployees(e || []);
-      setDepartments(b || []);
-      setOrgUnits(o || []);
-      setLogs(l || []);
-      setPositionTitles(pt || []);
-      setSchedules(sc || []);
+
       try {
         const a = await requestJson('/assignments');
         setAssignments(a || []);
       } catch (err) { setAssignments([]); }
+
       try {
         const tu = await requestJson('/tenant-users');
         setTenantUsers(tu || []);
       } catch (err) { setTenantUsers([]); }
 
-      // Fetch centralized leaves & announcements when available
       try {
-        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`);
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`, {
+           headers: { 'x-tenant-id': detectedTenantId }
+        });
         if (leavesRes.ok) {
           const leaves = await leavesRes.json();
           setLeaveRequests(leaves || []);
           sessionStorage.setItem('webadmin_hr_leaves', JSON.stringify(leaves || []));
         }
+      } catch (err) { console.error('Leaves fetch error:', err); }
 
-        fetchScheduleAdjustments();
-
-        const annsRes = await fetch(`${activeApiBase}/hr/announcements?tenant=${encodeURIComponent(detectedTenantId)}`);
+      try {
+        const annsRes = await fetch(`${activeApiBase}/hr/announcements?tenant=${encodeURIComponent(detectedTenantId)}`, {
+          headers: { 'x-tenant-id': detectedTenantId }
+        });
         if (annsRes.ok) {
           const anns = await annsRes.json();
           setHrAnnouncements(anns || []);
           sessionStorage.setItem('webadmin_hr_announcements', JSON.stringify(anns || []));
         }
-        // Fetch notifications for admin
-        try {
-          const notesRes = await fetch(`${activeApiBase}/hr/notifications?tenant=${encodeURIComponent(detectedTenantId)}`);
-          if (notesRes.ok) {
-            const notes = await notesRes.json();
-            setHrNotifications(notes || []);
-            sessionStorage.setItem('webadmin_hr_notifications', JSON.stringify(notes || []));
-          }
-        } catch (e) { /* ignore */ }
-      } catch (err) { /* ignore when backend not present */ }
+      } catch (err) { console.error('Anns fetch error:', err); }
 
-    } catch (err) { console.error('Load failed', err); }
+      try {
+        const notesRes = await fetch(`${activeApiBase}/hr/notifications?tenant=${encodeURIComponent(detectedTenantId)}`, {
+          headers: { 'x-tenant-id': detectedTenantId }
+        });
+        if (notesRes.ok) {
+          const notes = await notesRes.json();
+          setHrNotifications(notes || []);
+          sessionStorage.setItem('webadmin_hr_notifications', JSON.stringify(notes || []));
+        }
+      } catch (e) { /* ignore */ }
+
+      fetchScheduleAdjustments();
+    } catch (err) {
+      console.error('Critical data load error:', err);
+      setStatus('Failed to sync data');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -1309,6 +1337,8 @@ function App() {
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .form-group { display: flex; flexDirection: column; gap: 8px; }
         .form-group label { color: #94a3b8; fontSize: 0.8rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .loading-spinner { width: 30px; height: 30px; border: 3px solid rgba(59, 130, 246, 0.1); border-left-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
@@ -1827,12 +1857,30 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {employees
-                  .filter(e => {
-                    const s = empSearch.toLowerCase();
-                    return e.name.toLowerCase().includes(s) || e.employeeId.toLowerCase().includes(s);
-                  })
-                  .map((e, idx) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px'}}>
+                      <div className="loading-spinner" style={{marginBottom:'10px'}}></div>
+                      <div style={{color:'#64748b', fontSize:'0.9rem', fontWeight:'900'}}>SYNCING STAFF RECORDS...</div>
+                    </td>
+                  </tr>
+                ) : employees.length === 0 ? (
+                  <tr>
+                    <td colSpan="16" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                      <div style={{fontSize:'3rem', marginBottom:'10px'}}>📁</div>
+                      <div style={{fontWeight:'900'}}>NO EMPLOYEE RECORDS FOUND</div>
+                      <div style={{fontSize:'0.8rem', marginTop:'5px'}}>Try to add a new employee or check your connection.</div>
+                    </td>
+                  </tr>
+                ) : (
+                  employees
+                    .filter(e => {
+                      const s = (empSearch || '').toLowerCase();
+                      const name = (e.name || '').toLowerCase();
+                      const id = (e.employeeId || '').toLowerCase();
+                      return name.includes(s) || id.includes(s);
+                    })
+                    .map((e, idx) => (
                   <tr key={idx}>
                     <td style={{fontWeight:'900', color:'#3b82f6'}}>{e.employeeId}</td>
                     <td style={{fontWeight:'700', color: 'white'}}>{e.name}</td>
@@ -1868,10 +1916,9 @@ function App() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
-            {employees.length === 0 && <div style={{textAlign:'center', padding:'40px', color:'#64748b', fontWeight: 'bold'}}>No employee records found.</div>}
           </div>
         </div>
       </div>
