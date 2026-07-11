@@ -173,7 +173,7 @@ function App() {
   const [selectedAssignEmpDev, setSelectedAssignEmpDev] = useState(null);
   const [selectedAssignBranchesDev, setSelectedAssignBranchesDev] = useState([]);
   const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('');
-  const [activeApiBase, setActiveApiBase] = useState(null);
+  const [activeApiBase, setActiveApiBase] = useState(appConfig.defaultApiUrl || '/api');
   const [tunnelBase, setTunnelBase] = useState(null);
   const [saasStatus, setSaasStatus] = useState('Connecting...');
   const [processing, setProcessing] = useState(false);
@@ -195,9 +195,11 @@ function App() {
 
   useEffect(() => {
     // Strictly Local/Relative API Mode
-    setActiveApiBase('/api');
+    const base = appConfig.defaultApiUrl || '/api';
+    if (activeApiBase !== base) setActiveApiBase(base);
     setSaasStatus('Local System Active');
   }, []);
+
 
   useEffect(() => { if (activeApiBase) loadInitialData(); }, [activeApiBase]);
   useEffect(() => { const timer = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timer); }, []);

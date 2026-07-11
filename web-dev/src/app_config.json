@@ -1,4 +1,5 @@
 {
-  "version": "1.0.4",
-  "buildDate": "2026-07-11T00:00:26.940Z"
+  "version": "1.0.5",
+  "buildDate": "2026-07-11T00:12:25.349Z",
+  "defaultApiUrl": "https://timeattendance-system.onrender.com/api"
 }

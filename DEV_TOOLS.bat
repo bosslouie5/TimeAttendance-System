@@ -180,13 +180,17 @@ echo [*] 1/4 Checking for Version Bump...
 call :VERSION_BUMP_UI
 
 :: CRITICAL: Inject Production API URL before building for Sync
-set "CONFIG_FILE=mobile-app/src/app_config.json"
-if exist "%CONFIG_FILE%" (
-    node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%CONFIG_FILE%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='%PROD_API_URL%'; fs.writeFileSync('%CONFIG_FILE%', JSON.stringify(c, null, 2), 'utf8');"
-    echo [OK] Production API URL injected: %PROD_API_URL%
-)
+set "ADMIN_CONFIG=web-admin/src/app_config.json"
+set "DEV_CONFIG=web-dev/src/app_config.json"
+set "MOBILE_CONFIG=mobile-app/src/app_config.json"
+
+if exist "%ADMIN_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%ADMIN_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='%PROD_API_URL%'; fs.writeFileSync('%ADMIN_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+if exist "%DEV_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%DEV_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='%PROD_API_URL%'; fs.writeFileSync('%DEV_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+if exist "%MOBILE_CONFIG%" node -e "const fs=require('fs'); const c=JSON.parse(fs.readFileSync('%MOBILE_CONFIG%', 'utf8').replace(/^\uFEFF/, '')); c.defaultApiUrl='%PROD_API_URL%'; fs.writeFileSync('%MOBILE_CONFIG%', JSON.stringify(c, null, 2), 'utf8');"
+echo [OK] Production API URL injected into all modules.
 
 echo [*] 2/4 Rebuilding All Production Assets with Version !NEW_V!...
+
 :: NINJA CLEAN: Ensure no ghost versions
 pushd web-dev & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
 pushd web-admin & if exist dist rd /s /q dist & call npx vite build --outDir dist --emptyOutDir & popd
@@ -259,12 +263,17 @@ if exist "%DEV_CONFIG%" (
 )
 
 :: Pre-sync APK Version Meta for OTA so it matches immediately
+if not exist "apks" mkdir "apks"
 if exist "backend/apks/latest-version.json" (
-    node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('backend/apks/latest-version.json', 'utf8')); v.version='!NEW_V!'; v.versionCode='!NEW_VC!'; v.releaseDate=new Date().toISOString(); fs.writeFileSync('backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+    node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('backend/apks/latest-version.json', 'utf8')); v.version='!NEW_V!'; v.versionCode='!NEW_VC!'; v.releaseDate=new Date().toISOString(); fs.writeFileSync('backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8'); fs.writeFileSync('apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+) else (
+    node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; if(!fs.existsSync('backend/apks')) fs.mkdirSync('backend/apks', {recursive:true}); fs.writeFileSync('backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8'); fs.writeFileSync('apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
 )
+
 if exist "backend/apks/latest-version-test.json" (
     node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('backend/apks/latest-version-test.json', 'utf8')); v.version='!NEW_V!'; v.versionCode='!NEW_VC!'; v.releaseDate=new Date().toISOString(); fs.writeFileSync('backend/apks/latest-version-test.json', JSON.stringify(v, null, 2), 'utf8');"
 )
+
 
 :: Sync package.json
 if exist "%PKG_FILE%" (
@@ -379,10 +388,13 @@ if exist "%APK_SOURCE%" (
 
     :: Sync to Backend for OTA Updates
     if not exist "..\..\backend\apks" mkdir "..\..\backend\apks"
+    if not exist "..\..\apks" mkdir "..\..\apks"
     copy /y "%APK_SOURCE%" "..\..\backend\apks\TimeKey_Master.apk" >nul
+    copy /y "%APK_SOURCE%" "..\..\apks\TimeKey_Master.apk" >nul
 
     :: Create latest-version.json for Broadcast (Sync both prod and test for safety)
-    node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8'); fs.writeFileSync('../../backend/apks/latest-version-test.json', JSON.stringify(v, null, 2), 'utf8');"
+    node -e "const fs=require('fs'); const v={version:'!NEW_V!', versionCode:'!NEW_VC!', downloadUrl:'/api/master/download-apk/TimeKey_Master.apk', releaseDate:new Date().toISOString(), notes:'System Update v!NEW_V!'}; fs.writeFileSync('../../backend/apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8'); fs.writeFileSync('../../backend/apks/latest-version-test.json', JSON.stringify(v, null, 2), 'utf8'); fs.writeFileSync('../../apks/latest-version.json', JSON.stringify(v, null, 2), 'utf8');"
+
 
     echo [OK] Signed APK created and Synced for OTA updates.
 ) else (

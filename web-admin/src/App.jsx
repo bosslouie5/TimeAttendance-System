@@ -7,7 +7,7 @@ import appConfig from './app_config.json';
 const API_BASE = '/api';
 
 function App() {
-  const [activeApiBase, setActiveApiBase] = useState('/api');
+  const [activeApiBase, setActiveApiBase] = useState(appConfig.defaultApiUrl || '/api');
   const [saasStatus, setSaasStatus] = useState('Syncing...');
 
   const currentPath = window.location.pathname;
@@ -130,15 +130,18 @@ function App() {
 
   useEffect(() => {
     const checkConnection = () => {
-      setActiveApiBase('/api');
+      // Use config URL if present, otherwise default to relative /api
+      const base = appConfig.defaultApiUrl || '/api';
+      if (activeApiBase !== base) setActiveApiBase(base);
+
       // Fetch App Version (Global)
-      fetch(`${activeApiBase}/app-version`)
+      fetch(`${base}/app-version`)
         .then(r => r.json())
         .then(data => setAppVersionInfo(data))
         .catch(() => {});
 
       if (detectedTenantId) {
-        fetch(`${activeApiBase}/tenant-info/${detectedTenantId}`)
+        fetch(`${base}/tenant-info/${detectedTenantId}`)
           .then(r => r.json())
           .then(data => {
             setTenantDetails(data);
@@ -153,6 +156,7 @@ function App() {
     };
     checkConnection();
   }, [detectedTenantId, activeApiBase]);
+
 
   useEffect(() => {
     if (user) {
