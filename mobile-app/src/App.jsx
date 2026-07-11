@@ -473,17 +473,11 @@ function App() {
       const normalizedCurrentVersion = currentVersion || '0';
       const normalizedCandidateVersion = candidateVersion || currentVersion || '0';
 
-      if (normalizedCandidateVersion && normalizedCandidateVersion !== normalizedCurrentVersion) {
-        return compareVersions(normalizedCandidateVersion, normalizedCurrentVersion) > 0;
-      }
+      // RULE: If version strings are identical, do not show the upgrade prompt.
+      if (normalizedCandidateVersion === normalizedCurrentVersion) return false;
 
-      const parsedCandidateCode = parseInt(candidateCode || '0', 10);
-      const parsedCurrentCode = parseInt(currentCode || '0', 10);
-      if (!isNaN(parsedCandidateCode) && !isNaN(parsedCurrentCode)) {
-        return parsedCandidateCode > parsedCurrentCode;
-      }
-
-      return false;
+      // Compare semantic versioning (e.g., 1.0.1 > 1.0.0)
+      return compareVersions(normalizedCandidateVersion, normalizedCurrentVersion) > 0;
     };
 
     const isGithubProductionReleaseReady = async (renderVersion, renderCode, currentVersion, currentCode) => {
@@ -492,19 +486,21 @@ function App() {
         const githubRes = await getJson(`${GITHUB_PAGES_URL}/apks/latest-version.json?t=${Date.now()}`);
         if (!githubRes.ok || !githubRes.data) return false;
 
-        const githubVersion = githubRes.data.version || githubRes.data.apkVersion || githubRes.data.versionName || null;
-        const githubCode = githubRes.data.versionCode ? parseInt(githubRes.data.versionCode, 10) : null;
+        const githubNotes = githubRes.data.notes || "";
 
-        if (!githubVersion && githubCode === null) return false;
+        // Requirement: GitHub notes must contain "Production Release" to signal build completion
+        if (!githubNotes.toLowerCase().includes("production release")) {
+          console.log("[OTA-DEBUG] GitHub build is not yet marked as 'Production Release'.");
+          return false;
+        }
 
+        // Check if Render version is strictly newer than local version
         const renderIsNewer = isVersionActuallyNewer(renderVersion, renderCode, currentVersion, currentCode);
         if (!renderIsNewer) return false;
 
-        if (githubVersion && githubVersion !== renderVersion) return false;
-        if (githubCode !== null && renderCode !== null && githubCode !== renderCode) return false;
-
         return true;
       } catch (e) {
+        console.error("[OTA-DEBUG] GitHub check failed:", e.message);
         return false;
       }
     };
