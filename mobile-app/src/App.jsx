@@ -507,8 +507,12 @@ function App() {
 
     // WHAT'S NEW LOGIC (One-time prompt after the GitHub production release is ready)
     const checkWhatsNew = async () => {
-      const lastSeenCode = localStorage.getItem('last_seen_version_code');
-      const currentCode = appConfig.versionCode;
+      // Track the last server release the user has seen separately from the
+      // local app version. This avoids conflating app upgrades with server
+      // production releases and ensures users see the "What's New" prompt
+      // when a new production release is available on the server.
+      const lastSeenServerCode = localStorage.getItem('last_seen_server_release_code');
+      const currentCode = parseInt(appConfig.versionCode || '0', 10);
       const currentVer = appConfig.version || '1.0.0';
 
       try {
@@ -518,10 +522,17 @@ function App() {
             const latest = renderRes.data;
             const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
             const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
-            const releaseReady = await isGithubProductionReleaseReady(serverVersion, latestCode, currentVer, currentCode);
-            const shouldPromptForWhatsNew = lastSeenCode && lastSeenCode !== currentCode && releaseReady && isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
 
-            if (shouldPromptForWhatsNew) {
+            const releaseReady = await isGithubProductionReleaseReady(serverVersion, latestCode, currentVer, currentCode);
+
+            // Show prompt when:
+            // - the GitHub notes contain 'Production Release'
+            // - the server version is newer than the local app
+            // - and the user hasn't already seen this server release
+            const serverIsNewer = isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
+            const notSeenThisRelease = latestCode && String(lastSeenServerCode) !== String(latestCode);
+
+            if (releaseReady && serverIsNewer && notSeenThisRelease) {
               setWhatsNewData(latest);
               setShowWhatsNew(true);
             } else {
@@ -537,7 +548,8 @@ function App() {
         setShowWhatsNew(false);
       }
 
-      localStorage.setItem('last_seen_version_code', currentCode);
+      // Persist the last-seen local app version (unchanged behavior)
+      localStorage.setItem('last_seen_version_code', String(currentCode));
       localStorage.setItem('last_seen_version', currentVer);
     };
 
@@ -1282,7 +1294,19 @@ function App() {
                      <strong style={{color: '#fff', display: 'block', marginBottom: '8px'}}>Release Notes:</strong>
                      {whatsNewData?.changelog || 'We have improved the system stability and fixed some bugs to give you a better experience.'}
                   </div>
-                  <button className="btn-primary" style={{background: '#10b981'}} onClick={() => setShowWhatsNew(false)}>COOL, GOT IT!</button>
+                  <button
+                    className="btn-primary"
+                    style={{background: '#10b981'}}
+                    onClick={() => {
+                      try {
+                        const code = whatsNewData?.versionCode || whatsNewData?.version || Date.now();
+                        if (code) localStorage.setItem('last_seen_server_release_code', String(code));
+                      } catch(e) {}
+                      setShowWhatsNew(false);
+                    }}
+                  >
+                    COOL, GOT IT!
+                  </button>
                </div>
             </div>
           )}
