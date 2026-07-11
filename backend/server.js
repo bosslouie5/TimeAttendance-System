@@ -890,6 +890,7 @@ app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
     reportsTo: isDirectToHR ? 'HR Management' : reportsTo,
     createdAt: new Date().toISOString()
   };
+  console.log(`[API] New Leave Request: ${newLeave.id} for Employee ${newLeave.employeeId} (${newLeave.status})`);
   data.leaves.push(newLeave);
   await saveData(data);
   res.json(newLeave);
@@ -946,9 +947,9 @@ app.put('/api/hr/leaves/:id/status', tenantGuard, async (req, res) => {
         id: `note-${Date.now()}-mgr`,
         tenantId,
         title: `Leave ${updated.status}: ${updated.employeeName}`,
-        message: `${updated.employeeName} (${updated.employeeId}) leave request has been ${updated.status} by ${managerName || managerId}.`,
+        message: `${updated.employeeName} (${updated.employeeId}) leave request has been ${updated.status} by ${updated.approvedBy || updated.approvedByManager || 'Admin'}.`,
         type: 'info',
-        targetEmployeeId: managerId || '',
+        targetEmployeeId: updated.managerId || '',
         createdAt: new Date().toISOString()
       };
       data.notifications.unshift(mgrNote);

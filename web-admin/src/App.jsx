@@ -244,7 +244,7 @@ function App() {
       } catch (err) { setTenantUsers([]); }
 
       try {
-        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.employeeId ? '&employeeId=' + user.employeeId : ''}`, {
+        const leavesRes = await fetch(`${activeApiBase}/hr/leaves?tenant=${encodeURIComponent(detectedTenantId)}${user?.username === 'admin' ? '' : (user?.employeeId ? '&employeeId=' + user.employeeId : '')}`, {
            headers: { 'x-tenant-id': detectedTenantId }
         });
         if (leavesRes.ok) {
