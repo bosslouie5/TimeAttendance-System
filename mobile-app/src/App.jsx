@@ -456,24 +456,64 @@ function App() {
         localStorage.removeItem('pending_update_purge');
     }
 
-    // WHAT'S NEW LOGIC (One-time prompt after update)
+    const compareVersions = (a, b) => {
+      const pa = (a || '0').split('.').map(n => parseInt(n, 10) || 0);
+      const pb = (b || '0').split('.').map(n => parseInt(n, 10) || 0);
+      const len = Math.max(pa.length, pb.length);
+      for (let i = 0; i < len; i++) {
+        const na = pa[i] || 0;
+        const nb = pb[i] || 0;
+        if (na > nb) return 1;
+        if (na < nb) return -1;
+      }
+      return 0;
+    };
+
+    const isVersionActuallyNewer = (candidateVersion, candidateCode, currentVersion, currentCode) => {
+      const normalizedCurrentVersion = currentVersion || '0';
+      const normalizedCandidateVersion = candidateVersion || currentVersion || '0';
+
+      if (normalizedCandidateVersion && normalizedCandidateVersion !== normalizedCurrentVersion) {
+        return compareVersions(normalizedCandidateVersion, normalizedCurrentVersion) > 0;
+      }
+
+      const parsedCandidateCode = parseInt(candidateCode || '0', 10);
+      const parsedCurrentCode = parseInt(currentCode || '0', 10);
+      if (!isNaN(parsedCandidateCode) && !isNaN(parsedCurrentCode)) {
+        return parsedCandidateCode > parsedCurrentCode;
+      }
+
+      return false;
+    };
+
+    // WHAT'S NEW LOGIC (One-time prompt after a genuinely newer version)
     const checkWhatsNew = async () => {
       const lastSeenCode = localStorage.getItem('last_seen_version_code');
       const currentCode = appConfig.versionCode;
+      const currentVer = appConfig.version || '1.0.0';
 
-      if (lastSeenCode && lastSeenCode !== currentCode) {
-         try {
-           // We fetch the update notes from the metadata source
-           const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
-           const res = await getJson(`${GITHUB_PAGES_URL}/apks/latest-version.json?t=${Date.now()}`);
-           if (res.ok && res.data) {
-             setWhatsNewData(res.data);
-             setShowWhatsNew(true);
-           }
-         } catch (e) {}
+      try {
+        const GITHUB_PAGES_URL = 'https://bosslouie5.github.io/TimeAttendance-System';
+        const res = await getJson(`${GITHUB_PAGES_URL}/apks/latest-version.json?t=${Date.now()}`);
+        if (res.ok && res.data) {
+          const latest = res.data;
+          const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
+          const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
+          const shouldPromptForWhatsNew = lastSeenCode && lastSeenCode !== currentCode && isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
+
+          if (shouldPromptForWhatsNew) {
+            setWhatsNewData(latest);
+            setShowWhatsNew(true);
+          } else {
+            setShowWhatsNew(false);
+          }
+        }
+      } catch (e) {
+        setShowWhatsNew(false);
       }
+
       localStorage.setItem('last_seen_version_code', currentCode);
-      localStorage.setItem('last_seen_version', appConfig.version);
+      localStorage.setItem('last_seen_version', currentVer);
     };
 
     const checkUpdate = async () => {
@@ -502,26 +542,7 @@ function App() {
           const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
           const serverVersion = latest.version || latest.apkVersion || latest.versionName || currentVer;
 
-          const compareVersions = (a, b) => {
-            const pa = (a || '0').split('.').map(n => parseInt(n, 10) || 0);
-            const pb = (b || '0').split('.').map(n => parseInt(n, 10) || 0);
-            const len = Math.max(pa.length, pb.length);
-            for (let i = 0; i < len; i++) {
-              const na = pa[i] || 0;
-              const nb = pb[i] || 0;
-              if (na > nb) return 1;
-              if (na < nb) return -1;
-            }
-            return 0;
-          };
-
-          let isNewer = false;
-
-          if (latestCode !== null && !isNaN(latestCode)) {
-            isNewer = latestCode > currentCode;
-          } else if (serverVersion) {
-            isNewer = compareVersions(serverVersion, currentVer) > 0;
-          }
+          const isNewer = isVersionActuallyNewer(serverVersion, latestCode, currentVer, currentCode);
 
           // PRO LOGGING
           console.log(`[OTA-CHECK] Local: v${currentVer} (${currentCode}) | Server: v${serverVersion} (${latestCode}) | isNewer: ${isNewer}`);
