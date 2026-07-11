@@ -94,6 +94,7 @@ function App() {
 
   // Tenant Management States
   const [selectedTenant, setSelectedTenant] = useState(null);
+  const [selectedHrTenant, setSelectedHrTenant] = useState('ALL');
   const [tenantSearch, setTenantSearch] = useState('');
   const [globalTenantFilter, setGlobalTenantFilter] = useState('ALL');
   const [selectedBranchTenant, setSelectedBranchTenant] = useState('');
@@ -1767,7 +1768,28 @@ function App() {
 
             <div style={{display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:'20px'}}>
               <div style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'20px', padding:'20px'}}>
-                <h3 style={{marginTop:0, color:'#f8fafc'}}>Leave Requests</h3>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'15px', marginBottom:'15px'}}>
+                  <div>
+                    <h3 style={{marginTop:0, color:'#f8fafc'}}>Leave Requests</h3>
+                    <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>Tenant-scoped leave view and clear logs action</div>
+                  </div>
+                  <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
+                    <select value={selectedHrTenant} onChange={e => setSelectedHrTenant(e.target.value)} style={{...inputStyle, background:'#0f172a', color:'white', border:'1px solid #334155'}}>
+                      <option value="ALL">ALL TENANTS</option>
+                      {uniqueTenants.map(u => (
+                        <option key={u.tenantId || u.username} value={u.tenantId || u.username}>
+                          {u.companyName || u.username}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedHrTenant !== 'ALL' && (
+                      <button type="button" onClick={() => {
+                        const tenant = uniqueTenants.find(u => (u.tenantId || u.username) === selectedHrTenant);
+                        handleClearTenantLeaveLogs(tenant);
+                      }} style={{...smallBtn, background:'#f59e0b', padding:'10px 16px'}}>Clear Leave Logs</button>
+                    )}
+                  </div>
+                </div>
                 <form onSubmit={submitLeaveRequest} style={{display:'grid', gap:'10px', marginBottom:'15px'}}>
                   <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type:e.target.value})} style={inputStyle}>
                     <option>Sick Leave</option>

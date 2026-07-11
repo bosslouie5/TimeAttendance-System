@@ -498,19 +498,28 @@ function App() {
 
         if (latest) {
           const currentVer = appConfig.version || '1.0.0';
-          const currentCode = parseInt(appConfig.versionCode || 0);
-          const latestCode = parseInt(latest.versionCode || 0);
+          const currentCode = parseInt(appConfig.versionCode || '0', 10);
+          const latestCode = latest.versionCode ? parseInt(latest.versionCode, 10) : null;
+
+          const compareVersions = (a, b) => {
+            const pa = (a || '0').split('.').map(n => parseInt(n, 10) || 0);
+            const pb = (b || '0').split('.').map(n => parseInt(n, 10) || 0);
+            const len = Math.max(pa.length, pb.length);
+            for (let i = 0; i < len; i++) {
+              const na = pa[i] || 0;
+              const nb = pb[i] || 0;
+              if (na > nb) return 1;
+              if (na < nb) return -1;
+            }
+            return 0;
+          };
 
           let isNewer = false;
 
-          // 1. Primary Check: versionCode (Ensures build accuracy)
-          if (latestCode !== currentCode) {
-             isNewer = true;
-          }
-
-          // 2. Fallback: Semantic Versioning comparison
-          if (!isNewer && latest.version !== currentVer) {
-             isNewer = true;
+          if (latestCode !== null && !isNaN(latestCode)) {
+            isNewer = latestCode > currentCode;
+          } else if (latest.version) {
+            isNewer = compareVersions(latest.version, currentVer) > 0;
           }
 
           // PRO LOGGING
