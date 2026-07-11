@@ -1385,7 +1385,20 @@ app.get('/api/app-version', (req, res) => {
       // RULE: 'version' field remains for mobile app updates, prioritized by the available APK
       payload.version = latest.version;
       payload.versionCode = latest.versionCode || payload.versionCode;
-          payload.systemVersion = latest.version || payload.systemVersion;
+    } catch (e) {
+      console.warn('[OTA] Failed to parse latest version metadata', e.message);
+    }
+  }
+
+  if (!payload.apkUrl && payload.downloadUrl) payload.apkUrl = payload.downloadUrl;
+  if (!payload.downloadUrl && payload.apkUrl) payload.downloadUrl = payload.apkUrl;
+  if (!payload.apkUrl && !payload.downloadUrl) payload.apkUrl = '/api/master/download-apk/TimeKey_Master.apk';
+
+  res.json(payload);
+});
+
+// --- ADMIN SYSTEM UPDATES (OTA) ---
+app.post('/api/master/update-system', async (req, res) => {
   const { version, changelog, forceUpdate } = req.body;
   const verPath = path.join(__dirname, 'version.json');
   const current = { version, changelog, forceUpdate, buildDate: new Date().toISOString() };
