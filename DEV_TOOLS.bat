@@ -184,8 +184,19 @@ goto MENU
 :MASTER_SYNC
 cls
 echo.
-echo [!] WARNING: This will sync LAB (4002) to PRODUCTION (4001) and DEPLOY LIVE.
-set /p confirm="Proceed with Full Sync? (Y/N): "
+echo   [!] NINJA PROTECTION: MASTER SYNC CHECKPOINT
+echo   ______________________________________________________
+echo.
+echo   WARNING: Deployment to Render detected.
+echo   Render uses an EPHEMERAL DISK. This means:
+echo   - backend/data.json is GONE on every sync/redeploy.
+echo   - Any data added via the Portal while LIVE will be WIPED.
+echo.
+echo   [RECOMMENDATION]
+echo   - Use MongoDB Atlas (Set MONGODB_URI in Render) for 100%% safety.
+echo   - Or manually backup your production data before syncing.
+echo.
+set /p confirm="Master Tropa, are you 100%% sure you want to deploy? (Y/N): "
 if /i "%confirm%" neq "Y" goto MENU
 
 set "INTERNAL_CALL=1"

@@ -8,10 +8,14 @@ dist-test/
 tunnel.log
 server.log
 
-# Private Data (Huwag i-upload para safe)
-data.json
-data-test.json
-dev_accounts.json
+# Private Data (PROTECTED - DO NOT PUSH)
+backend/data.json
+backend/data-test.json
+backend/dev_accounts.json
+backend/server_test.log
+backend/server_prod.log
+backend/tunnel.log
+*.json.bak
 
 # Binaries (Portable tools)
 DEV_TOOLS/

@@ -31,7 +31,11 @@ let dbClient = null;
 
 console.log(`\n\x1b[36m[${brand.brandName.toUpperCase()}] System Starting...\x1b[0m`);
 console.log(`\x1b[35m[ENV] Mode: ${isTestMode ? 'DEVELOPER LAB (' + brand.devHostname + ')' : 'PRODUCTION (' + brand.prodHostname + ')'}\x1b[0m`);
-console.log(`\x1b[35m[ENV] Database: ${MONGODB_URI ? 'MONGODB ATLAS (Cloud)' : dbFile + ' (Local JSON)'}\x1b[0m\n`);
+console.log(`\x1b[35m[ENV] Database: ${MONGODB_URI ? 'MONGODB ATLAS (Cloud)' : dbFile + ' (Local JSON)'}\x1b[0m`);
+if (!MONGODB_URI && !isTestMode) {
+  console.log(`\x1b[31m[WARNING] No MONGODB_URI detected in Production! Data will be LOST on every redeploy/restart on Render.\x1b[0m`);
+}
+console.log('');
 
 async function getDb() {
   const uri = process.env.MONGODB_URI;
@@ -134,11 +138,16 @@ async function loadData() {
     for (const col of collections) {
       try { data[col] = await db.collection(col).find({}).toArray(); } catch (e) { data[col] = []; }
     }
-  } else if (fs.existsSync(DB_PATH)) {
-    try {
-      const local = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-      data = { ...data, ...local };
-    } catch (e) { }
+  } else {
+    // Check for data.json, but also look for a backup if we're on Render
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        const local = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+        data = { ...data, ...local };
+      } catch (e) { console.error('[DB] Error reading data.json:', e.message); }
+    } else if (!isTestMode && process.env.RENDER) {
+       console.warn('[DB] WARNING: data.json not found on Render! This is likely a fresh deploy or ephemeral disk wipe.');
+    }
   }
 
   // --- AUTO-MIGRATION & RULE 7: STRICT ISOLATION PREP ---
