@@ -1228,6 +1228,26 @@ app.put('/api/tenant-users/:username', tenantGuard, async (req, res) => {
   res.json(data.users[userIndex]);
 });
 
+app.delete('/api/tenant-users/:username', tenantGuard, async (req, res) => {
+  const data = await loadData();
+  const tenantId = req.tenantId;
+  const username = req.params.username;
+
+  const userIndex = data.users.findIndex(u =>
+    u.username.toLowerCase() === username.toLowerCase() &&
+    (u.tenantId || u.username) === tenantId
+  );
+
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'User not found for this tenant.' });
+  }
+
+  // Remove the user
+  const removed = data.users.splice(userIndex, 1)[0];
+  await saveData(data);
+  res.json({ success: true, removed });
+});
+
 app.post('/api/device/reset', tenantGuard, async (req, res) => {
   const { employeeId } = req.body;
   const data = await loadData();

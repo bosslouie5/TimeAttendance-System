@@ -3527,6 +3527,22 @@ function App() {
 
                <div className="glass-card" style={{padding:'30px', borderRadius:'20px', border:'1px solid #334155'}}>
                   <h2 style={{marginTop:0, marginBottom:'25px'}}>Active Dev Accounts</h2>
+                  <div style={{display:'flex', gap:'10px', alignItems:'center', marginBottom:'12px'}}>
+                    <label style={{fontSize:'0.8rem', color:'#94a3b8', marginRight:'8px'}}>Filter by Tenant:</label>
+                    <select value={selectedTenant ? (selectedTenant.tenantId || selectedTenant.username) : 'ALL'} onChange={e => {
+                      const val = e.target.value;
+                      if (val === 'ALL') setSelectedTenant(null);
+                      else {
+                        const found = users.find(u => (u.tenantId || u.username) === val);
+                        setSelectedTenant(found || null);
+                      }
+                    }} style={{background:'#0f172a', color:'#cbd5e1', border:'1px solid #334155', padding:'6px 10px', borderRadius:'8px'}}>
+                      <option value="ALL">ALL TENANTS</option>
+                      {uniqueTenants.map(u => (
+                        <option key={(u.tenantId || u.username)} value={(u.tenantId || u.username)}>{u.companyName || (u.tenantId || u.username)}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div style={{maxHeight:'70vh', overflowY:'auto'}} className="custom-scroll">
                      <table style={{width:'100%', minWidth:'100%'}}>
                         <thead>
@@ -3537,7 +3553,14 @@ function App() {
                            </tr>
                         </thead>
                         <tbody>
-                           {devAccounts.map((acc, idx) => (
+                           {devAccounts
+                             .filter(acc => {
+                               if (!selectedTenant) return true;
+                               const tid = acc.tenantId || acc.username || '';
+                               const selTid = selectedTenant.tenantId || selectedTenant.username;
+                               return tid === selTid;
+                             })
+                             .map((acc, idx) => (
                              <tr key={idx} style={{background: editingDevUser?.username === acc.username ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}}>
                                 <td style={{fontWeight:'bold', padding:'20px 12px'}}>
                                   <div style={{display:'flex', alignItems:'center', gap:'10px'}}>

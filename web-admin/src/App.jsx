@@ -743,6 +743,19 @@ function App() {
     }
   };
 
+  const deleteTenantUser = async (username) => {
+    if (!confirm(`Delete tenant user ${username}? This action cannot be undone.`)) return;
+    setStatus('Deleting tenant user...');
+    try {
+      await requestJson(`/tenant-users/${username}`, { method: 'DELETE' });
+      setTenantUsers(prev => prev.filter(u => u.username !== username));
+      setStatus('Tenant user deleted ✓');
+    } catch (e) {
+      alert(e.message || 'Failed to delete tenant user');
+      setStatus('Error deleting tenant user');
+    }
+  };
+
   const startEditTenantUser = (u) => {
     setIsEditingTenantUser(true);
     setEditingUsername(u.username);
@@ -1661,7 +1674,7 @@ function App() {
               </div>
               <div style={{background:'#0f172a', borderRadius:'12px', padding:'15px', border:'1px solid #334155'}}>
                 <div style={{fontSize:'0.9rem', color:'#94a3b8', marginBottom:'10px'}}>Existing tenant users</div>
-                {tenantUsers.length === 0 ? (
+                      {tenantUsers.length === 0 ? (
                   <div style={{color:'#64748b'}}>No tenant users created yet.</div>
                 ) : (
                   tenantUsers.map(u => (
@@ -1670,7 +1683,10 @@ function App() {
                         <div style={{fontWeight:'700', color:'#f8fafc'}}>{u.displayName || u.username}</div>
                         <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>Username: {u.username} {u.employeeId && `• ID: ${u.employeeId}`}</div>
                       </div>
-                      <button onClick={() => startEditTenantUser(u)} style={{...smallBtn, background:'#334155', border:'1px solid #475569', padding:'5px 10px'}}>Edit</button>
+                      <div style={{display:'flex', gap:'8px'}}>
+                        <button onClick={() => startEditTenantUser(u)} style={{...smallBtn, background:'#334155', border:'1px solid #475569', padding:'5px 10px'}}>Edit</button>
+                        <button onClick={() => deleteTenantUser(u.username)} style={{...smallBtn, background:'#3b0b0b22', color:'#ef4444', border:'1px solid #ef444444', padding:'5px 10px'}}>Delete</button>
+                      </div>
                     </div>
                   ))
                 )}
