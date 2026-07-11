@@ -880,7 +880,7 @@ app.post('/api/hr/leaves', tenantGuard, async (req, res) => {
 
   // Logic: If no reportsTo, default to HR Management and skip Manager step
   const reportsTo = req.body.reportsTo || req.body.manager || '';
-  const isDirectToHR = !reportsTo || reportsTo === 'HR Management';
+  const isDirectToHR = !reportsTo || reportsTo === '' || reportsTo === 'HR Management';
 
   const newLeave = {
     ...req.body,

@@ -954,14 +954,16 @@ function App() {
         try {
           if (leaveForm.reportsTo && leaveForm.reportsTo.trim()) return leaveForm.reportsTo.trim();
           const emp = cachedEmployee || JSON.parse(localStorage.getItem('all_employees')||'[]').find(e=> (e.employeeId||'').toString()=== (localStorage.getItem('cached_id')||'').toString());
-          if (emp && emp.reportsTo) {
+          if (emp && emp.reportsTo && emp.reportsTo.trim() !== "") {
             const all = JSON.parse(localStorage.getItem('all_employees')||'[]');
             const mgr = all.find(m=> (m.employeeId||'').toString() === (emp.reportsTo||'').toString());
             return mgr ? (mgr.name || mgr.employeeId) : emp.reportsTo;
           }
         } catch(e){}
-        return 'HR Management'; // Rule: If no reportsTo, direct to HR
+        return 'HR Management'; // Rule: If no reportsTo or empty, direct to HR
     })();
+
+    const isDirectToHR = effectiveReportsTo === 'HR Management';
 
     const newRequest = {
       id: Date.now().toString(),
@@ -972,7 +974,7 @@ function App() {
       endDate: leaveForm.endDate,
       reason: leaveForm.reason.trim(),
       reportsTo: effectiveReportsTo,
-      status: effectiveReportsTo === 'HR Management' ? 'Pending (Admin)' : 'Pending (Manager)',
+      status: isDirectToHR ? 'Pending (Admin)' : 'Pending (Manager)',
       tenantId: tenantId || localStorage.getItem('tenant_id') || 'unknown'
     };
 
