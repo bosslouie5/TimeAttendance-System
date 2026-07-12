@@ -278,10 +278,6 @@ async function loadDevAccounts() {
     return seed;
   }
 
-    await db.collection('devAccounts').insertMany(seed);
-    return seed;
-  }
-
   if (!fs.existsSync(DEV_ACCOUNTS_PATH)) return [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }];
   try { return JSON.parse(fs.readFileSync(DEV_ACCOUNTS_PATH, 'utf8')); }
   catch (e) { return [{ username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' }]; }
