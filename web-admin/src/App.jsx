@@ -75,6 +75,18 @@ function App() {
   const [isEditingTenantUser, setIsEditingTenantUser] = useState(false);
   const [editingUsername, setEditingUsername] = useState('');
 
+  // NEW: Profile & Quick Search States (Rule 5: Pro Developer)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+  const [showQuickSearchRes, setShowQuickSearchRes] = useState(false);
+
+  const quickSearchResults = (employees || []).filter(e => {
+    if (!quickSearchQuery.trim()) return false;
+    const s = quickSearchQuery.toLowerCase();
+    return (e.name || '').toLowerCase().includes(s) || (e.employeeId || '').toLowerCase().includes(s);
+  }).slice(0, 5);
+
   // Form States
   const [newOrgName, setNewOrgName] = useState('');
   const [editingOrgUnitId, setEditingOrgUnitId] = useState(null);
@@ -1376,6 +1388,46 @@ function App() {
           </div>
         </div>
         <div style={{display:'flex', alignItems:'center', gap:12}}>
+          {/* QUICK SEARCH BAR (Rule 5: Pro Design) */}
+          <div style={{position:'relative', width:'300px', display: 'flex', alignItems: 'center'}}>
+             <span style={{position:'absolute', left:'15px', color:'#64748b', pointerEvents:'none'}}>🔍</span>
+             <input
+               placeholder="Search Staff Name or ID..."
+               style={{...inputStyle, marginBottom:0, padding:'10px 15px 10px 40px', borderRadius:'12px', fontSize:'0.85rem', background:'rgba(15, 23, 42, 0.6)', border:'1px solid #334155'}}
+               value={quickSearchQuery}
+               onChange={e => {
+                 setQuickSearchQuery(e.target.value);
+                 setShowQuickSearchRes(true);
+               }}
+               onFocus={() => setShowQuickSearchRes(true)}
+             />
+             {showQuickSearchRes && quickSearchQuery && (
+               <div style={{position:'absolute', top:'45px', left:0, right:0, background:'#1e293b', border:'1px solid #334155', borderRadius:'12px', zIndex:2500, boxShadow:'0 15px 30px rgba(0,0,0,0.4)', overflow:'hidden'}}>
+                 {quickSearchResults.length > 0 ? quickSearchResults.map(e => (
+                   <div key={e.employeeId} onClick={() => {
+                     setSelectedProfile(e);
+                     setIsProfileModalOpen(true);
+                     setShowQuickSearchRes(false);
+                     setQuickSearchQuery('');
+                   }} style={{padding:'12px 15px', cursor:'pointer', borderBottom:'1px solid #334155', display:'flex', alignItems:'center', gap:'12px'}} className="menu-item-search">
+                     <div style={{width:'32px', height:'32px', background:'#3b82f6', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.8rem', fontWeight:'900', color: 'white'}}>
+                       {e.name?.charAt(0).toUpperCase()}
+                     </div>
+                     <div>
+                       <div style={{fontSize:'0.85rem', fontWeight:'700', color:'white'}}>{e.name}</div>
+                       <div style={{fontSize:'0.65rem', color:'#64748b'}}>ID: {e.employeeId} • {e.jobTitle}</div>
+                     </div>
+                   </div>
+                 )) : <div style={{padding:'15px', textAlign:'center', color:'#64748b', fontSize:'0.8rem'}}>No matching staff found</div>}
+                 <div onClick={() => setShowQuickSearchRes(false)} style={{padding:'8px', textAlign:'center', background:'#0f172a', fontSize:'0.7rem', color:'#3b82f6', cursor:'pointer', fontWeight:'bold'}}>CLOSE SEARCH</div>
+               </div>
+             )}
+          </div>
+          <style>{`
+            .menu-item-search { transition: all 0.2s ease; }
+            .menu-item-search:hover { background: rgba(59, 130, 246, 0.1) !important; transform: translateX(5px); }
+          `}</style>
+
           <div style={{position:'relative'}}>
             <button onClick={() => setShowNotifPanel(s => !s)} style={{background:'#071022', border:'1px solid rgba(255,255,255,0.06)', color:'white', padding:'10px 12px', borderRadius:10, cursor:'pointer'}}>🔔 {hrNotifications?.length || 0}</button>
             {showNotifPanel && (
@@ -1922,6 +1974,7 @@ function App() {
                     </td>
                     <td style={{textAlign:'center'}}>
                       <div style={{display:'flex', gap:'8px', justifyContent:'center'}}>
+                        <button onClick={() => { setSelectedProfile(e); setIsProfileModalOpen(true); }} className="btn-blue" style={{padding: '5px 12px', fontSize: '0.75rem', background: '#8b5cf6'}}>Profile</button>
                         <button onClick={() => prepareEditEmployee(e)} className="btn-edit">Edit</button>
                         <button onClick={() => deleteEmployee(e.employeeId)} className="btn-red" style={{padding: '5px 12px', fontSize: '0.75rem'}}>Del</button>
                       </div>
@@ -2987,9 +3040,58 @@ function App() {
           </div>
         </div>
       )}
+      {/* NEW: PROFILE MODAL (Rule 5: Premium Design) */}
+      {isProfileModalOpen && selectedProfile && (
+        <div className="modal-overlay" style={{zIndex: 3000}}>
+          <div className="modal-content fade-in" style={{maxWidth: '500px', border: '1px solid #3b82f644', background: 'linear-gradient(145deg, #1e293b, #0f172a)', padding: '35px'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: '30px'}}>
+              <div style={{display:'flex', alignItems:'center', gap: '20px'}}>
+                <div style={{width:'90px', height:'90px', background:'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', borderRadius:'24px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'2.5rem', fontWeight:'900', color: 'white', boxShadow: '0 15px 30px rgba(59, 130, 246, 0.3)', border: '2px solid rgba(255,255,255,0.1)'}}>
+                  {selectedProfile.name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h2 style={{margin:0, color:'white', fontSize:'1.6rem', fontWeight: '900'}}>{selectedProfile.name}</h2>
+                  <div style={{fontSize:'0.95rem', color:'#60a5fa', fontWeight:'800', marginTop: '4px'}}>{selectedProfile.jobTitle || 'No Job Title'}</div>
+                  <div style={{marginTop: '10px'}}>
+                    <span style={{padding:'4px 12px', background: selectedProfile.status === 'Active' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: selectedProfile.status === 'Active' ? '#10b981' : '#ef4444', borderRadius:'8px', fontSize:'0.75rem', fontWeight:'900', border: '1px solid currentColor'}}>
+                      {selectedProfile.status?.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setIsProfileModalOpen(false)} style={{background:'rgba(255,255,255,0.05)', border:'none', color:'#64748b', cursor:'pointer', width:'35px', height:'35px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize: '1.2rem', transition: '0.3s'}} onMouseOver={e => e.currentTarget.style.background='rgba(239, 68, 68, 0.2)'} onMouseOut={e => e.currentTarget.style.background='rgba(255,255,255,0.05)'}>✕</button>
+            </div>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap: '25px', background: 'rgba(15, 23, 42, 0.4)', padding: '25px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '30px'}}>
+              <ProfileField label="Employee ID" value={selectedProfile.employeeId} />
+              <ProfileField label="Department" value={selectedProfile.department} />
+              <ProfileField label="Branch Location" value={selectedProfile.branchName} />
+              <ProfileField label="Work Schedule" value={selectedProfile.schedule} />
+              <ProfileField label="Gender" value={selectedProfile.gender} />
+              <ProfileField label="Nationality" value={selectedProfile.nationality} />
+              <ProfileField label="Joining Date" value={selectedProfile.joiningDate} />
+              <ProfileField label="Date of Birth" value={selectedProfile.birthDate} />
+              <ProfileField label="Email Address" value={selectedProfile.email} colSpan={2} />
+              <ProfileField label="Mobile Number" value={selectedProfile.mobile} colSpan={2} />
+            </div>
+
+            <div style={{display:'flex', gap: '12px'}}>
+              <button onClick={() => { setIsProfileModalOpen(false); prepareEditEmployee(selectedProfile); }} className="btn-blue" style={{flex: 1, padding: '15px', borderRadius: '12px', fontWeight: '900'}}>EDIT PROFILE</button>
+              <button onClick={() => setIsProfileModalOpen(false)} style={{flex: 1, background:'transparent', border: '1px solid #334155', color: '#94a3b8', padding: '15px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer'}}>CLOSE VIEW</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const ProfileField = ({ label, value, colSpan = 1 }) => (
+  <div style={{gridColumn: `span ${colSpan}`}}>
+    <div style={{fontSize:'0.6rem', color:'#64748b', fontWeight:'900', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'6px'}}>{label}</div>
+    <div style={{fontSize:'0.9rem', color:'#cbd5e1', fontWeight:'700'}}>{value || '-'}</div>
+  </div>
+);
 
 export default App;
 

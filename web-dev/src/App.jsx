@@ -175,6 +175,12 @@ function App() {
   const [selectedAssignBranchesDev, setSelectedAssignBranchesDev] = useState([]);
   const [selectedAssignBranchTenant, setSelectedAssignBranchTenant] = useState('');
   const [activeApiBase, setActiveApiBase] = useState(null);
+
+  // NEW: Profile & Search States (Rule 5: Pro Developer)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+  const [showQuickSearchRes, setShowQuickSearchRes] = useState(false);
   const [tunnelBase, setTunnelBase] = useState(null);
   const [saasStatus, setSaasStatus] = useState('Connecting...');
   const [processing, setProcessing] = useState(false);
@@ -1661,6 +1667,44 @@ function App() {
                 }}>STRICT ISOLATION ACTIVE</div>
               )}
            </div>
+
+           {/* NEW: QUICK SEARCH BAR FOR DEV (Only works if tenant is selected) */}
+           <div style={{position:'relative', width:'250px', marginLeft: '15px'}}>
+              <input
+                placeholder={globalTenantFilter === 'ALL' ? "Select Tenant to Search..." : "🔍 Search staff..."}
+                disabled={globalTenantFilter === 'ALL'}
+                style={{...inputStyle, marginBottom:0, padding:'8px 12px 8px 35px', borderRadius:'10px', fontSize:'0.8rem', background: globalTenantFilter === 'ALL' ? 'rgba(0,0,0,0.1)' : 'rgba(15, 23, 42, 0.6)', border:'1px solid #334155', cursor: globalTenantFilter === 'ALL' ? 'not-allowed' : 'text', opacity: globalTenantFilter === 'ALL' ? 0.5 : 1}}
+                value={quickSearchQuery}
+                onChange={e => {
+                  setQuickSearchQuery(e.target.value);
+                  setShowQuickSearchRes(true);
+                }}
+                onFocus={() => setShowQuickSearchRes(true)}
+              />
+              <span style={{position:'absolute', left:'10px', top: '50%', transform: 'translateY(-50%)', color:'#64748b', fontSize: '0.8rem', pointerEvents: 'none'}}>🔍</span>
+              {showQuickSearchRes && quickSearchQuery && globalTenantFilter !== 'ALL' && (
+                <div style={{position:'absolute', top:'42px', left:0, right:0, background:'#1e293b', border:'1px solid #334155', borderRadius:'12px', zIndex:2500, boxShadow:'0 15px 30px rgba(0,0,0,0.5)', overflow:'hidden'}}>
+                  {employees.filter(e => e.tenantId === globalTenantFilter && ((e.name || '').toLowerCase().includes(quickSearchQuery.toLowerCase()) || (e.employeeId || '').toLowerCase().includes(quickSearchQuery.toLowerCase()))).slice(0, 5).map(e => (
+                    <div key={e.employeeId} onClick={() => {
+                      setSelectedProfile(e);
+                      setIsProfileModalOpen(true);
+                      setShowQuickSearchRes(false);
+                      setQuickSearchQuery('');
+                    }} style={{padding:'10px 12px', cursor:'pointer', borderBottom:'1px solid #334155', display:'flex', alignItems:'center', gap:'12px'}} className="search-result-item">
+                      <div style={{width:'30px', height:'32px', background:'linear-gradient(135deg, #8b5cf6, #7c3aed)', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.75rem', fontWeight:'900', color: 'white'}}>
+                        {e.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{fontSize:'0.8rem', fontWeight:'700', color:'white'}}>{e.name}</div>
+                        <div style={{fontSize:'0.6rem', color:'#64748b'}}>ID: {e.employeeId} • {e.jobTitle}</div>
+                      </div>
+                    </div>
+                  ))}
+                  <div onClick={() => setShowQuickSearchRes(false)} style={{padding:'8px', textAlign:'center', background:'#0f172a', fontSize:'0.7rem', color:'#8b5cf6', cursor:'pointer', fontWeight:'bold'}}>CLOSE SEARCH</div>
+                </div>
+              )}
+              <style>{`.search-result-item:hover { background: rgba(139, 92, 246, 0.1) !important; }`}</style>
+           </div>
         </div>
 
         <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
@@ -2347,6 +2391,7 @@ function App() {
                         }}>{e.status}</span>
                       </td>
                       <td style={{textAlign:'center', display:'flex', gap:'5px', justifyContent:'center'}}>
+                        <button onClick={() => { setSelectedProfile(e); setIsProfileModalOpen(true); }} style={{...smallBtn, background:'#8b5cf6'}}>Profile</button>
                         <button onClick={() => prepareEditEmployee(e)} style={{...smallBtn, background:'#3b82f6'}}>Edit</button>
                         <button onClick={() => deleteEmployee(e.employeeId, e.tenantId)} style={{...smallBtn, background:'#ef4444'}}>Delete</button>
                       </td>
@@ -3645,9 +3690,61 @@ function App() {
       <footer style={{position:'fixed', bottom:20, right:20, fontSize:'0.7rem', color:'#475569', fontWeight:'bold', letterSpacing:'1px'}} onDoubleClick={() => setActiveTab('dashboard')}>
         V{appVersion} - PRO EDITION {window.location.hostname.includes('onrender.com') ? '(WEB PRODUCTION)' : '(LAB TEST)'}
       </footer>
+      {/* NEW: PROFILE MODAL (Rule 5: Premium Design for Dev Portal) */}
+      {isProfileModalOpen && selectedProfile && (
+        <div style={{position:'fixed', top:0, left:0, width:'100vw', height:'100vh', background:'rgba(2, 6, 23, 0.85)', zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(10px)'}}>
+          <div className="fade-in" style={{maxWidth: '520px', width: '100%', border: '1px solid #8b5cf644', background: 'linear-gradient(145deg, #1e293b, #0f172a)', padding: '35px', borderRadius: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.5)'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: '30px'}}>
+              <div style={{display:'flex', alignItems:'center', gap: '20px'}}>
+                <div style={{width:'90px', height:'90px', background:'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', borderRadius:'24px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'2.5rem', fontWeight:'900', color: 'white', boxShadow: '0 15px 30px rgba(139, 92, 246, 0.3)', border: '2px solid rgba(255,255,255,0.1)'}}>
+                  {selectedProfile.name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h2 style={{margin:0, color:'white', fontSize:'1.6rem', fontWeight: '900'}}>{selectedProfile.name}</h2>
+                  <div style={{fontSize:'0.95rem', color:'#a78bfa', fontWeight:'800', marginTop: '4px'}}>{selectedProfile.jobTitle || 'Staff'}</div>
+                  <div style={{marginTop: '10px', display:'flex', gap:'8px'}}>
+                    <span style={{padding:'4px 12px', background: selectedProfile.status === 'Active' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: selectedProfile.status === 'Active' ? '#10b981' : '#ef4444', borderRadius:'8px', fontSize:'0.7rem', fontWeight:'900', border: '1px solid currentColor'}}>
+                      {selectedProfile.status?.toUpperCase()}
+                    </span>
+                    <span style={{padding:'4px 12px', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', borderRadius:'8px', fontSize:'0.7rem', fontWeight:'900', border: '1px solid currentColor'}}>
+                      TENANT: {selectedProfile.tenantId}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setIsProfileModalOpen(false)} style={{background:'rgba(255,255,255,0.05)', border:'none', color:'#64748b', cursor:'pointer', width:'35px', height:'35px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize: '1.2rem', transition: '0.3s'}}>✕</button>
+            </div>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap: '25px', background: 'rgba(15, 23, 42, 0.4)', padding: '25px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '30px'}}>
+              <ProfileFieldDev label="Employee ID" value={selectedProfile.employeeId} />
+              <ProfileFieldDev label="Department" value={selectedProfile.department} />
+              <ProfileFieldDev label="Branch Location" value={selectedProfile.branchName} />
+              <ProfileFieldDev label="Work Schedule" value={selectedProfile.schedule} />
+              <ProfileFieldDev label="Gender" value={selectedProfile.gender} />
+              <ProfileFieldDev label="Nationality" value={selectedProfile.nationality} />
+              <ProfileFieldDev label="Joining Date" value={selectedProfile.joiningDate} />
+              <ProfileFieldDev label="Date of Birth" value={selectedProfile.birthDate} />
+              <ProfileFieldDev label="Email Address" value={selectedProfile.email} colSpan={2} />
+              <ProfileFieldDev label="Mobile Number" value={selectedProfile.mobile} colSpan={2} />
+            </div>
+
+            <div style={{display:'flex', gap: '12px'}}>
+              <button onClick={() => { setIsProfileModalOpen(false); prepareEditEmployee(selectedProfile); }} style={{...addBtn, flex: 1, background: '#8b5cf6'}}>EDIT PROFILE</button>
+              <button onClick={() => setIsProfileModalOpen(false)} style={{...smallBtn, flex: 1, background:'transparent', border: '1px solid #334155', color: '#94a3b8', padding: '15px'}}>CLOSE VIEW</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const ProfileFieldDev = ({ label, value, colSpan = 1 }) => (
+  <div style={{gridColumn: `span ${colSpan}`}}>
+    <div style={{fontSize:'0.6rem', color:'#64748b', fontWeight:'900', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'6px'}}>{label}</div>
+    <div style={{fontSize:'0.9rem', color:'#cbd5e1', fontWeight:'700'}}>{value || '-'}</div>
+  </div>
+);
 
 const StatCard = ({ label, value, sub, color = "#3b82f6" }) => (
   <div className="stat-card">
