@@ -253,25 +253,11 @@ async function loadDevAccounts() {
   if (db) {
     const accounts = await db.collection('devAccounts').find({}).toArray();
 
-    // Ensure dev1 and john cruz are ALWAYS present in the results even if DB has other accounts
-    const localSeed = [
-      { username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' },
-      { username: 'dev', password: 'dev', displayName: 'Developer' },
-      { username: 'dev1', password: 'dev1', displayName: 'Developer 1' }
-    ];
-
     if (accounts.length > 0) {
-      // Merge: priority to localSeed to prevent lockout
-      const combined = [...accounts.map(({ _id, ...acc }) => acc)];
-      localSeed.forEach(s => {
-        if (!combined.find(c => c.username.toLowerCase() === s.username.toLowerCase())) {
-          combined.push(s);
-        }
-      });
-      return combined;
+      return accounts.map(({ _id, ...acc }) => acc);
     }
 
-    // Seed DB with standard ninja accounts if empty
+    // Seed DB with standard ninja accounts ONLY IF EMPTY
     let seed = [
       { username: 'john cruz', password: 'Louiecruz23', displayName: 'Admin John' },
       { username: 'dev', password: 'dev', displayName: 'Developer' },
@@ -287,6 +273,10 @@ async function loadDevAccounts() {
         });
       } catch (e) {}
     }
+
+    await db.collection('devAccounts').insertMany(seed);
+    return seed;
+  }
 
     await db.collection('devAccounts').insertMany(seed);
     return seed;
@@ -542,8 +532,11 @@ app.put('/api/master/dev-accounts/:username', async (req, res) => {
     accounts[index] = { ...accounts[index], ...req.body };
     const db = await getDb();
     if (db) {
-      await db.collection('devAccounts').deleteMany({});
-      await db.collection('devAccounts').insertMany(accounts);
+      // Update specifically in MongoDB using the unique username
+      await db.collection('devAccounts').updateOne(
+        { username: { $regex: new RegExp(`^${username}$`, 'i') } },
+        { $set: req.body }
+      );
     } else {
       fs.writeFileSync(DEV_ACCOUNTS_PATH, JSON.stringify(accounts, null, 2));
     }
@@ -554,12 +547,12 @@ app.put('/api/master/dev-accounts/:username', async (req, res) => {
 app.delete('/api/master/dev-accounts/:username', async (req, res) => {
   const { username } = req.params;
   let accounts = await loadDevAccounts();
-  accounts = accounts.filter(a => a.username.toLowerCase() !== username.toLowerCase());
   const db = await getDb();
   if (db) {
-    await db.collection('devAccounts').deleteMany({});
-    if (accounts.length > 0) await db.collection('devAccounts').insertMany(accounts);
+    // Delete specifically from MongoDB
+    await db.collection('devAccounts').deleteOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
   } else {
+    accounts = accounts.filter(a => a.username.toLowerCase() !== username.toLowerCase());
     fs.writeFileSync(DEV_ACCOUNTS_PATH, JSON.stringify(accounts, null, 2));
   }
   res.json({ success: true });
